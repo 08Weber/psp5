@@ -1,0 +1,17 @@
+# byggresultat
+*.o
+*.elf
+*.prx
+/PARAM.SFO
+/EBOOT.PBP
+/dist/
+/dist-test/
+
+# lokalt: referenskod, testdata, säkerhetskopior, egna omslag
+/ref/
+/testdata/
+/backup/
+/tools/covers-src/*
+!/tools/covers-src/.gitkeep
+__pycache__/
+/release/

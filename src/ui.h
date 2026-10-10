@@ -1,0 +1,63 @@
+#ifndef UI_H
+#define UI_H
+
+#include "gfx.h"
+#include "scan.h"
+#include "loader.h"
+
+enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS };
+enum { TAB_GAMES, TAB_APPS, TAB_COUNT };
+
+typedef struct {
+    u32 pressed; /* nedtryckta denna bildruta */
+    u32 held;
+    u8 lx;       /* analog spak, 128 = mitten */
+} UiInput;
+
+typedef struct {
+    const EntryList *list;
+    LoaderView views[TAB_COUNT]; /* Spel / Appar */
+    int tab;
+    int sel[TAB_COUNT];  /* position i respektive flik */
+    float pos;           /* animerad scrollposition i aktiv flik */
+    float tab_anim;      /* 0→1 efter flikbyte */
+    float time;
+    float intro;         /* 0→1 vid start */
+    float launch;        /* <0 = inaktiv, annars 0→1 */
+    int confirm_circle;  /* systeminställning: ○ bekräftar */
+    int can_launch;      /* 0 = ARK saknas (t.ex. PPSSPP) */
+
+    /* bakgrund: gammal + ny med övertoning */
+    Texture *bg_old, *bg_cur;
+    float bg_fade;
+    int bg_index;
+    float still;         /* sekunder sedan markeringen flyttades */
+
+    float accent[3];     /* animerad färgton från vald ikon (0–255) */
+
+    /* titeln bredvid valt kort, anpassad till bredden */
+    int label_for;
+    char label[160];
+    float label_size;
+    float label_anim;
+
+    /* knapprepetition */
+    int repeat_dir;
+    float repeat_timer, repeat_held;
+
+    char toast[96];
+    float toast_time;
+} Ui;
+
+void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch);
+void ui_free(Ui *ui);
+int ui_update(Ui *ui, const UiInput *in, float dt);
+void ui_draw(Ui *ui);
+void ui_toast(Ui *ui, const char *msg);
+/* Index i spellistan för markerad post, eller -1. */
+int ui_selected(const Ui *ui);
+
+/* Enkel skärm under första skanningen. */
+void ui_draw_scanning(int done, const char *name, float time);
+
+#endif

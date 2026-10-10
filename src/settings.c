@@ -1,0 +1,491 @@
+/* Inställningar i samma anda som PS5:s: mörk yta med ett strålkastarljus,
+ * kategorier till vänster, alternativ till höger med tunna skiljelinjer
+ * och en tunn ljus ram runt det valda. All grafik ritas här. */
+#include <pspkernel.h>
+#include <pspctrl.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "settings.h"
+#include "arkcfg.h"
+#include "plugins.h"
+#include "system.h"
+
+#define TITLE_Y     34.0f
+#define LEFT_X      32.0f
+#define LEFT_W      124.0f
+#define RIGHT_X     176.0f
+#define RIGHT_W     280.0f
+#define ROW_H       26.0f
+#define LIST_TOP    58.0f
+#define LIST_BOTTOM 236.0f
+#define MAX_ITEMS   (MAX_PLUGINS + 4)
+#define CONFIRM_TIME 3.0f
+
+#define TEXT_MAIN RGBA(238, 238, 242, 255)
+#define TEXT_DIM  RGBA(160, 162, 172, 255)
+#define LIGHT     RGBA(236, 236, 240, 255)
+
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO } ItemType;
+
+typedef struct {
+    const char *label;
+    ItemType type;
+    unsigned char *value;        /* TOGGLE/CHOICE */
+    const char *const *opts;     /* CHOICE */
+    int nopts;
+    int action;                  /* ACTION: SA_* */
+    int confirm;                 /* ACTION: kräver ✕ två gånger */
+    char info[48];               /* INFO-värde / undertext */
+    int plugin;                  /* >0: plugin nr (1-baserat) */
+} Item;
+
+typedef struct {
+    const char *name;
+    const char *desc;
+    Item items[MAX_ITEMS];
+    int count;
+} Category;
+
+enum { CAT_PSP5, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
+
+static Category s_cats[CAT_COUNT];
+static unsigned char s_plugin_on[MAX_PLUGINS];
+
+static struct {
+    int cat, item[CAT_COUNT];
+    int focus;          /* 0 = kategorier, 1 = alternativ */
+    float scroll, open;
+    int confirm_item;   /* -1 = ingen */
+    float confirm_time;
+    int cfw_dirty, plugins_dirty;
+    int repeat_dir;
+    float repeat_timer;
+    char toast[96];
+    float toast_time;
+} S;
+
+static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
+static const char *const OPT_HIGHMEM[] = { "Av", "Standard", "Auto", "+16 MiB", "Max" };
+static const char *const OPT_MSCACHE[] = { "Av", "4 KiB", "8 KiB", "16 KiB" };
+static const char *const OPT_INFERNO[] = { "Av", "LRU", "RR" };
+static const char *const OPT_LOGOS[] = { "Av", "Alla", "Vid spelstart", "Vid uppstart" };
+static const char *const OPT_PICS[] = { "Av", "Alla", "PIC0", "PIC1" };
+static const char *const OPT_UMDREG[] = { "Standard", "Japan", "Amerika", "Europa" };
+static const char *const OPT_VSHREG[] = { "Standard", "Japan", "Amerika", "Europa", "Korea", "Storbritannien",
+                                          "Latinamerika", "Australien", "Hongkong", "Taiwan", "Ryssland",
+                                          "Kina", "Debug I", "Debug II" };
+#define N(a) (int)(sizeof(a) / sizeof((a)[0]))
+
+static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
+static float approach(float cur, float target, float speed, float dt)
+{
+    return cur + (target - cur) * (1.0f - expf(-speed * dt));
+}
+static u32 fade(u32 c, float a)
+{
+    return COLOR_ALPHA(c, (int)(((c >> 24) & 0xFF) * clampf(a, 0, 1)));
+}
+
+/* --- menyn --- */
+
+static Item *add(Category *c, const char *label, ItemType type)
+{
+    Item *it = &c->items[c->count++];
+    memset(it, 0, sizeof(*it));
+    it->label = label;
+    it->type = type;
+    return it;
+}
+
+static void toggle(Category *c, const char *label, unsigned char *v)
+{
+    add(c, label, IT_TOGGLE)->value = v;
+}
+
+static void choice(Category *c, const char *label, unsigned char *v, const char *const *opts, int n)
+{
+    Item *it = add(c, label, IT_CHOICE);
+    it->value = v;
+    it->opts = opts;
+    it->nopts = n;
+    if (*v >= n)
+        *v = 0;
+}
+
+static void action(Category *c, const char *label, int act, int confirm)
+{
+    Item *it = add(c, label, IT_ACTION);
+    it->action = act;
+    it->confirm = confirm;
+}
+
+static void info(Category *c, const char *label, const char *value)
+{
+    snprintf(add(c, label, IT_INFO)->info, sizeof(((Item *)0)->info), "%s", value);
+}
+
+static void build(void)
+{
+    memset(s_cats, 0, sizeof(s_cats));
+    Category *c;
+
+    c = &s_cats[CAT_PSP5];
+    c->name = "psp5";
+    c->desc = "ARK-inställningar sparas i SETTINGS.TXT och gäller efter omstart. "
+              "Håll SELECT när PSP:n startar för att hoppa över dem och komma till XMB.";
+    toggle(c, "Starta psp5 vid uppstart", &g_cfw.launcher);
+    info(c, "psp5 är ARK:s launcher", sys_is_launcher() ? "Ja" : "Nej");
+    action(c, "Rensa bildcache", SA_CLEAR_CACHE, 0);
+    info(c, "Version", "1.0");
+
+    c = &s_cats[CAT_PERF];
+    c->name = "Prestanda";
+    c->desc = "Högre klockfrekvens ger jämnare spel men drar mer batteri. Över 333 MHz är överklockning.";
+    choice(c, "CPU i spel", &g_cfw.clock_game, OPT_CLOCK, N(OPT_CLOCK));
+    choice(c, "CPU i XMB och launcher", &g_cfw.clock_vsh, OPT_CLOCK, N(OPT_CLOCK));
+    choice(c, "Extra minne", &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
+    choice(c, "Minneskortscache", &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
+    choice(c, "ISO-cache (Inferno)", &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
+
+    c = &s_cats[CAT_SYSTEM];
+    c->name = "System";
+    toggle(c, "USB-laddning", &g_cfw.usbcharge);
+    toggle(c, "WPA2 för Wi-Fi", &g_cfw.wpa2);
+    choice(c, "Hoppa över logotyper", &g_cfw.skiplogos, OPT_LOGOS, N(OPT_LOGOS));
+    choice(c, "Dölj spelbilder i XMB", &g_cfw.hidepics, OPT_PICS, N(OPT_PICS));
+    toggle(c, "Dölj MAC-adress", &g_cfw.hidemac);
+    toggle(c, "Dölj DLC", &g_cfw.hidedlc);
+    toggle(c, "Släck lamporna", &g_cfw.noled);
+    toggle(c, "Stäng av UMD-enheten", &g_cfw.noumd);
+    toggle(c, "Stäng av analogspaken", &g_cfw.noanalog);
+    toggle(c, "Ljud av med HOME + volym", &g_cfw.vitamute);
+    toggle(c, "QA-flaggor", &g_cfw.qaflags);
+    choice(c, "UMD-region", &g_cfw.regionchange, OPT_UMDREG, N(OPT_UMDREG));
+    choice(c, "XMB-region", &g_cfw.vshregion, OPT_VSHREG, N(OPT_VSHREG));
+
+    c = &s_cats[CAT_PLUGINS];
+    c->name = "Plugins";
+    c->desc = "Plugins laddas av ARK vid nästa start. Håll START när PSP:n startar för att hoppa över alla.";
+    for (int i = 0; i < plugins_count() && c->count < MAX_ITEMS; i++) {
+        Plugin *p = plugins_get(i);
+        s_plugin_on[i] = p->on;
+        Item *it = add(c, p->name, IT_TOGGLE);
+        it->value = &s_plugin_on[i];
+        it->plugin = i + 1;
+        snprintf(it->info, sizeof(it->info), "%s", p->where);
+    }
+    if (!c->count)
+        info(c, "Inga plugins installerade", "");
+
+    c = &s_cats[CAT_POWER];
+    c->name = "Ström och USB";
+    action(c, "USB-läge", SA_USB, 0);
+    action(c, "Gå till XMB", SA_XMB, 0);
+    action(c, "Viloläge", SA_SUSPEND, 1);
+    action(c, "Starta om", SA_RESTART, 1);
+    action(c, "Stäng av", SA_SHUTDOWN, 1);
+    action(c, "Återställningsmeny", SA_RECOVERY, 1);
+}
+
+void settings_open(void)
+{
+    char path[200];
+    snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
+    arkcfg_load(path);
+    plugins_load(sys_ark_dir());
+    build();
+    memset(&S, 0, sizeof(S));
+    S.confirm_item = -1;
+}
+
+int settings_commit(void)
+{
+    int changed = S.cfw_dirty || S.plugins_dirty;
+    if (S.cfw_dirty) {
+        char path[200];
+        snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
+        arkcfg_save(path);
+    }
+    if (S.plugins_dirty) {
+        for (int i = 0; i < plugins_count(); i++)
+            plugins_get(i)->on = s_plugin_on[i];
+        plugins_save();
+    }
+    S.cfw_dirty = S.plugins_dirty = 0;
+    return changed;
+}
+
+/* --- uppdatering --- */
+
+static int vertical(const UiInput *in, float dt)
+{
+    int dir = 0;
+    if (in->held & PSP_CTRL_UP) dir = -1;
+    if (in->held & PSP_CTRL_DOWN) dir = 1;
+    if (!dir) {
+        S.repeat_dir = 0;
+        return 0;
+    }
+    if (dir != S.repeat_dir) {
+        S.repeat_dir = dir;
+        S.repeat_timer = 0.32f;
+        return dir;
+    }
+    S.repeat_timer -= dt;
+    if (S.repeat_timer <= 0) {
+        S.repeat_timer += 0.08f;
+        return dir;
+    }
+    return 0;
+}
+
+static void mark_dirty(const Item *it)
+{
+    if (it->plugin)
+        S.plugins_dirty = 1;
+    else
+        S.cfw_dirty = 1;
+}
+
+/* Övre kanten för rad i i den högra listan (innan scroll). */
+static float row_y(const Category *c, int i);
+
+int settings_update(const UiInput *in, float dt)
+{
+    S.open = clampf(S.open + dt * 5.0f, 0, 1);
+    if (S.toast_time > 0)
+        S.toast_time -= dt;
+    if (S.confirm_time > 0 && (S.confirm_time -= dt) <= 0)
+        S.confirm_item = -1;
+
+    Category *c = &s_cats[S.cat];
+    int *sel = &S.item[S.cat];
+    u32 p = in->pressed;
+    int move = vertical(in, dt);
+
+    if (S.focus == 0) {
+        if (move) {
+            S.cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
+            S.confirm_item = -1;
+        }
+        if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count)
+            S.focus = 1;
+        if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))
+            return SA_CLOSE;
+    } else {
+        Item *it = &c->items[*sel];
+        if (move) {
+            *sel = (int)clampf(*sel + move, 0, c->count - 1);
+            S.confirm_item = -1;
+            it = &c->items[*sel];
+        }
+        int change = 0;
+        if (it->type == IT_CHOICE) {
+            if (p & (PSP_CTRL_RIGHT | PSP_CTRL_CROSS)) change = 1;
+            if (p & PSP_CTRL_LEFT) change = -1;
+        }
+        if (change) {
+            *it->value = (*it->value + change + it->nopts) % it->nopts;
+            mark_dirty(it);
+        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
+            *it->value = !*it->value;
+            mark_dirty(it);
+        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
+            if (it->confirm && S.confirm_item != *sel) {
+                S.confirm_item = *sel;
+                S.confirm_time = CONFIRM_TIME;
+            } else {
+                S.confirm_item = -1;
+                return it->action;
+            }
+        } else if ((p & PSP_CTRL_CIRCLE) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
+            S.focus = 0;
+            S.confirm_item = -1;
+        } else if (p & PSP_CTRL_TRIANGLE) {
+            return SA_CLOSE;
+        }
+    }
+
+    /* håll vald rad synlig */
+    float target = 0;
+    if (S.focus == 1 && c->count) {
+        float y = row_y(c, *sel);
+        float visible = LIST_BOTTOM - LIST_TOP - ROW_H;
+        if (y > visible)
+            target = y - visible;
+    }
+    S.scroll = approach(S.scroll, target, 14.0f, dt);
+    return SA_NONE;
+}
+
+/* --- ritning --- */
+
+#define MAX_DESC_LINES 4
+static char s_desc[MAX_DESC_LINES][96];
+
+/* Radbryter beskrivningen till högerspaltens bredd. */
+static int wrap_desc(const char *text)
+{
+    int lines = 0;
+    char word[64], line[96] = "";
+    const char *p = text;
+    while (*p && lines < MAX_DESC_LINES) {
+        int n = 0;
+        while (*p == ' ')
+            p++;
+        while (*p && *p != ' ' && n < (int)sizeof(word) - 1)
+            word[n++] = *p++;
+        word[n] = 0;
+        if (!n)
+            break;
+        char test[160];
+        snprintf(test, sizeof(test), "%s%s%s", line, line[0] ? " " : "", word);
+        if (text_width(0.56f, 0, test) > RIGHT_W - 8 && line[0]) {
+            snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
+            snprintf(line, sizeof(line), "%s", word);
+        } else {
+            snprintf(line, sizeof(line), "%s", test);
+        }
+    }
+    if (line[0] && lines < MAX_DESC_LINES)
+        snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
+    return lines;
+}
+
+static float desc_height(const Category *c)
+{
+    return c->desc ? wrap_desc(c->desc) * 13.0f + 10 : 0;
+}
+
+static float row_y(const Category *c, int i)
+{
+    return desc_height(c) + i * ROW_H;
+}
+
+static void draw_background(void)
+{
+    gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, RGBA(48, 46, 50, 255), RGBA(22, 23, 29, 255));
+    gfx_gradient_h(SCREEN_W / 2, 0, SCREEN_W / 2, SCREEN_H, RGBA(18, 22, 34, 0), RGBA(18, 22, 34, 150));
+    /* strålkastarljus uppe till vänster och ett svagt dis nere */
+    gfx_glow(70, -60, 60, 60, 120, RGBA(215, 198, 186, 80));
+    gfx_glow(90, -30, 20, 30, 40, RGBA(235, 222, 212, 50));
+    gfx_glow(-30, 236, 280, 30, 46, RGBA(130, 142, 158, 42));
+}
+
+static void draw_toggle(float x, float y, int on, float a)
+{
+    gfx_round_rect(x, y, 26, 13, 6.5f, fade(on ? RGBA(150, 152, 160, 255) : RGBA(74, 76, 84, 255), a));
+    gfx_circle(on ? x + 19.5f : x + 6.5f, y + 6.5f, 5, fade(on ? LIGHT : RGBA(196, 196, 202, 255), a));
+}
+
+static void draw_hints(float a)
+{
+    const char *sel = "Välj", *back = "Tillbaka";
+    float w = 13 + 5 + text_width(0.58f, 0, sel) + 14 + 13 + 5 + text_width(0.58f, 0, back);
+    float x = SCREEN_W - 22 - w, y = 252;
+    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
+    gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
+    x += 18;
+    text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, sel);
+    x += text_width(0.58f, 0, sel) + 14;
+    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
+    x += 18;
+    text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, back);
+}
+
+static void draw_item(const Item *it, int index, float y, int selected, float a)
+{
+    float right = RIGHT_X + RIGHT_W - 8;
+    text_draw(RIGHT_X + 8, y + 17, 0.62f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+
+    char value[64] = "";
+    switch (it->type) {
+    case IT_TOGGLE:
+        draw_toggle(right - 26, y + 6.5f, *it->value != 0, a);
+        right -= 34;
+        snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
+        break;
+    case IT_CHOICE:
+        if (selected)
+            snprintf(value, sizeof(value), "<   %s   >", it->opts[*it->value]);
+        else
+            snprintf(value, sizeof(value), "%s", it->opts[*it->value]);
+        break;
+    case IT_INFO:
+        snprintf(value, sizeof(value), "%s", it->info);
+        break;
+    case IT_ACTION:
+        if (S.confirm_item == index)
+            snprintf(value, sizeof(value), "Tryck igen för att bekräfta");
+        break;
+    }
+    if (value[0]) {
+        u32 col = S.confirm_item == index ? RGBA(255, 190, 120, 255) : TEXT_DIM;
+        text_draw(right, y + 17, 0.58f, 0, fade(col, a), ALIGN_RIGHT, value);
+    }
+}
+
+void settings_draw(void)
+{
+    float a = S.open;
+    float slide = (1 - a) * 10;
+    const Category *c = &s_cats[S.cat];
+
+    gfx_begin(RGBA(20, 20, 24, 255));
+    draw_background();
+    text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, "Inställningar");
+
+    /* kategorier */
+    for (int i = 0; i < CAT_COUNT; i++) {
+        float y = LIST_TOP + i * 30;
+        int selected = i == S.cat;
+        float ta = selected ? 1.0f : S.focus ? 0.42f : 0.8f;
+        if (selected && S.focus == 0) {
+            gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
+            gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), a));
+        }
+        text_draw(LEFT_X + 10 + slide, y + 17.5f, 0.66f, 0, fade(TEXT_MAIN, a * ta), ALIGN_LEFT, s_cats[i].name);
+    }
+
+    /* alternativ */
+    float top = LIST_TOP - S.scroll;
+    if (c->desc) {
+        int n = wrap_desc(c->desc);
+        for (int l = 0; l < n; l++) {
+            float y = top + l * 13 + 9;
+            if (y > LIST_TOP - 4 && y < LIST_BOTTOM)
+                text_draw(RIGHT_X + 8 + slide, y, 0.56f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s_desc[l]);
+        }
+    }
+    for (int i = 0; i < c->count; i++) {
+        float y = top + row_y(c, i);
+        if (y < LIST_TOP - ROW_H || y > LIST_BOTTOM)
+            continue;
+        /* tona ut rader som glider ut ur listan */
+        float edge = clampf((y - (LIST_TOP - ROW_H * 0.6f)) / (ROW_H * 0.6f), 0, 1) *
+                     clampf((LIST_BOTTOM - y) / (ROW_H * 0.6f), 0, 1);
+        float ra = a * edge;
+        int selected = S.focus == 1 && i == S.item[S.cat];
+        if (selected) {
+            gfx_rect(RIGHT_X, y, RIGHT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ra)));
+            gfx_frame(RIGHT_X, y, RIGHT_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), ra));
+        } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
+            gfx_rect(RIGHT_X + 4, y + ROW_H - 0.5f, RIGHT_W - 8, 1, RGBA(255, 255, 255, (int)(26 * ra)));
+        }
+        draw_item(&c->items[i], i, y, selected, ra);
+    }
+
+    draw_hints(a);
+
+    if (S.toast_time > 0) {
+        float ta = clampf(S.toast_time / 0.4f, 0, 1);
+        float w = text_width(0.6f, 0, S.toast) + 30;
+        gfx_round_rect((SCREEN_W - w) / 2, 128, w, 26, 7, RGBA(44, 45, 52, (int)(245 * ta)));
+        text_draw(SCREEN_W / 2, 145, 0.6f, 0, RGBA(240, 240, 245, (int)(255 * ta)), ALIGN_CENTER, S.toast);
+    }
+    /* in-toning */
+    if (a < 1)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));
+    gfx_end();
+}
