@@ -1,6 +1,7 @@
 /* psp5 – made by Mille Weber */
 /* psp5:s utseende: valt spels bild över hela skärmen, en rad kort högst upp
- * där valt kort är stort med tunn ljus ram, flikar för spel/appar,
+ * där valt kort är stort med tunn ljus ram, flikar för spel/appar/bibliotek
+ * (biblioteket visar allt i ett rutnät),
  * neutral ljus typografi och mjuka animationer. All grafik ritas här. */
 #include <pspkernel.h>
 #include <pspctrl.h>
@@ -10,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "ui.h"
 #include "sound.h"
 #include "lang.h"
@@ -27,6 +29,16 @@
 #define BIG_R      9.0f
 #define LABEL_Y    (ROW_Y + SMALL_H + 26) /* titeln under de små korten */
 
+/* biblioteket: rutnät med 5 kolumner */
+#define GRID_COLS  5
+#define GRID_GAP   10.0f
+#define GRID_Y     64.0f   /* första radens överkant */
+#define CELL_W     ((SCREEN_W - 2 * MARGIN - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS)
+#define CELL_H     (CELL_W * 80.0f / 144.0f) /* ikonernas format */
+#define ROW_STEP   (CELL_H + 11.0f)
+#define GRID_ROWS  3       /* hela rader som syns */
+#define GRID_BOTTOM 234.0f /* rutnätet klipps här, ovanför titel och knapptips */
+
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
 #define LAUNCH_LEN 0.45f
@@ -37,7 +49,7 @@
 #define LIGHT       RGBA(238, 238, 242, 255)
 #define DARK        RGBA(18, 18, 22, 255)
 
-static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_APPS };
+static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_APPS, S_TAB_LIBRARY };
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -70,6 +82,31 @@ int ui_selected(const Ui *ui)
     return v->count ? v->idx[ui->sel[ui->tab]] : -1;
 }
 
+/* biblioteket sorteras efter namn eller efter när filen lades till */
+static const EntryList *s_sort_list;
+static int cmp_name(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int c = strcasecmp(x->title, y->title);
+    return c ? c : *(const int *)a - *(const int *)b;
+}
+static int cmp_recent(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    if (x->file_time != y->file_time)
+        return x->file_time > y->file_time ? -1 : 1;
+    return cmp_name(a, b);
+}
+
+static void sort_library(Ui *ui)
+{
+    LoaderView *v = &ui->views[TAB_LIBRARY];
+    if (!v->idx || v->count < 2)
+        return;
+    s_sort_list = ui->list;
+    qsort(v->idx, v->count, sizeof(int), ui->lib_sort ? cmp_recent : cmp_name);
+}
+
 static void build_views(Ui *ui)
 {
     for (int t = 0; t < TAB_COUNT; t++) {
@@ -80,7 +117,26 @@ static void build_views(Ui *ui)
         LoaderView *v = &ui->views[is_app(&ui->list->items[i]) ? TAB_APPS : TAB_GAMES];
         if (v->idx)
             v->idx[v->count++] = i;
+        LoaderView *lib = &ui->views[TAB_LIBRARY];
+        if (lib->idx)
+            lib->idx[lib->count++] = i;
     }
+    sort_library(ui);
+}
+
+/* □ i biblioteket: byt sortering men behåll markeringen på samma spel */
+static void toggle_sort(Ui *ui)
+{
+    LoaderView *v = &ui->views[TAB_LIBRARY];
+    int chosen = ui_selected(ui);
+    ui->lib_sort ^= 1;
+    sort_library(ui);
+    for (int p = 0; p < v->count; p++)
+        if (v->idx[p] == chosen)
+            ui->sel[TAB_LIBRARY] = p;
+    ui->tab_anim = 0.4f;
+    ui->lib_label_for = -2;
+    sound_play(SND_TOGGLE);
 }
 
 static void switch_tab(Ui *ui, int tab)
@@ -146,6 +202,20 @@ static void fit_label(Ui *ui)
     }
 }
 
+/* Kortar titeln med "..." tills den ryms inom max_w */
+static void fit_text(char *out, int out_size, const char *title, float size, float max_w)
+{
+    snprintf(out, out_size, "%s", title);
+    if (text_width(size, 0, out) <= max_w)
+        return;
+    char buf[160];
+    snprintf(buf, sizeof(buf), "%s", title);
+    do {
+        utf8_pop(buf);
+        snprintf(out, out_size, "%s...", buf);
+    } while (buf[0] && text_width(size, 0, out) > max_w);
+}
+
 /* --- livscykel --- */
 
 void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
@@ -157,6 +227,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->launch = -1;
     ui->bg_index = -1;
     ui->label_for = -2;
+    ui->lib_label_for = -2;
     ui->tab_anim = 1;
     ui->accent[0] = ui->accent[1] = ui->accent[2] = 120;
     build_views(ui);
@@ -185,11 +256,14 @@ void ui_toast(Ui *ui, const char *msg)
 
 /* --- uppdatering --- */
 
-static int step_input(Ui *ui, const UiInput *in, float dt)
+/* Riktning med knapprepetition: ±1 = vänster/höger, ±2 = upp/ner (bara i rutnätet) */
+static int step_input(Ui *ui, const UiInput *in, float dt, int vertical)
 {
     int dir = 0;
     if ((in->held & PSP_CTRL_LEFT) || in->lx < 40) dir = -1;
     if ((in->held & PSP_CTRL_RIGHT) || in->lx > 215) dir = 1;
+    if (vertical && ((in->held & PSP_CTRL_UP) || in->ly < 40)) dir = -2;
+    if (vertical && ((in->held & PSP_CTRL_DOWN) || in->ly > 215)) dir = 2;
     if (!dir) {
         ui->repeat_dir = 0;
         return 0;
@@ -264,9 +338,21 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
     int count = view(ui)->count;
     int *sel = &ui->sel[ui->tab];
-    int move = step_input(ui, in, dt);
+    int grid = ui->tab == TAB_LIBRARY;
+    if (grid && (in->pressed & PSP_CTRL_SQUARE) && count > 1 && ui->launch < 0)
+        toggle_sort(ui);
+    int move = step_input(ui, in, dt, grid);
     if (move && count) {
-        int next = clampf(*sel + move, 0, count - 1);
+        int next = *sel + move;
+        if (move == 2 || move == -2) {
+            next = *sel + (move > 0 ? GRID_COLS : -GRID_COLS);
+            /* ner från näst sista raden till en kortare sista rad: sista kortet */
+            if (next >= count && *sel / GRID_COLS < (count - 1) / GRID_COLS)
+                next = count - 1;
+            if (next < 0 || next >= count)
+                next = *sel;
+        }
+        next = clampf(next, 0, count - 1);
         if (next != *sel) {
             *sel = next;
             ui->still = 0;
@@ -285,6 +371,16 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             ui_toast(ui, L(S_NO_ARK));
             sound_play(SND_ERROR);
         }
+    }
+
+    /* rutnätet rullar så att markerad rad alltid syns helt */
+    int row = count ? *sel / GRID_COLS : 0;
+    if (grid) {
+        if (row < ui->grid_target)
+            ui->grid_target = row;
+        if (row > ui->grid_target + GRID_ROWS - 1)
+            ui->grid_target = row - (GRID_ROWS - 1);
+        ui->grid_scroll = approach(ui->grid_scroll, ui->grid_target, 14.0f, dt);
     }
 
     ui->pos = approach(ui->pos, *sel, 13.0f, dt);
@@ -510,12 +606,13 @@ static float key_cap(float x, float y, const char *key, float a)
     return kw;
 }
 
+static float hints_width(void);
+
 static void draw_hints(Ui *ui)
 {
     float a = ui->intro * (ui->launch < 0 ? 1 : 1 - smooth(ui->launch * 2));
     const char *tab = L(S_HINT_TAB), *opts = L(S_SETTINGS);
-    float lw = text_width(0.42f, 1, "L") + 9, rw = text_width(0.42f, 1, "R") + 9;
-    float w = lw + 3 + rw + 6 + text_width(0.6f, 0, tab) + 16 + 13 + 6 + text_width(0.6f, 0, opts);
+    float w = hints_width();
     float x = SCREEN_W - MARGIN - w, y = 246;
 
     gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
@@ -526,6 +623,95 @@ static void draw_hints(Ui *ui)
     gfx_button(x + 6.5f, y, 6.5f, BTN_TRIANGLE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 13 + 6;
     text_draw(x, y + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, opts);
+}
+
+static float hints_width(void)
+{
+    float lw = text_width(0.42f, 1, "L") + 9, rw = text_width(0.42f, 1, "R") + 9;
+    return lw + 3 + rw + 6 + text_width(0.6f, 0, L(S_HINT_TAB)) + 16 + 13 + 6 + text_width(0.6f, 0, L(S_SETTINGS));
+}
+
+/* Biblioteket: allt i ett rutnät, rubrik med antal och sortering, vald titel nere till vänster. */
+static void draw_library(Ui *ui)
+{
+    const LoaderView *v = view(ui);
+    float launch = ui->launch < 0 ? 0 : smooth(ui->launch);
+    float a = ui->intro * smooth(ui->tab_anim);
+    float ui_a = a * (1 - smooth(launch * 2));
+    float slide = (1 - smooth(ui->tab_anim)) * 10;
+
+    /* mörkare yta än i raden – valt spels bild skymtar bara svagt */
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 165));
+
+    /* rubrik: antal till vänster, sortering till höger */
+    char head[96];
+    snprintf(head, sizeof(head), "%s", L(S_LIB_ALL));
+    text_draw(MARGIN, 53, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, head);
+    char num[16];
+    snprintf(num, sizeof(num), "%d", v->count);
+    float hw = text_width(0.66f, 0, head);
+    text_draw(MARGIN + hw + 8, 53, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num);
+
+    char sort[64];
+    snprintf(sort, sizeof(sort), "%s: %s", L(S_SORT), L(ui->lib_sort ? S_SORT_RECENT : S_SORT_NAME));
+    text_draw(SCREEN_W - MARGIN, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_RIGHT, sort);
+    gfx_button(SCREEN_W - MARGIN - text_width(0.56f, 0, sort) - 11, 49, 6, BTN_SQUARE,
+               with_alpha(LIGHT, 0.85f * ui_a), with_alpha(DARK, ui_a));
+
+    /* korten – klipps under rubriken */
+    int sel = ui->sel[TAB_LIBRARY];
+    float focus_anim = smooth(ui->label_anim);
+    int first_row = (int)floorf(ui->grid_scroll) - 1, last_row = (int)ceilf(ui->grid_scroll) + GRID_ROWS + 1;
+    gfx_clip(0, GRID_Y - 8, SCREEN_W, GRID_BOTTOM - (GRID_Y - 8));
+    float sx = 0, sy = 0, sw = 0, shh = 0;
+    for (int p = first_row * GRID_COLS; p < (last_row + 1) * GRID_COLS && p < v->count; p++) {
+        if (p < 0)
+            continue;
+        int r = p / GRID_COLS, c = p % GRID_COLS;
+        float x = MARGIN + c * (CELL_W + GRID_GAP);
+        float y = GRID_Y + (r - ui->grid_scroll) * ROW_STEP + slide;
+        if (y > SCREEN_H || y + CELL_H < GRID_Y - 8)
+            continue;
+        if (p == sel) { /* ritas sist, ovanpå grannarna */
+            sx = x; sy = y; sw = CELL_W; shh = CELL_H;
+            continue;
+        }
+        /* en rad som bara syns delvis bleknar */
+        float fade = clampf((GRID_BOTTOM - y) / CELL_H, 0, 1) * clampf((y + CELL_H - GRID_Y + 8) / CELL_H, 0, 1);
+        draw_card(ui, v->idx[p], x, y, CELL_W, CELL_H, 0, a * (1 - launch) * fade);
+    }
+    if (sw > 0) {
+        float grow = 1 + 0.08f * focus_anim;
+        float w = sw * grow, h = shh * grow;
+        float cx = sx + sw / 2, cy = sy + shh / 2;
+        if (launch > 0) { /* startanimation: kortet växer mot mitten */
+            gfx_clip_reset();
+            float g = 1 + launch * 2.4f;
+            w *= g;
+            h *= g;
+            cx = lerpf(cx, SCREEN_W / 2, launch);
+            cy = lerpf(cy, SCREEN_H / 2, launch);
+        }
+        draw_card(ui, v->idx[sel], cx - w / 2, cy - h / 2, w, h, 0.4f + 0.6f * focus_anim, a);
+    }
+    gfx_clip_reset();
+
+    /* vald titel med typetikett nere till vänster, bredvid knapptipsen */
+    int i = ui_selected(ui);
+    if (i >= 0) {
+        const char *type = type_name(ui->list->items[i].type);
+        float bw = text_width(0.5f, 1, type) + 12;
+        gfx_round_rect(MARGIN, 238.5f, bw, 15, 3, with_alpha(LIGHT, 0.92f * ui_a));
+        text_draw(MARGIN + bw / 2, 249.5f, 0.5f, 1, with_alpha(DARK, ui_a), ALIGN_CENTER, type);
+        float tx = MARGIN + bw + 8;
+        float max_w = SCREEN_W - MARGIN - hints_width() - 30 - tx;
+        if (ui->lib_label_for != i) {
+            fit_text(ui->lib_label, sizeof(ui->lib_label), ui->list->items[i].title, 0.66f, max_w);
+            ui->lib_label_for = i;
+        }
+        text_draw(tx + (1 - focus_anim) * 6, 250.5f, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim),
+                  ALIGN_LEFT, ui->lib_label);
+    }
 }
 
 static void draw_toast(Ui *ui)
@@ -554,7 +740,9 @@ void ui_draw(Ui *ui)
     gfx_begin(CLEAR_COLOR);
     draw_background(ui);
     draw_top_bar(ui);
-    if (view(ui)->count) {
+    if (view(ui)->count && ui->tab == TAB_LIBRARY) {
+        draw_library(ui);
+    } else if (view(ui)->count) {
         draw_row(ui);
         draw_details(ui);
     } else {

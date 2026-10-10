@@ -15,6 +15,14 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Startskärm och bibliotek (1.2.0)
+
+- **Startskärm:** ljuspartiklar virvlar in mot mitten, möts i en blixt och lämnar psp5-loggan kvar medan ett
+  eget ackord spelas. Allt ritas och räknas fram i `src/boot.c` / `src/sound.c`. Valfri knapp hoppar över;
+  stängs av under Inställningar → psp5 → Startanimation (`bootanim=0` i `ms0:/PSP5/psp5.cfg`).
+- **Bibliotek:** tredje fliken (L/R). Alla spel och appar i ett rutnät med 5 kolumner, ↑↓←→ flyttar,
+  □ växlar sortering (namn / senast tillagda).
+
 ## Språk
 Alla texter finns i `src/lang.c` (engelska, svenska, tyska, franska, spanska, italienska, nederländska,
 portugisiska, ryska, japanska). Språket följer PSP:ns systemspråk; svenska väljs manuellt under
@@ -27,7 +35,7 @@ Av/på under Inställningar → psp5 → Systemljud (sparas i `ms0:/PSP5/psp5.cf
 
 ## Inställningar (△)
 Ser ut som PS5:s inställningar och läser/skriver samma filer som arkMenu:
-- **psp5:** autoboot, rensa bildcache, version
+- **psp5:** autoboot, systemljud, startanimation, språk, rensa bildcache, version
 - **Prestanda:** CPU i spel / XMB, extra minne, minneskortscache, ISO-cache
 - **System:** USB-laddning, WPA2, logotyper, dölj bilder/MAC/DLC, lampor, UMD, analogspak, regioner m.m.
 - **Plugins:** slå av/på rader i `ARK_01234/PLUGINS.TXT` och `SEPLUGINS/PLUGINS.TXT`

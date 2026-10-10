@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sound.h"
+#include "config.h"
 
 #define RATE 44100
 #define BLOCK 512 /* stereo-par per utmatning, ~12 ms */
@@ -34,6 +35,7 @@ static SceUID s_thread = -1;
 static int s_channel = -1;
 static volatile int s_quit;
 static volatile int s_built;
+static volatile int s_fade; /* >0: block kvar av uttoningen */
 /* två buffertar: den ena spelas medan nästa fylls – annars skrivs ljudet över
  * mitt i uppspelningen och små bitar upprepas */
 static short __attribute__((aligned(64))) s_out[2][BLOCK * 2];
@@ -56,9 +58,17 @@ static float env(float t, float attack, float tau)
     return a * expf(-(t - (t < attack ? t : attack)) / tau);
 }
 
+/* sinus via tabell – sinf är för långsam för de längre ljuden */
+#define SIN_N 2048
+static float s_sin[SIN_N + 1];
 static float tone(float t, float freq)
 {
-    return sinf(2 * PI * freq * t);
+    float ph = t * freq;
+    ph = (ph - floorf(ph)) * SIN_N;
+    int i = (int)ph;
+    if (i >= SIN_N)
+        i = SIN_N - 1;
+    return s_sin[i] + (s_sin[i + 1] - s_sin[i]) * (ph - i);
 }
 
 /* Fyller en buffert med dur sekunder ljud från gen(t), normaliserat till peak. */
@@ -155,8 +165,57 @@ static float gen_error(float t)
     return s * (env(t, 0.004f, 0.04f) + env(t - 0.09f, 0.004f, 0.05f));
 }
 
+/* startskärmen: ett luftigt sus som stiger, glasklara stänk som tätnar och
+ * ett varmt, brett ackord (Dess-dur med nia) som slår ut när partiklarna möts */
+#define BOOT_HIT 2.25f
+static float s_bt_lo, s_bt_band;
+static const float s_ping_t[] = { 0.45f, 0.78f, 1.05f, 1.27f, 1.46f, 1.62f, 1.76f, 1.88f, 1.98f, 2.07f, 2.14f };
+static const float s_ping_f[] = { 1864.7f, 2217.5f, 2793.8f, 2489.0f, 3322.4f, 2960.0f, 3729.3f, 2217.5f, 4434.9f, 3322.4f, 2793.8f };
+static float gen_boot(float t)
+{
+    /* sus: brus genom ett bandpass som sveper uppåt mot blixten */
+    float rise = fminf(t / BOOT_HIT, 1.0f);
+    float f = 250 + 2800 * rise * rise;
+    float c = 2 * sinf(PI * f / RATE);
+    float hi = noise() - s_bt_lo - 0.35f * s_bt_band;
+    s_bt_band += c * hi;
+    s_bt_lo += c * s_bt_band;
+    float swell = t < BOOT_HIT ? rise * rise * rise : expf(-(t - BOOT_HIT) / 0.25f);
+    float out = s_bt_band * swell * 0.4f;
+
+    /* stänk */
+    for (unsigned i = 0; i < sizeof(s_ping_t) / sizeof(s_ping_t[0]); i++) {
+        float d = t - s_ping_t[i];
+        if (d >= 0 && d < 1.2f)
+            out += tone(d, s_ping_f[i]) * env(d, 0.002f, 0.22f) * (0.10f + 0.10f * s_ping_t[i] / BOOT_HIT);
+    }
+
+    /* ackordet, varje ton i två lätt ostämda kopior för bredd */
+    static const float notes[] = { 69.3f, 138.6f, 207.7f, 277.2f, 349.2f, 415.3f, 622.3f, 830.6f };
+    static const float gain[] = { 0.55f, 0.6f, 0.5f, 0.5f, 0.42f, 0.38f, 0.26f, 0.16f };
+    float d = t - BOOT_HIT + 0.04f;
+    if (d > 0) {
+        float e = (d < 0.09f ? d / 0.09f : 1.0f) * expf(-d / 1.25f);
+        float sum = 0;
+        for (int i = 0; i < 8; i++)
+            sum += (tone(t, notes[i] * 1.0018f) + tone(t, notes[i] * 0.9982f)) * gain[i];
+        out += sum * e * 0.4f;
+        out += tone(d, 2*1661.2f) * env(d, 0.003f, 0.5f) * 0.08f; /* ljus klang i anslaget */
+    }
+    return out;
+}
+
 static void build_sounds(void)
 {
+    for (int i = 0; i <= SIN_N; i++)
+        s_sin[i] = sinf(2 * PI * i / SIN_N);
+    /* startljudet behövs bara första gången (inte efter USB-läge o.d.) */
+    static int boot_done;
+    if (!boot_done && g_boot_anim) {
+        s_bt_lo = s_bt_band = 0;
+        render(SND_BOOT, 4.6f, 0.42f, gen_boot);
+    }
+    boot_done = 1;
     render(SND_MOVE, 0.06f, 0.22f, gen_move);
     s_bp_lo = s_bp_band = 0;
     render(SND_SWIPE, 0.26f, 0.20f, gen_swipe);
@@ -205,10 +264,15 @@ static int audio_thread(SceSize args, void *argp)
                 mix += vo->data[pos];
                 vo->pos = pos + 1;
             }
+            if (s_fade > 0)
+                mix = mix * (s_fade * BLOCK - i) / (24 * BLOCK);
             if (mix > 32767) mix = 32767;
             if (mix < -32768) mix = -32768;
             out[i * 2] = out[i * 2 + 1] = (short)mix;
         }
+        if (s_fade > 0 && --s_fade == 0)
+            for (int v = 0; v < VOICES; v++)
+                s_voices[v].active = 0;
         sceAudioOutputPannedBlocking(s_channel, PSP_AUDIO_VOLUME_MAX, PSP_AUDIO_VOLUME_MAX, out);
     }
     return 0;
@@ -267,6 +331,17 @@ void sound_play(SoundId id)
     pick->active = 1;
 }
 
+int sound_ready(void)
+{
+    return s_built || s_thread < 0;
+}
+
+
+void sound_fade_out(void)
+{
+    s_fade = 24; /* ~0,3 s */
+}
+
 void sound_wait(int timeout_ms)
 {
     for (int t = 0; t < timeout_ms && s_thread >= 0; t += 10) {
@@ -282,7 +357,7 @@ void sound_wait(int timeout_ms)
 #ifdef PSP5_TEST
 void sound_dump(const char *dir)
 {
-    static const char *names[SND_COUNT] = { "move", "swipe", "select", "back", "toggle", "open", "launch", "error" };
+    static const char *names[SND_COUNT] = { "move", "swipe", "select", "back", "toggle", "open", "launch", "error", "boot" };
     while (!s_built)
         sceKernelDelayThread(10000);
     sceIoMkdir(dir, 0777);

@@ -6,6 +6,8 @@
 #include "sound.h"
 #include "lang.h"
 
+unsigned char g_boot_anim = 1;
+
 void config_load(const char *data_dir)
 {
     char path[200], buf[256] = "";
@@ -18,6 +20,8 @@ void config_load(const char *data_dir)
         const char *p;
         if ((p = strstr(buf, "sound=")))
             g_sound_on = p[6] != '0';
+        if ((p = strstr(buf, "bootanim=")))
+            g_boot_anim = p[9] != '0';
         if ((p = strstr(buf, "lang=")))
             g_lang_setting = lang_from_code(p + 5);
     }

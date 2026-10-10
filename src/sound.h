@@ -12,6 +12,7 @@ typedef enum {
     SND_OPEN,    /* öppna inställningar */
     SND_LAUNCH,  /* starta spel */
     SND_ERROR,   /* något gick inte */
+    SND_BOOT,    /* startskärmen */
     SND_COUNT
 } SoundId;
 
@@ -22,6 +23,10 @@ void sound_term(void);
 void sound_play(SoundId id);
 /* Väntar (högst timeout_ms) tills inga ljud spelas. */
 void sound_wait(int timeout_ms);
+/* 1 när ljuden är framräknade (görs i bakgrunden efter sound_init) */
+int sound_ready(void);
+/* Tonar snabbt ut allt som spelas (t.ex. när startskärmen hoppas över). */
+void sound_fade_out(void);
 
 /* På/av, sparas i ms0:/PSP5/psp5.cfg (se config.c) */
 extern unsigned char g_sound_on;

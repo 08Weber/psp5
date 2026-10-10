@@ -7,17 +7,17 @@
 #include "loader.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS };
-enum { TAB_GAMES, TAB_APPS, TAB_COUNT };
+enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_COUNT };
 
 typedef struct {
     u32 pressed; /* nedtryckta denna bildruta */
     u32 held;
-    u8 lx;       /* analog spak, 128 = mitten */
+    u8 lx, ly;   /* analog spak, 128 = mitten */
 } UiInput;
 
 typedef struct {
     const EntryList *list;
-    LoaderView views[TAB_COUNT]; /* Spel / Appar */
+    LoaderView views[TAB_COUNT]; /* Spel / Appar / Bibliotek */
     int tab;
     int sel[TAB_COUNT];  /* position i respektive flik */
     float pos;           /* animerad scrollposition i aktiv flik */
@@ -45,6 +45,13 @@ typedef struct {
     /* knapprepetition */
     int repeat_dir;
     float repeat_timer, repeat_held;
+
+    /* biblioteket: rutnät med allt */
+    int lib_sort;        /* 0 = namn, 1 = senast tillagda */
+    float grid_scroll;   /* animerad översta rad */
+    int grid_target;     /* raden som ska stå överst */
+    char lib_label[160];
+    int lib_label_for;
 
     char toast[96];
     float toast_time;

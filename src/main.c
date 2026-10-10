@@ -19,6 +19,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "config.h"
+#include "boot.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -76,16 +77,18 @@ static int confirm_is_circle(void)
 }
 
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
-static void app_start(EntryList *list, Ui *ui)
+static void app_start(EntryList *list, Ui *ui, int boot)
 {
     gfx_init();
     font_init(lang_needs_cjk());
+    sound_init();
+    if (boot && g_boot_anim)
+        boot_run(&s_running); /* startskärmen, innan spelen läses in */
     s_scan_start = sceKernelGetSystemTimeWide();
     scan_all(list, s_self, s_list_cache, scan_progress);
     if (has_non_ascii(list))
         font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
-    sound_init();
     ui_init(ui, list, confirm_is_circle(), launch_supported());
 }
 
@@ -108,6 +111,7 @@ static void read_pad(UiInput *in, u32 *old)
     in->pressed = pad.Buttons & ~*old;
     in->held = pad.Buttons;
     in->lx = pad.Lx;
+    in->ly = pad.Ly;
     *old = pad.Buttons;
 }
 
@@ -213,7 +217,7 @@ int main(int argc, char *argv[])
 
     EntryList list = { 0 };
     Ui ui;
-    app_start(&list, &ui);
+    app_start(&list, &ui, 1);
 #ifdef PSP5_TEST
     sound_dump(DATA_DIR "/shots/sounds"); /* testbygge: ljuden som WAV */
 #endif
@@ -240,7 +244,7 @@ int main(int argc, char *argv[])
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
-                    app_start(&list, &ui);
+                    app_start(&list, &ui, 0);
                     in_settings = 0;
                 }
                 old = in.held;
@@ -268,7 +272,7 @@ int main(int argc, char *argv[])
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */
-            app_start(&list, &ui);
+            app_start(&list, &ui, 0);
             ui_toast(&ui, L(S_LAUNCH_FAILED));
             continue;
         }

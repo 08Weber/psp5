@@ -17,12 +17,19 @@ it's my own take on that style.
 |---|---|
 | ![Settings](docs/screenshots/settings.png) | ![Performance settings](docs/screenshots/settings-performance.png) |
 | ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
+| ![Startup screen](docs/screenshots/boot.png) | ![Library](docs/screenshots/library.png) |
 
 ## What it does
 
-When you open psp5 you get your games in a row along the top. The selected one is large with a thin light
+psp5 starts with its own startup screen: points of light swirl in toward the middle, meet in a flash and leave
+the psp5 logo behind while a soft chord plays (any button skips it, and you can turn it off in settings).
+Everything is drawn and synthesized in code – no borrowed logos or sounds.
+
+Then you get your games in a row along the top. The selected one is large with a thin light
 frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO and ZSO) live under
 **Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
+Next to them is the **Library**: everything you have, games and apps together, in a grid that's easy to scan
+through. Press □ there to sort by name or by what you added most recently.
 
 Pressing ✕ (or START) starts the game the same way ARK-5's own menu does, so updates, patched ISOs and
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
@@ -54,9 +61,12 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | Button | What it does |
 |---|---|
 | ← → or the analog stick | move between games (hold to go faster) |
-| L / R | switch between Games and Apps |
+| ↑ ↓ | move between rows in the Library |
+| L / R | switch between Games, Apps and Library |
+| □ | sort the Library (name / recently added) |
 | ✕ or START | start the selected game |
 | △ | settings |
+| any button | skip the startup screen |
 | ○ | back |
 | HOME | quit to the XMB |
 

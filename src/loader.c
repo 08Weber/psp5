@@ -9,8 +9,8 @@
 #include "art.h"
 
 #define NEAR_RANGE 5  /* laddas före bakgrunden (raden visar ~6 kort) */
-#define LOAD_RANGE 9  /* laddas i förväg */
-#define KEEP_RANGE 12 /* längre bort än så frigörs */
+#define LOAD_RANGE 14 /* laddas i förväg (biblioteket visar ~17 kort) */
+#define KEEP_RANGE 18 /* längre bort än så frigörs */
 
 static const EntryList *s_list;
 static IconSlot *s_slots;

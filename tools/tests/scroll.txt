@@ -1,0 +1,17 @@
+wait 40
+press cross
+wait 200
+press r
+wait 10
+press r
+wait 30
+press down
+wait 8
+press down
+wait 8
+press down
+wait 40
+shot 01-scrolled
+press down
+wait 40
+shot 02-bottom

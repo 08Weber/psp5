@@ -46,6 +46,16 @@ void gfx_fan(float cx, float cy, const float *xy, int n, u32 color);
 /* Kugghjul med radien r */
 void gfx_gear(float cx, float cy, float r, u32 color, u32 hole);
 
+/* Additiv blandning (ljus som lyser upp det som redan ritats) på/av */
+void gfx_blend_add(int on);
+/* Tjock linje genom n punkter (xy[2*n]) med en färg per punkt */
+/* Prick med radien r i en enda sprite – billig för många partiklar. soft = mjuk kant */
+void gfx_dot(float cx, float cy, float r, u32 color, int soft);
+/* Ritar bara inom rektangeln tills gfx_clip_reset */
+void gfx_clip(float x, float y, float w, float h);
+void gfx_clip_reset(void);
+void gfx_stroke(const float *xy, const u32 *colors, int n, float width);
+
 enum { BTN_CROSS, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE };
 /* Egenritad knappsymbol i en rund platta */
 void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark);

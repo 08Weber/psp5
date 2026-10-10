@@ -175,11 +175,13 @@ static void build(int rebuild)
     toggle(c, L(S_BOOT_PSP5), &g_cfw.launcher);
     toggle(c, L(S_SOUNDS), &g_sound_on);
     c->items[c->count - 1].own = 1;
+    toggle(c, L(S_BOOT_ANIM), &g_boot_anim);
+    c->items[c->count - 1].own = 1;
     choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
     c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
-    info(c, L(S_VERSION), "1.0.3");
+    info(c, L(S_VERSION), "1.2.0");
 
     c = &s_cats[CAT_PERF];
     c->name = L(S_CAT_PERF);

@@ -410,3 +410,51 @@ void text_draw(float x, float y, float size, int bold, u32 color, int align, con
     /* intraFont slår på djuptestet efter sig – vi har ingen djupbuffert */
     sceGuDisable(GU_DEPTH_TEST);
 }
+
+void gfx_blend_add(int on)
+{
+    if (on)
+        sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_FIX, 0, 0xFFFFFFFF);
+    else
+        sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+}
+
+void gfx_stroke(const float *xy, const u32 *colors, int n, float width)
+{
+    if (n < 2)
+        return;
+    CVert *v = sceGuGetMemory(n * 2 * sizeof(CVert));
+    float h = width / 2;
+    for (int i = 0; i < n; i++) {
+        /* riktning från grannpunkterna – ger jämna fogar i kurvor */
+        int a = i > 0 ? i - 1 : i, b = i < n - 1 ? i + 1 : i;
+        float dx = xy[b * 2] - xy[a * 2], dy = xy[b * 2 + 1] - xy[a * 2 + 1];
+        float len = sqrtf(dx * dx + dy * dy);
+        if (len < 1e-4f)
+            len = 1;
+        float nx = -dy / len * h, ny = dx / len * h;
+        v[i * 2] = (CVert){ colors[i], xy[i * 2] + nx, xy[i * 2 + 1] + ny, 0 };
+        v[i * 2 + 1] = (CVert){ colors[i], xy[i * 2] - nx, xy[i * 2 + 1] - ny, 0 };
+    }
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDrawArray(GU_TRIANGLE_STRIP, CVERT_FMT, n * 2, 0, v);
+}
+
+void gfx_dot(float cx, float cy, float r, u32 color, int soft)
+{
+    TVert *v = sceGuGetMemory(2 * sizeof(TVert));
+    v[0] = (TVert){ 0, 0, color, cx - r, cy - r, 0 };
+    v[1] = (TVert){ SHAPE_SIZE, SHAPE_SIZE, color, cx + r, cy + r, 0 };
+    bind(soft ? s_soft : s_disc);
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2, 0, v);
+}
+
+void gfx_clip(float x, float y, float w, float h)
+{
+    sceGuScissor((int)x, (int)y, (int)w, (int)h);
+}
+
+void gfx_clip_reset(void)
+{
+    sceGuScissor(0, 0, SCREEN_W, SCREEN_H);
+}
