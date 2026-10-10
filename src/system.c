@@ -12,13 +12,19 @@
 #include <string.h>
 #include "system.h"
 #include "launch.h"
+#include "arkcfg.h"
 
 #define DEFAULT_ARK_DIR "ms0:/PSP/SAVEDATA/ARK_01234/"
 #define USBSTOR_EF_DRIVERNAME "USBStorEFlash_Driver"
+/* finns när launcherläget är pausat för att psp5 gick till XMB */
+#define LAUNCHER_PAUSED PSP5_DATA_DIR "/launcher.paused"
 
 int scePowerRequestSuspend(void);
 int scePowerRequestColdReset(int unk);
 int scePowerRequestStandby(void);
+
+static int exists(const char *path);
+static void resume_launcher(void);
 
 static ARKConfig s_conf;
 static int s_has_ark;
@@ -41,11 +47,48 @@ void sys_init(const char *self_path)
     char launcher[200];
     snprintf(launcher, sizeof(launcher), "%sVBOOT.PBP", s_ark_dir);
     s_is_launcher = self_path && !strcasecmp(self_path, launcher);
+    resume_launcher();
 }
 
 int sys_has_ark(void) { return s_has_ark; }
 const char *sys_ark_dir(void) { return s_ark_dir; }
 int sys_is_launcher(void) { return s_is_launcher; }
+
+static void settings_path(char *path, int size)
+{
+    snprintf(path, size, "%sSETTINGS.TXT", s_ark_dir);
+}
+
+/* ARK läser SETTINGS.TXT vid varje omstart och slår då på launcherläget igen, så
+ * en utgång till XMB hamnar annars i psp5 direkt. Pausa läget i filen och lämna en
+ * markering – nästa gång psp5 startas (från XMB) slås det på igen. */
+static void pause_launcher(void)
+{
+    char path[200];
+    settings_path(path, sizeof(path));
+    if (!arkcfg_load(path) || !g_cfw.launcher)
+        return;
+    g_cfw.launcher = 0;
+    if (!arkcfg_save(path))
+        return;
+    SceUID fd = sceIoOpen(LAUNCHER_PAUSED, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (fd >= 0)
+        sceIoClose(fd);
+}
+
+static void resume_launcher(void)
+{
+    if (!s_has_ark || !exists(LAUNCHER_PAUSED))
+        return;
+    char path[200];
+    settings_path(path, sizeof(path));
+    if (arkcfg_load(path)) {
+        g_cfw.launcher = 1;
+        if (!arkcfg_save(path))
+            return; /* försök igen nästa start */
+    }
+    sceIoRemove(LAUNCHER_PAUSED);
+}
 
 void sys_exit_xmb(void)
 {
@@ -53,9 +96,8 @@ void sys_exit_xmb(void)
         sceKernelExitGame();
         return;
     }
-    /* I launcherläge byter ARK ut varje XMB-start mot launchern. Stäng av läget
-     * för den här sessionen (inte i SETTINGS.TXT), så att vi verkligen hamnar i XMB.
-     * Vid nästa omstart gäller inställningen igen. */
+    pause_launcher();
+    /* stäng också av läget i minnet, så att inget i den här sessionen startar launchern */
     SEConfigARK se;
     memset(&se, 0, sizeof(se));
     if (sctrlSEGetConfigEx((SEConfig *)&se, sizeof(se)) >= 0 && se.magic == ARK_CONFIG_MAGIC) {

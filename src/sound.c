@@ -34,7 +34,9 @@ static SceUID s_thread = -1;
 static int s_channel = -1;
 static volatile int s_quit;
 static volatile int s_built;
-static short __attribute__((aligned(64))) s_out[BLOCK * 2];
+/* två buffertar: den ena spelas medan nästa fylls – annars skrivs ljudet över
+ * mitt i uppspelningen och små bitar upprepas */
+static short __attribute__((aligned(64))) s_out[2][BLOCK * 2];
 
 /* --- syntes --- */
 
@@ -174,29 +176,40 @@ static int audio_thread(SceSize args, void *argp)
     /* ljuden räknas fram här, i bakgrunden, så att starten inte blir långsammare */
     if (!s_built)
         build_sounds();
+    int buf = 0, tail = 0;
     while (!s_quit) {
         int any = 0;
         for (int v = 0; v < VOICES; v++)
             any |= s_voices[v].active;
-        if (!any) {
+        if (any) {
+            tail = 8; /* efter sista ljudet: några block tystnad (~0,1 s) */
+        } else if (tail > 0) {
+            tail--; /* kanalen ska sluta på tystnad, inte på en bit av ljudet */
+        } else {
             sceKernelDelayThread(4000);
             continue;
         }
+        short *out = s_out[buf];
+        buf ^= 1;
         for (int i = 0; i < BLOCK; i++) {
             int mix = 0;
             for (int v = 0; v < VOICES; v++) {
                 Voice *vo = &s_voices[v];
                 if (!vo->active)
                     continue;
-                mix += vo->data[vo->pos++];
-                if (vo->pos >= vo->len)
+                int pos = vo->pos;
+                if (pos >= vo->len) {
                     vo->active = 0;
+                    continue;
+                }
+                mix += vo->data[pos];
+                vo->pos = pos + 1;
             }
             if (mix > 32767) mix = 32767;
             if (mix < -32768) mix = -32768;
-            s_out[i * 2] = s_out[i * 2 + 1] = (short)mix;
+            out[i * 2] = out[i * 2 + 1] = (short)mix;
         }
-        sceAudioOutputPannedBlocking(s_channel, PSP_AUDIO_VOLUME_MAX, PSP_AUDIO_VOLUME_MAX, s_out);
+        sceAudioOutputPannedBlocking(s_channel, PSP_AUDIO_VOLUME_MAX, PSP_AUDIO_VOLUME_MAX, out);
     }
     return 0;
 }
@@ -246,10 +259,11 @@ void sound_play(SoundId id)
             pick = &s_voices[v];
     if (!pick)
         pick = &s_voices[0];
+    /* rösten stängs först så att mixern aldrig läser en halvt bytt röst */
     pick->active = 0;
+    pick->pos = 0;
     pick->data = s_samples[id].data;
     pick->len = s_samples[id].len;
-    pick->pos = 0;
     pick->active = 1;
 }
 
