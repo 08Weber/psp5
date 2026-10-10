@@ -23,8 +23,12 @@ Download the newest `psp5-*.zip` from the [Releases](../../releases) page and un
 PSP/
   GAME/
     PSP5/
-      EBOOT.PBP
+      EBOOT.PBP       ← psp5 as a normal app
+ARK_LAUNCHER/
+  VBOOT.PBP           ← the same psp5, already named for ARK's launcher (only needed for step 4)
 ```
+
+Both files are the same program – there's nothing to rename.
 
 ## 2. Copy it to your PSP
 
@@ -56,15 +60,18 @@ ARK-5 starts its launcher from `ms0:/PSP/SAVEDATA/ARK_01234/VBOOT.PBP`. (`ARK_01
 the ARK folder – if yours is called something else, use that.)
 
 1. Connect the PSP over USB again.
-2. In `PSP/SAVEDATA/ARK_01234/`, **rename** `VBOOT.PBP` to `VBOOT_ARKMENU.PBP`. That's ARK's original menu,
-   and keeping it means you can always switch back.
-3. Copy psp5's `EBOOT.PBP` into that same folder and rename the copy to `VBOOT.PBP`.
+2. In `PSP/SAVEDATA/ARK_01234/`, **rename** ARK's own `VBOOT.PBP` to `VBOOT_ARKMENU.PBP`. That's ARK's
+   original menu, and keeping it means you can always switch back.
+3. Copy `VBOOT.PBP` from the zip's `ARK_LAUNCHER` folder into `PSP/SAVEDATA/ARK_01234/`.
 4. Eject, leave USB mode, and pick ARK's *Custom Launcher* in the XMB – it now opens psp5.
+
+> The `VBOOT.PBP` is kept in its own folder in the zip on purpose, so that copying the `PSP` folder never
+> overwrites ARK's menu by accident.
 
 To have the PSP boot straight into psp5: press △ → *psp5* → turn on *Boot into psp5*, go back with ○ and
 restart the PSP. From then on, quitting a game with HOME brings you back to psp5.
 
-> If you update ARK, it may put its own `VBOOT.PBP` back. Just copy psp5's `EBOOT.PBP` in again as `VBOOT.PBP`.
+> If you update ARK, it may put its own `VBOOT.PBP` back. Just copy psp5's `VBOOT.PBP` in again.
 
 ## 5. Covers (optional)
 
@@ -83,8 +90,9 @@ shows what would happen without changing anything.
 
 ## Updating
 
-Copy the new `EBOOT.PBP` over the old one in `PSP/GAME/PSP5/`, and – if psp5 is your ARK launcher – also over
-`PSP/SAVEDATA/ARK_01234/VBOOT.PBP`. Your settings, covers and cache in `ms0:/PSP5/` stay as they are.
+Copy the new `EBOOT.PBP` over the old one in `PSP/GAME/PSP5/`, and – if psp5 is your ARK launcher – the new
+`VBOOT.PBP` over the one in `PSP/SAVEDATA/ARK_01234/`. Your settings, covers and cache in `ms0:/PSP5/` stay as
+they are.
 
 ## A few things worth knowing
 

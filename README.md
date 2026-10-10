@@ -44,30 +44,10 @@ A few other things I cared about:
   Swedish, so you pick it under *Settings → psp5 → Language*.
 - **It never touches flash0**, and you can always get back to the normal XMB.
 
-## Where the files go on your PSP
+## Installing
 
-Grab `psp5-*.zip` from [Releases](../../releases). Inside is a single file, `EBOOT.PBP`. Connect your PSP
-over USB and put things here:
-
-```
-Memory Stick (ms0:)
-├── PSP/
-│   ├── GAME/
-│   │   ├── PSP5/
-│   │   │   └── EBOOT.PBP          ← psp5 as a normal app (XMB → Game → Memory Stick)
-│   │   └── <your homebrew>/EBOOT.PBP
-│   └── SAVEDATA/
-│       └── ARK_01234/
-│           └── VBOOT.PBP          ← optional: psp5 as ARK's launcher (keep a copy of the old one!)
-├── ISO/                           ← your PSP games: .iso, .cso, .zso (one level of sub-folders is fine)
-└── PSP5/                          ← created by psp5: covers, cache and its own settings
-```
-
-The short version: copy the `PSP` folder from the zip to the root of the memory stick, and you're done.
-If you want psp5 to replace ARK's launcher, rename ARK's `VBOOT.PBP` to `VBOOT_ARKMENU.PBP` first, then put
-psp5's `EBOOT.PBP` there as `VBOOT.PBP`.
-
-[INSTALL.md](INSTALL.md) walks through all of it step by step, including how to undo it.
+Everything you need to get psp5 onto your PSP – as a normal app or as ARK's launcher – is in
+**[INSTALL.md](INSTALL.md)**. The download is on the [Releases](../../releases) page.
 
 ## Buttons
 
@@ -85,16 +65,8 @@ in the normal XMB.
 
 ## Covers
 
-psp5 uses each game's own icon and background automatically. If you'd like your own covers, or just want
-everything prepared up front, run `tools/covers.py` on your computer with the PSP connected:
-
-```sh
-py -m pip install --user pillow lz4
-py tools/covers.py E:\
-```
-
-Drop your own pictures in `tools/covers-src/`, named after the game ID or the title (`ULES00502.jpg`,
-`LocoRoco.png`, and `ULES00502_bg.jpg` for a background). They get cropped to fit automatically.
+psp5 uses each game's own icon and background automatically. If you'd like your own covers, there's a small
+tool for your computer that prepares them – see the covers section in [INSTALL.md](INSTALL.md).
 
 ## Status
 
