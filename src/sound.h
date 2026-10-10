@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 #ifndef SOUND_H
 #define SOUND_H
 
@@ -22,10 +23,8 @@ void sound_play(SoundId id);
 /* Väntar (högst timeout_ms) tills inga ljud spelas. */
 void sound_wait(int timeout_ms);
 
-/* På/av, sparas i ms0:/PSP5/psp5.cfg */
+/* På/av, sparas i ms0:/PSP5/psp5.cfg (se config.c) */
 extern unsigned char g_sound_on;
-void sound_load_setting(const char *data_dir);
-void sound_save_setting(const char *data_dir);
 
 #ifdef PSP5_TEST
 /* testbygge: spara ljuden som WAV för att kunna lyssna på datorn */

@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 #ifndef GFX_H
 #define GFX_H
 
@@ -56,7 +57,11 @@ void tex_flush(Texture *t); /* skriv tillbaka dcache efter CPU-ändringar */
 /* Text (intraFont, systemtypsnitt läses från flash0). `need_jpn` laddar japanskt alternativtypsnitt. */
 void font_init(int need_jpn);
 void font_term(void);
+/* Laddar det japanska typsnittet (kanji, kana, kyrilliska) om det inte redan är laddat. */
+void font_ensure_cjk(void);
 float text_width(float size, int bold, const char *s);
 void text_draw(float x, float y, float size, int bold, u32 color, int align, const char *s);
+/* Största storlek ≤ size (ner till min_size) där texten ryms inom max_w */
+float text_fit(float size, float min_size, int bold, float max_w, const char *s);
 
 #endif

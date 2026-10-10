@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# psp5 – made by Mille Weber
 """Tillverkar påhittade testspel (iso/cso/zso + EBOOT.PBP) för PPSSPP.
 
 Körs i WSL (behöver genisoimage, pack-pbp, python3-pil, python3-lz4):

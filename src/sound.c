@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Gränssnittsljud i stil med moderna konsolmenyer: mjuka, korta och luftiga.
  * Allt syntetiseras här (sinustoner, filtrerat brus, envelopes) – inga ljudfiler. */
 #include <pspkernel.h>
@@ -261,37 +262,6 @@ void sound_wait(int timeout_ms)
         if (!any)
             return;
         sceKernelDelayThread(10000);
-    }
-}
-
-/* --- inställning --- */
-
-void sound_load_setting(const char *data_dir)
-{
-    char path[200], buf[64] = "";
-    snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
-    if (fd < 0)
-        return;
-    int n = sceIoRead(fd, buf, sizeof(buf) - 1);
-    sceIoClose(fd);
-    if (n > 0) {
-        buf[n] = 0;
-        const char *p = strstr(buf, "sound=");
-        if (p)
-            g_sound_on = p[6] != '0';
-    }
-}
-
-void sound_save_setting(const char *data_dir)
-{
-    char path[200], buf[32];
-    snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
-    int n = snprintf(buf, sizeof(buf), "sound=%d\n", g_sound_on ? 1 : 0);
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (fd >= 0) {
-        sceIoWrite(fd, buf, n);
-        sceIoClose(fd);
     }
 }
 

@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Läser/skriver ARK:s SETTINGS.TXT. Logiken följer arkMenu så att filen blir
  * exakt som ARK förväntar sig. Rader som inte känns igen (kommentarer,
  * spelspecifika rader, okända nycklar) behålls oförändrade. */

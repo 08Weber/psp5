@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* psp5:s utseende: valt spels bild över hela skärmen, en rad kort högst upp
  * där valt kort är stort med tunn ljus ram, flikar för spel/appar,
  * neutral ljus typografi och mjuka animationer. All grafik ritas här. */
@@ -11,6 +12,7 @@
 #include <string.h>
 #include "ui.h"
 #include "sound.h"
+#include "lang.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -35,7 +37,7 @@
 #define LIGHT       RGBA(238, 238, 242, 255)
 #define DARK        RGBA(18, 18, 22, 255)
 
-static const char *TAB_NAMES[TAB_COUNT] = { "Spel", "Appar" };
+static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_APPS };
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -280,7 +282,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             ui->launch = 0;
             sound_play(SND_LAUNCH);
         } else {
-            ui_toast(ui, "ARK hittades inte. Spel kan bara startas på PSP:n");
+            ui_toast(ui, L(S_NO_ARK));
             sound_play(SND_ERROR);
         }
     }
@@ -353,8 +355,8 @@ static void draw_top_bar(Ui *ui)
     for (int t = 0; t < TAB_COUNT; t++) {
         int active = t == ui->tab;
         text_draw(x, 25, 0.8f, active, with_alpha(active ? TEXT_MAIN : RGBA(255, 255, 255, 120), a),
-                  ALIGN_LEFT, TAB_NAMES[t]);
-        x += text_width(0.8f, active, TAB_NAMES[t]) + 22;
+                  ALIGN_LEFT, L(TAB_NAMES[t]));
+        x += text_width(0.8f, active, L(TAB_NAMES[t])) + 22;
     }
 
     ScePspDateTime now;
@@ -490,7 +492,7 @@ static void draw_details(Ui *ui)
     if (e->type != ENTRY_HOMEBREW && e->game_id[0])
         text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, fade), ALIGN_LEFT, e->game_id);
 
-    const char *go = "Starta";
+    const char *go = L(S_LAUNCH);
     float bx = MARGIN, by = 220, bh = 26;
     float tw = text_width(0.66f, 0, go);
     float w = 8 + 16 + 8 + tw + 14;
@@ -511,7 +513,7 @@ static float key_cap(float x, float y, const char *key, float a)
 static void draw_hints(Ui *ui)
 {
     float a = ui->intro * (ui->launch < 0 ? 1 : 1 - smooth(ui->launch * 2));
-    const char *tab = "Flik", *opts = "Inställningar";
+    const char *tab = L(S_HINT_TAB), *opts = L(S_SETTINGS);
     float lw = text_width(0.42f, 1, "L") + 9, rw = text_width(0.42f, 1, "R") + 9;
     float w = lw + 3 + rw + 6 + text_width(0.6f, 0, tab) + 16 + 13 + 6 + text_width(0.6f, 0, opts);
     float x = SCREEN_W - MARGIN - w, y = 246;
@@ -541,9 +543,8 @@ static void draw_toast(Ui *ui)
 static void draw_empty(Ui *ui)
 {
     float a = ui->intro * smooth(ui->tab_anim);
-    const char *title = ui->tab == TAB_APPS ? "Inga appar hittades" : "Inga spel hittades";
-    const char *hint = ui->tab == TAB_APPS ? "Lägg appar i ms0:/PSP/GAME"
-                                           : "Lägg ISO, CSO eller ZSO i ms0:/ISO";
+    const char *title = L(ui->tab == TAB_APPS ? S_NO_APPS : S_NO_GAMES);
+    const char *hint = L(ui->tab == TAB_APPS ? S_HINT_APPS : S_HINT_GAMES);
     text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, title);
     text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, hint);
 }
@@ -576,7 +577,7 @@ void ui_draw_scanning(int done, const char *name, float time)
     static const float neutral[3] = { 120, 120, 120 };
     gfx_begin(CLEAR_COLOR);
     draw_spotlight(neutral);
-    text_draw(MARGIN, 120, 0.9f, 0, TEXT_MAIN, ALIGN_LEFT, "Läser in spel");
+    text_draw(MARGIN, 120, 0.9f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_LOADING));
 
     /* tre punkter som pulserar i tur och ordning */
     for (int i = 0; i < 3; i++) {

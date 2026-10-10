@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Hämtar kort- och bakgrundsbilder. Ordning:
  *   1. covers/<nyckel>.ico|.bg  (egna omslag från PC-skriptet)
  *   2. cache/<hash>.ico|.bg     (tidigare bearbetade)

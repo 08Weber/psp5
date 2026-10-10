@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 #ifndef PLUGINS_H
 #define PLUGINS_H
 
@@ -5,7 +6,7 @@
 
 typedef struct {
     char name[48];     /* filnamn, t.ex. "leda.prx" */
-    char where[24];    /* läsbar runlevel: "Alla", "Spel", "XMB", ... */
+    char where[24];    /* runlevel som i filen: "always", "game", "vsh", ... */
     unsigned char on;
     int file, line;    /* vilken fil/rad den kommer från */
 } Plugin;

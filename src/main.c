@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* psp5 – egen launcher för PSP med ARK-5. Kan köras som vanlig app
  * (ms0:/PSP/GAME/PSP5) eller som ARK:s launcher (ARK_01234/VBOOT.PBP). */
 #include <pspkernel.h>
@@ -16,6 +17,8 @@
 #include "system.h"
 #include "testrun.h"
 #include "sound.h"
+#include "lang.h"
+#include "config.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -76,13 +79,11 @@ static int confirm_is_circle(void)
 static void app_start(EntryList *list, Ui *ui)
 {
     gfx_init();
-    font_init(0);
+    font_init(lang_needs_cjk());
     s_scan_start = sceKernelGetSystemTimeWide();
     scan_all(list, s_self, s_list_cache, scan_progress);
-    if (has_non_ascii(list)) {
-        font_term();
-        font_init(1);
-    }
+    if (has_non_ascii(list))
+        font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
     sound_init();
     ui_init(ui, list, confirm_is_circle(), launch_supported());
@@ -114,7 +115,7 @@ static void read_pad(UiInput *in, u32 *old)
 static void usb_mode(void)
 {
     gfx_init();
-    font_init(0);
+    font_init(lang_needs_cjk());
     if (!sys_usb_start()) {
         gfx_term();
         font_term();
@@ -133,16 +134,16 @@ static void usb_mode(void)
         gfx_begin(RGBA(20, 20, 24, 255));
         gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, RGBA(48, 46, 50, 255), RGBA(22, 23, 29, 255));
         gfx_glow(70, -60, 60, 60, 120, RGBA(215, 198, 186, 80));
-        text_draw(28, 34, 0.95f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, "USB-läge");
+        text_draw(28, 34, 0.95f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_MODE));
         float pulse = 0.6f + 0.4f * sinf(t * 3);
         gfx_circle(SCREEN_W / 2, 120, 26, RGBA(255, 255, 255, state == 2 ? 40 : (int)(30 * pulse)));
         gfx_circle(SCREEN_W / 2, 120, 9, state == 2 ? RGBA(120, 220, 150, 255) : RGBA(236, 236, 240, (int)(255 * pulse)));
         text_draw(SCREEN_W / 2, 176, 0.75f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER,
-                  state == 2 ? "Ansluten till datorn" : "Väntar på USB-kabel");
+                  L(state == 2 ? S_USB_CONNECTED : S_USB_WAITING));
         text_draw(SCREEN_W / 2, 196, 0.56f, 0, RGBA(160, 162, 172, 255), ALIGN_CENTER,
-                  "Mata ut PSP:n i datorn innan du avslutar");
+                  L(S_USB_EJECT));
         gfx_button(SCREEN_W / 2 - 40, 246, 6.5f, BTN_CIRCLE, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
-        text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, "Avsluta USB");
+        text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         gfx_end();
     }
     sys_usb_stop();
@@ -203,7 +204,7 @@ int main(int argc, char *argv[])
     snprintf(s_list_cache, sizeof(s_list_cache), "%s/cache/list.bin", DATA_DIR);
     sceIoMkdir(DATA_DIR, 0777);
     art_init(DATA_DIR);
-    sound_load_setting(DATA_DIR);
+    config_load(DATA_DIR); /* ljud och språk */
     sys_init(s_self);
     testrun_init();
 
@@ -235,7 +236,7 @@ int main(int argc, char *argv[])
             if (action == SA_CLOSE) {
                 in_settings = 0;
                 if (settings_commit())
-                    ui_toast(&ui, "Sparat. Ändringarna gäller efter omstart");
+                    ui_toast(&ui, L(S_SAVED));
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
@@ -268,7 +269,7 @@ int main(int argc, char *argv[])
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */
             app_start(&list, &ui);
-            ui_toast(&ui, "Kunde inte starta spelet");
+            ui_toast(&ui, L(S_LAUNCH_FAILED));
             continue;
         }
         ui_draw(&ui);

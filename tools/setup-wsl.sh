@@ -1,4 +1,5 @@
 #!/bin/bash
+# psp5 – made by Mille Weber
 # Installerar pspdev-verktygskedjan + psp-cfw-sdk i WSL-distron "pspdev".
 # Kör från Windows:  wsl -d pspdev -u root -- bash /mnt/c/path/to/psp5/tools/setup-wsl.sh
 set -e

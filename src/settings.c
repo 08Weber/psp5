@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Inställningar i samma anda som PS5:s: mörk yta med ett strålkastarljus,
  * kategorier till vänster, alternativ till höger med tunna skiljelinjer
  * och en tunn ljus ram runt det valda. All grafik ritas här. */
@@ -6,11 +7,14 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include "settings.h"
 #include "arkcfg.h"
 #include "plugins.h"
 #include "system.h"
 #include "sound.h"
+#include "lang.h"
+#include "config.h"
 
 #define TITLE_Y     34.0f
 #define LEFT_X      32.0f
@@ -33,7 +37,7 @@ typedef struct {
     const char *label;
     ItemType type;
     unsigned char *value;        /* TOGGLE/CHOICE */
-    const char *const *opts;     /* CHOICE */
+    const char **opts;           /* CHOICE */
     int nopts;
     int action;                  /* ACTION: SA_* */
     int confirm;                 /* ACTION: kräver ✕ två gånger */
@@ -67,16 +71,47 @@ static struct {
     float toast_time;
 } S;
 
+/* valtexter byggs om när språket ändras */
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
-static const char *const OPT_HIGHMEM[] = { "Av", "Standard", "Auto", "+16 MiB", "Max" };
-static const char *const OPT_MSCACHE[] = { "Av", "4 KiB", "8 KiB", "16 KiB" };
-static const char *const OPT_INFERNO[] = { "Av", "LRU", "RR" };
-static const char *const OPT_LOGOS[] = { "Av", "Alla", "Vid spelstart", "Vid uppstart" };
-static const char *const OPT_PICS[] = { "Av", "Alla", "PIC0", "PIC1" };
-static const char *const OPT_UMDREG[] = { "Standard", "Japan", "Amerika", "Europa" };
-static const char *const OPT_VSHREG[] = { "Standard", "Japan", "Amerika", "Europa", "Korea", "Storbritannien",
-                                          "Latinamerika", "Australien", "Hongkong", "Taiwan", "Ryssland",
-                                          "Kina", "Debug I", "Debug II" };
+static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
+static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT];
+
+static void build_options(void)
+{
+    const char *off = L(S_OFF), *all = L(S_ALL), *def = L(S_STANDARD);
+    const char *highmem[] = { off, def, L(S_AUTO), "+16 MiB", "Max" };
+    const char *mscache[] = { off, "4 KiB", "8 KiB", "16 KiB" };
+    const char *inferno[] = { off, "LRU", "RR" };
+    const char *logos[] = { off, all, L(S_LOGOS_GAME), L(S_LOGOS_BOOT) };
+    const char *pics[] = { off, all, "PIC0", "PIC1" };
+    const char *umd[] = { def, L(S_R_JAPAN), L(S_R_AMERICA), L(S_R_EUROPE) };
+    const char *vsh[] = { def, L(S_R_JAPAN), L(S_R_AMERICA), L(S_R_EUROPE), L(S_R_KOREA), L(S_R_UK),
+                          L(S_R_LATAM), L(S_R_AUSTRALIA), L(S_R_HONGKONG), L(S_R_TAIWAN), L(S_R_RUSSIA),
+                          L(S_R_CHINA), "Debug I", "Debug II" };
+    memcpy(OPT_HIGHMEM, highmem, sizeof(highmem));
+    memcpy(OPT_MSCACHE, mscache, sizeof(mscache));
+    memcpy(OPT_INFERNO, inferno, sizeof(inferno));
+    memcpy(OPT_LOGOS, logos, sizeof(logos));
+    memcpy(OPT_PICS, pics, sizeof(pics));
+    memcpy(OPT_UMDREG, umd, sizeof(umd));
+    memcpy(OPT_VSHREG, vsh, sizeof(vsh));
+    for (int i = 0; i < LANG_COUNT; i++)
+        OPT_LANG[i] = lang_name(i);
+}
+
+/* ARK:s runlevel i PLUGINS.TXT → läsbar text */
+static const char *runlevel_name(const char *rl)
+{
+    if (!strcasecmp(rl, "always") || !strcasecmp(rl, "all")) return L(S_ALL);
+    if (!strcasecmp(rl, "game")) return L(S_TAB_GAMES);
+    if (!strcasecmp(rl, "umd") || !strcasecmp(rl, "psp")) return L(S_RL_PSP);
+    if (!strcasecmp(rl, "homebrew")) return L(S_TAB_APPS);
+    if (!strcasecmp(rl, "pops") || !strcasecmp(rl, "psx") || !strcasecmp(rl, "ps1")) return "PS1";
+    if (!strcasecmp(rl, "vsh") || !strcasecmp(rl, "xmb")) return "XMB";
+    if (!strcasecmp(rl, "launcher")) return "Launcher";
+    return rl; /* spel-ID */
+}
+
 #define N(a) (int)(sizeof(a) / sizeof((a)[0]))
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -105,7 +140,7 @@ static void toggle(Category *c, const char *label, unsigned char *v)
     add(c, label, IT_TOGGLE)->value = v;
 }
 
-static void choice(Category *c, const char *label, unsigned char *v, const char *const *opts, int n)
+static void choice(Category *c, const char *label, unsigned char *v, const char **opts, int n)
 {
     Item *it = add(c, label, IT_CHOICE);
     it->value = v;
@@ -127,78 +162,83 @@ static void info(Category *c, const char *label, const char *value)
     snprintf(add(c, label, IT_INFO)->info, sizeof(((Item *)0)->info), "%s", value);
 }
 
-static void build(void)
+/* rebuild = 1: menyn byggs om (t.ex. nytt språk) utan att tappa osparade val */
+static void build(int rebuild)
 {
+    build_options();
     memset(s_cats, 0, sizeof(s_cats));
     Category *c;
 
     c = &s_cats[CAT_PSP5];
     c->name = "psp5";
-    c->desc = "ARK-inställningar sparas i SETTINGS.TXT och gäller efter omstart. "
-              "Håll SELECT när PSP:n startar för att hoppa över dem och komma till XMB.";
-    toggle(c, "Starta psp5 vid uppstart", &g_cfw.launcher);
-    toggle(c, "Systemljud", &g_sound_on);
+    c->desc = L(S_DESC_PSP5);
+    toggle(c, L(S_BOOT_PSP5), &g_cfw.launcher);
+    toggle(c, L(S_SOUNDS), &g_sound_on);
     c->items[c->count - 1].own = 1;
-    info(c, "psp5 är ARK:s launcher", sys_is_launcher() ? "Ja" : "Nej");
-    action(c, "Rensa bildcache", SA_CLEAR_CACHE, 0);
-    info(c, "Version", "1.0.1");
+    choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
+    c->items[c->count - 1].own = 1;
+    info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
+    action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
+    info(c, L(S_VERSION), "1.1.0");
 
     c = &s_cats[CAT_PERF];
-    c->name = "Prestanda";
-    c->desc = "Högre klockfrekvens ger jämnare spel men drar mer batteri. Över 333 MHz är överklockning.";
-    choice(c, "CPU i spel", &g_cfw.clock_game, OPT_CLOCK, N(OPT_CLOCK));
-    choice(c, "CPU i XMB och launcher", &g_cfw.clock_vsh, OPT_CLOCK, N(OPT_CLOCK));
-    choice(c, "Extra minne", &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
-    choice(c, "Minneskortscache", &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
-    choice(c, "ISO-cache (Inferno)", &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
+    c->name = L(S_CAT_PERF);
+    c->desc = L(S_DESC_PERF);
+    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, (const char **)OPT_CLOCK, N(OPT_CLOCK));
+    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, (const char **)OPT_CLOCK, N(OPT_CLOCK));
+    choice(c, L(S_EXTRA_MEM), &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
+    choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
+    choice(c, L(S_ISO_CACHE), &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
 
     c = &s_cats[CAT_SYSTEM];
-    c->name = "System";
-    toggle(c, "USB-laddning", &g_cfw.usbcharge);
-    toggle(c, "WPA2 för Wi-Fi", &g_cfw.wpa2);
-    choice(c, "Hoppa över logotyper", &g_cfw.skiplogos, OPT_LOGOS, N(OPT_LOGOS));
-    choice(c, "Dölj spelbilder i XMB", &g_cfw.hidepics, OPT_PICS, N(OPT_PICS));
-    toggle(c, "Dölj MAC-adress", &g_cfw.hidemac);
-    toggle(c, "Dölj DLC", &g_cfw.hidedlc);
-    toggle(c, "Släck lamporna", &g_cfw.noled);
-    toggle(c, "Stäng av UMD-enheten", &g_cfw.noumd);
-    toggle(c, "Stäng av analogspaken", &g_cfw.noanalog);
-    toggle(c, "Ljud av med HOME + volym", &g_cfw.vitamute);
-    toggle(c, "QA-flaggor", &g_cfw.qaflags);
-    choice(c, "UMD-region", &g_cfw.regionchange, OPT_UMDREG, N(OPT_UMDREG));
-    choice(c, "XMB-region", &g_cfw.vshregion, OPT_VSHREG, N(OPT_VSHREG));
+    c->name = L(S_CAT_SYSTEM);
+    toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
+    toggle(c, L(S_WPA2), &g_cfw.wpa2);
+    choice(c, L(S_SKIP_LOGOS), &g_cfw.skiplogos, OPT_LOGOS, N(OPT_LOGOS));
+    choice(c, L(S_HIDE_PICS), &g_cfw.hidepics, OPT_PICS, N(OPT_PICS));
+    toggle(c, L(S_HIDE_MAC), &g_cfw.hidemac);
+    toggle(c, L(S_HIDE_DLC), &g_cfw.hidedlc);
+    toggle(c, L(S_NO_LED), &g_cfw.noled);
+    toggle(c, L(S_NO_UMD), &g_cfw.noumd);
+    toggle(c, L(S_NO_ANALOG), &g_cfw.noanalog);
+    toggle(c, L(S_VITA_MUTE), &g_cfw.vitamute);
+    toggle(c, L(S_QA_FLAGS), &g_cfw.qaflags);
+    choice(c, L(S_UMD_REGION), &g_cfw.regionchange, OPT_UMDREG, N(OPT_UMDREG));
+    choice(c, L(S_XMB_REGION), &g_cfw.vshregion, OPT_VSHREG, N(OPT_VSHREG));
 
     c = &s_cats[CAT_PLUGINS];
-    c->name = "Plugins";
-    c->desc = "Plugins laddas av ARK vid nästa start. Håll START när PSP:n startar för att hoppa över alla.";
+    c->name = L(S_CAT_PLUGINS);
+    c->desc = L(S_DESC_PLUGINS);
     for (int i = 0; i < plugins_count() && c->count < MAX_ITEMS; i++) {
         Plugin *p = plugins_get(i);
-        s_plugin_on[i] = p->on;
+        if (!rebuild)
+            s_plugin_on[i] = p->on;
         Item *it = add(c, p->name, IT_TOGGLE);
         it->value = &s_plugin_on[i];
         it->plugin = i + 1;
-        snprintf(it->info, sizeof(it->info), "%s", p->where);
+        snprintf(it->info, sizeof(it->info), "%s", runlevel_name(p->where));
     }
     if (!c->count)
-        info(c, "Inga plugins installerade", "");
+        info(c, L(S_NO_PLUGINS), "");
 
     c = &s_cats[CAT_POWER];
-    c->name = "Ström och USB";
-    action(c, "USB-läge", SA_USB, 0);
-    action(c, "Gå till XMB", SA_XMB, 0);
-    action(c, "Viloläge", SA_SUSPEND, 1);
-    action(c, "Starta om", SA_RESTART, 1);
-    action(c, "Stäng av", SA_SHUTDOWN, 1);
-    action(c, "Återställningsmeny", SA_RECOVERY, 1);
+    c->name = L(S_CAT_POWER);
+    action(c, L(S_USB_MODE), SA_USB, 0);
+    action(c, L(S_TO_XMB), SA_XMB, 0);
+    action(c, L(S_SLEEP), SA_SUSPEND, 1);
+    action(c, L(S_RESTART), SA_RESTART, 1);
+    action(c, L(S_SHUTDOWN), SA_SHUTDOWN, 1);
+    action(c, L(S_RECOVERY), SA_RECOVERY, 1);
 }
 
 void settings_open(void)
 {
+    font_ensure_cjk(); /* språkens egna namn (Русский, 日本語) */
     char path[200];
     snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
     arkcfg_load(path);
     plugins_load(sys_ark_dir());
-    build();
+    build(0);
     memset(&S, 0, sizeof(S));
     S.confirm_item = -1;
 }
@@ -207,7 +247,7 @@ int settings_commit(void)
 {
     int changed = S.cfw_dirty || S.plugins_dirty;
     if (S.own_dirty)
-        sound_save_setting(PSP5_DATA_DIR); /* gäller direkt, ingen omstart */
+        config_save(PSP5_DATA_DIR); /* ljud och språk gäller direkt, ingen omstart */
     if (S.cfw_dirty) {
         char path[200];
         snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
@@ -307,6 +347,12 @@ int settings_update(const UiInput *in, float dt)
             *it->value = (*it->value + change + it->nopts) % it->nopts;
             mark_dirty(it);
             sound_play(SND_TOGGLE);
+            if (it->value == &g_lang_setting) {
+                lang_apply();
+                if (lang_needs_cjk())
+                    font_ensure_cjk();
+                build(1);
+            }
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
@@ -345,41 +391,71 @@ int settings_update(const UiInput *in, float dt)
 
 /* --- ritning --- */
 
-#define MAX_DESC_LINES 4
-static char s_desc[MAX_DESC_LINES][96];
+#define MAX_DESC_LINES 6
+static char s_desc[MAX_DESC_LINES][160];
 
 /* Radbryter beskrivningen till högerspaltens bredd. */
+/* Längd i byte på UTF-8-tecknet som börjar i p */
+static int utf8_len(const char *p)
+{
+    unsigned char c = (unsigned char)*p;
+    return c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+}
+
+/* Radbryter beskrivningen till högerspaltens bredd. Bryter vid mellanslag, och
+ * mellan enskilda tecken när ett "ord" inte får plats (japanska har inga mellanslag). */
 static int wrap_desc(const char *text)
 {
+    const float max_w = RIGHT_W - 8;
     int lines = 0;
-    char word[64], line[96] = "";
+    char line[sizeof(s_desc[0])] = "";
     const char *p = text;
     while (*p && lines < MAX_DESC_LINES) {
-        int n = 0;
         while (*p == ' ')
             p++;
-        while (*p && *p != ' ' && n < (int)sizeof(word) - 1)
-            word[n++] = *p++;
-        word[n] = 0;
-        if (!n)
+        if (!*p)
             break;
-        char test[160];
-        snprintf(test, sizeof(test), "%s%s%s", line, line[0] ? " " : "", word);
-        if (text_width(0.56f, 0, test) > RIGHT_W - 8 && line[0]) {
-            snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
-            snprintf(line, sizeof(line), "%s", word);
-        } else {
+        /* nästa ord */
+        const char *end = p;
+        while (*end && *end != ' ')
+            end += utf8_len(end);
+        char test[sizeof(line) * 2];
+        snprintf(test, sizeof(test), "%s%s%.*s", line, line[0] ? " " : "", (int)(end - p), p);
+        if (text_width(0.56f, 0, test) <= max_w && strlen(test) < sizeof(line)) {
             snprintf(line, sizeof(line), "%s", test);
+            p = end;
+            continue;
         }
+        if (line[0]) { /* ordet får inte plats – ny rad */
+            snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
+            line[0] = 0;
+            continue;
+        }
+        /* ordet är bredare än raden: ta så många tecken som får plats */
+        int n = 0;
+        while (p + n < end) {
+            int l = utf8_len(p + n);
+            snprintf(test, sizeof(test), "%.*s", n + l, p);
+            if (n && (text_width(0.56f, 0, test) > max_w || n + l >= (int)sizeof(line)))
+                break;
+            n += l;
+        }
+        snprintf(s_desc[lines++], sizeof(s_desc[0]), "%.*s", n, p);
+        p += n;
     }
     if (line[0] && lines < MAX_DESC_LINES)
         snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
     return lines;
 }
 
+static float desc_line_h(void)
+{
+    return lang_needs_cjk() ? 15.0f : 13.0f;
+}
+
 static float desc_height(const Category *c)
 {
-    return c->desc ? wrap_desc(c->desc) * 13.0f + 10 : 0;
+    return c->desc ? wrap_desc(c->desc) * desc_line_h() + 10 : 0;
 }
 
 static float row_y(const Category *c, int i)
@@ -405,7 +481,7 @@ static void draw_toggle(float x, float y, int on, float a)
 
 static void draw_hints(float a)
 {
-    const char *sel = "Välj", *back = "Tillbaka";
+    const char *sel = L(S_SELECT), *back = L(S_BACK);
     float w = 13 + 5 + text_width(0.58f, 0, sel) + 14 + 13 + 5 + text_width(0.58f, 0, back);
     float x = SCREEN_W - 22 - w, y = 252;
     gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
@@ -421,8 +497,6 @@ static void draw_hints(float a)
 static void draw_item(const Item *it, int index, float y, int selected, float a)
 {
     float right = RIGHT_X + RIGHT_W - 8;
-    text_draw(RIGHT_X + 8, y + 17, 0.62f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
-
     char value[64] = "";
     switch (it->type) {
     case IT_TOGGLE:
@@ -441,13 +515,19 @@ static void draw_item(const Item *it, int index, float y, int selected, float a)
         break;
     case IT_ACTION:
         if (S.confirm_item == index)
-            snprintf(value, sizeof(value), "Tryck igen för att bekräfta");
+            snprintf(value, sizeof(value), "%s", L(S_CONFIRM));
         break;
     }
+    float value_w = 0;
     if (value[0]) {
+        float vs = text_fit(0.58f, 0.46f, 0, RIGHT_W * 0.55f, value);
+        value_w = text_width(vs, 0, value) + 12;
         u32 col = S.confirm_item == index ? RGBA(255, 190, 120, 255) : TEXT_DIM;
-        text_draw(right, y + 17, 0.58f, 0, fade(col, a), ALIGN_RIGHT, value);
+        text_draw(right, y + 17, vs, 0, fade(col, a), ALIGN_RIGHT, value);
     }
+    /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
+    float ls = text_fit(0.62f, 0.48f, 0, right - value_w - (RIGHT_X + 8), it->label);
+    text_draw(RIGHT_X + 8, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
 }
 
 void settings_draw(void)
@@ -458,7 +538,7 @@ void settings_draw(void)
 
     gfx_begin(RGBA(20, 20, 24, 255));
     draw_background();
-    text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, "Inställningar");
+    text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
 
     /* kategorier */
     for (int i = 0; i < CAT_COUNT; i++) {
@@ -469,7 +549,8 @@ void settings_draw(void)
             gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
             gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), a));
         }
-        text_draw(LEFT_X + 10 + slide, y + 17.5f, 0.66f, 0, fade(TEXT_MAIN, a * ta), ALIGN_LEFT, s_cats[i].name);
+        float cs = text_fit(0.66f, 0.5f, 0, LEFT_W - 16, s_cats[i].name);
+        text_draw(LEFT_X + 10 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, a * ta), ALIGN_LEFT, s_cats[i].name);
     }
 
     /* alternativ */
@@ -477,7 +558,7 @@ void settings_draw(void)
     if (c->desc) {
         int n = wrap_desc(c->desc);
         for (int l = 0; l < n; l++) {
-            float y = top + l * 13 + 9;
+            float y = top + l * desc_line_h() + 9;
             if (y > LIST_TOP - 4 && y < LIST_BOTTOM)
                 text_draw(RIGHT_X + 8 + slide, y, 0.56f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s_desc[l]);
         }

@@ -1,3 +1,4 @@
+# psp5 – made by Mille Weber
 # Kör testbygget (dist-test) i PPSSPP med ett testskript – utan att skicka tangenter till skrivbordet.
 #   powershell -ExecutionPolicy Bypass -File tools\ppsspp-test.ps1 -Script tools\tests\settings.txt -Out <mapp>
 # psp5 skriver ms0:/PSP5/shots/NAMN.req när en skärmdump ska tas; vi fotograferar då

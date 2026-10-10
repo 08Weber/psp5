@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 #ifndef SETTINGS_H
 #define SETTINGS_H
 

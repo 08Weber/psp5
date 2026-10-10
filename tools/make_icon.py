@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# psp5 – made by Mille Weber
 """Ritar psp5:s egen ikon (ICON0.PNG 144×80) och XMB-bakgrund (PIC1.PNG 480×272) till res/.
 Helt egen grafik: mörkblå yta, mjuka ljusvågor och ordet "psp5" i tunn stil.
     py tools\\make_icon.py

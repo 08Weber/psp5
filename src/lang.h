@@ -1,0 +1,46 @@
+/* psp5 – made by Mille Weber */
+#ifndef LANG_H
+#define LANG_H
+
+/* Språk. LANG_AUTO följer PSP:ns systemspråk (svenska finns inte som systemspråk
+ * på PSP, så det väljs manuellt i inställningarna). */
+typedef enum {
+    LANG_AUTO, LANG_EN, LANG_SV, LANG_DE, LANG_FR, LANG_ES, LANG_IT, LANG_NL, LANG_PT, LANG_RU, LANG_JA,
+    LANG_COUNT
+} LangId;
+
+typedef enum {
+    S_TAB_GAMES, S_TAB_APPS, S_LAUNCH, S_HINT_TAB, S_SETTINGS,
+    S_NO_GAMES, S_NO_APPS, S_HINT_GAMES, S_HINT_APPS, S_NO_ARK, S_LOADING, S_SAVED, S_LAUNCH_FAILED,
+    S_USB_MODE, S_USB_CONNECTED, S_USB_WAITING, S_USB_EJECT, S_USB_EXIT,
+    S_SELECT, S_BACK, S_YES, S_NO, S_CONFIRM, S_OFF, S_AUTO, S_STANDARD, S_ALL,
+    S_CAT_PERF, S_CAT_SYSTEM, S_CAT_PLUGINS, S_CAT_POWER,
+    S_DESC_PSP5, S_DESC_PERF, S_DESC_PLUGINS,
+    S_BOOT_PSP5, S_SOUNDS, S_LANGUAGE, S_IS_LAUNCHER, S_CLEAR_CACHE, S_VERSION,
+    S_CPU_GAME, S_CPU_XMB, S_EXTRA_MEM, S_MS_CACHE, S_ISO_CACHE,
+    S_USB_CHARGE, S_WPA2, S_SKIP_LOGOS, S_HIDE_PICS, S_HIDE_MAC, S_HIDE_DLC, S_NO_LED, S_NO_UMD,
+    S_NO_ANALOG, S_VITA_MUTE, S_QA_FLAGS, S_UMD_REGION, S_XMB_REGION, S_NO_PLUGINS,
+    S_TO_XMB, S_SLEEP, S_RESTART, S_SHUTDOWN, S_RECOVERY,
+    S_LOGOS_GAME, S_LOGOS_BOOT,
+    S_R_JAPAN, S_R_AMERICA, S_R_EUROPE, S_R_KOREA, S_R_UK, S_R_LATAM, S_R_AUSTRALIA, S_R_HONGKONG,
+    S_R_TAIWAN, S_R_RUSSIA, S_R_CHINA,
+    S_RL_PSP, S_LANG_AUTO,
+    S_COUNT
+} StrId;
+
+/* Valt språk (LANG_AUTO … LANG_JA), sparas i psp5.cfg */
+extern unsigned char g_lang_setting;
+
+/* Bestämmer aktuellt språk från inställningen och systemspråket. */
+void lang_apply(void);
+/* Text på aktuellt språk */
+const char *L(StrId id);
+/* Språkets eget namn ("Svenska", "Deutsch", …), eller "Automatiskt" på aktuellt språk för LANG_AUTO */
+const char *lang_name(int id);
+/* Kortkod för psp5.cfg ("auto", "en", "sv", …) */
+const char *lang_code(int id);
+int lang_from_code(const char *code);
+/* 1 om aktuellt språk behöver det japanska typsnittet (japanska, ryska) */
+int lang_needs_cjk(void);
+
+#endif

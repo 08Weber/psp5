@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 #include <pspkernel.h>
 #include <string.h>
 #include <strings.h>

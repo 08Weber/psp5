@@ -1,3 +1,4 @@
+# psp5 – made by Mille Weber
 # Fotograferar ett fönster även om det ligger bakom andra (PrintWindow).
 #   tools\window-shot.ps1 -Process PPSSPPWindows64 -Out shot.png
 param([string]$Process = 'PPSSPPWindows64', [Parameter(Mandatory)][string]$Out)

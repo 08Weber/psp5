@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* PLUGINS.TXT: "runlevel, sökväg, on|off" per rad. Vi behåller filen rad för rad
  * och ändrar bara det sista fältet på de rader man slår av/på. */
 #include <pspkernel.h>
@@ -34,18 +35,6 @@ static char *trim(char *s)
     return s;
 }
 
-static const char *runlevel_name(const char *rl)
-{
-    if (!strcasecmp(rl, "always") || !strcasecmp(rl, "all")) return "Alla";
-    if (!strcasecmp(rl, "game")) return "Spel";
-    if (!strcasecmp(rl, "umd") || !strcasecmp(rl, "psp")) return "PSP-spel";
-    if (!strcasecmp(rl, "homebrew")) return "Appar";
-    if (!strcasecmp(rl, "pops") || !strcasecmp(rl, "psx") || !strcasecmp(rl, "ps1")) return "PS1";
-    if (!strcasecmp(rl, "vsh") || !strcasecmp(rl, "xmb")) return "XMB";
-    if (!strcasecmp(rl, "launcher")) return "Launcher";
-    return rl; /* spel-ID */
-}
-
 static void parse_line(int file, int line)
 {
     char tmp[LINE_LEN], *save = NULL, *parts[4] = { 0 };
@@ -62,7 +51,7 @@ static void parse_line(int file, int line)
     Plugin *pl = &s_plugins[s_count++];
     const char *base = strrchr(parts[1], '/');
     snprintf(pl->name, sizeof(pl->name), "%s", base ? base + 1 : parts[1]);
-    snprintf(pl->where, sizeof(pl->where), "%s", runlevel_name(parts[0]));
+    snprintf(pl->where, sizeof(pl->where), "%s", parts[0]);
     pl->on = !strcasecmp(parts[2], "on") || !strcmp(parts[2], "1") || !strcasecmp(parts[2], "enabled") ||
              !strcasecmp(parts[2], "true");
     pl->file = file;

@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Bakgrundstråd som laddar bilder i prioritetsordning:
  * synliga ikoner → begärd bakgrund → ikoner lite längre bort.
  * Bara huvudtråden frigör, och bara platser i läget READY/MISSING. */

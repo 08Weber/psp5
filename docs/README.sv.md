@@ -15,6 +15,11 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Språk
+Alla texter finns i `src/lang.c` (engelska, svenska, tyska, franska, spanska, italienska, nederländska,
+portugisiska, ryska, japanska). Språket följer PSP:ns systemspråk; svenska väljs manuellt under
+Inställningar → psp5 → Språk (sparas i `ms0:/PSP5/psp5.cfg`).
+
 ## Ljud
 Egna gränssnittsljud (`src/sound.c`) räknas fram vid start – inga ljudfiler och inga ljud från någon konsol.
 Tick vid bläddring, swish vid flikbyte, toner för välj/tillbaka och ett ackord när ett spel startar.

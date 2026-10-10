@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Startar spel på samma sätt som ARK-5:s arkMenu
  * (Launcher-Menus/arkMenu/src/iso.cpp och eboot.cpp). */
 #include <pspkernel.h>

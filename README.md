@@ -1,126 +1,131 @@
 # psp5
 
-A modern, dark game launcher for the PSP running **ARK-5** custom firmware, with a layout inspired by
-present-day console home screens. It can run as a normal homebrew app or **replace ARK-5's own
-launcher (arkMenu)**, including a full settings screen for the CFW.
+**Made by Mille Weber**
 
-All graphics are drawn by psp5 itself – no logos, icons or other artwork from Sony are used.
+I love the PSP, but going back to the XMB after using a PS5 always feels a bit dated. So I built
+psp5: a launcher for the PSP that tries to recreate the look and feel of the **PS5 user interface** –
+the row of game tiles at the top, the big artwork filling the screen behind them, the clean dark settings
+pages – on a 480×272 screen from 2004.
 
-![Home screen](docs/screenshots/home.png)
+psp5 runs on PSPs with the **ARK-5** custom firmware. You can start it like any other homebrew, or let it
+take over as ARK's own launcher so your PSP boots straight into it.
+
+Everything you see is drawn by psp5 itself. No logos, icons, sounds or other assets from Sony are used –
+it's my own take on that style.
 
 | Settings | Performance |
 |---|---|
 | ![Settings](docs/screenshots/settings.png) | ![Performance settings](docs/screenshots/settings-performance.png) |
+| ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
 
-> The screenshots use generated test games. The user interface text is currently in **Swedish**.
+## What it does
 
-## Features
+When you open psp5 you get your games in a row along the top. The selected one is large with a thin light
+frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO and ZSO) live under
+**Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
 
-- **Home screen** – a row of game cards: the selected game is large with a thin light frame, the rest
-  follow as small cards. The selected game's own artwork (PIC1) fills the screen and cross-fades
-  when you move. Tabs for **Games** and **Apps** (L/R), clock and battery in the corner.
-- **Finds everything** – `ISO`, `CSO` and `ZSO` in `ms0:/ISO` (plus one level of sub-folders) and
-  `EBOOT.PBP` homebrew, PSN and PS1 games in `ms0:/PSP/GAME`. Titles and icons are read from
-  `PARAM.SFO` / `ICON0.PNG` inside the files, including Japanese titles.
-- **Launches games the same way ARK-5 does** – the same `systemctrl` calls as ARK-5's arkMenu,
-  including installed updates (`PBOOT.PBP`), patched ISOs (`EBOOT.OLD`) and plain `BOOT.BIN`.
-- **Fast and light** – only the cards near the selection are loaded, in a background thread.
-  Artwork and the game list are cached as small ready-to-use textures. Everything (threads,
-  textures, fonts, GPU) is freed before a game starts.
-- **Settings (△)** – modelled on modern console settings pages:
-  - CFW settings in ARK's own `SETTINGS.TXT`, written in exactly the same format as arkMenu
-    (CPU clock, extra memory, caches, USB charging, logos, regions, …). Unknown lines and comments are kept.
-  - Enable/disable plugins in `PLUGINS.TXT`.
-  - USB mode, exit to XMB, sleep, restart, shut down and ARK's recovery menu.
-  - "Boot into psp5" (ARK's launcher autoboot) and interface sounds on/off.
-- **Interface sounds** – soft ticks when moving, a swipe between tabs, chimes for select/back and a
-  swelling chord when a game starts. The sounds are synthesized by psp5 at start-up (no audio files, no
-  sounds taken from any console) and can be turned off in settings. Preview them in [`docs/sounds/`](docs/sounds).
-- **Cover tool for your PC** – `tools/covers.py` prepares card and background images for every game
-  on the memory stick, from your own pictures or the games' own artwork.
-- **Never touches flash0.**
+Pressing ✕ (or START) starts the game the same way ARK-5's own menu does, so updates, patched ISOs and
+PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
+so the game gets the whole PSP.
 
-## Install
+Press △ for the settings, laid out like the PS5's settings pages. From there you can change ARK's CFW
+options (CPU speed, extra memory, caches, USB charging and so on), turn plugins on and off, connect over
+USB, restart, shut down, jump to the XMB or open ARK's recovery menu.
 
-See **[INSTALL.md](INSTALL.md)** for step-by-step instructions, both as a normal app and as ARK-5's launcher.
+A few other things I cared about:
 
-Quick version: download `psp5-*.zip` from [Releases](../../releases) and copy the `PSP` folder to the
-root of your memory stick.
+- **It's quick.** Only the tiles near your selection are loaded, in the background, and all artwork is cached
+  as small ready-made textures, so after the first start it opens almost instantly.
+- **It has sounds.** Soft ticks when you move around, a swipe between tabs and a little chord when a game
+  starts. I synthesize them in code, so there are no audio files – you can listen to them in
+  [`docs/sounds/`](docs/sounds), or turn them off in settings.
+- **It speaks your language.** psp5 follows the PSP's system language: English, German, French, Spanish,
+  Italian, Dutch, Portuguese, Russian and Japanese. Swedish is there too – the PSP itself doesn't offer
+  Swedish, so you pick it under *Settings → psp5 → Language*.
+- **It never touches flash0**, and you can always get back to the normal XMB.
 
-## Controls
+## Where the files go on your PSP
 
-| Button | Action |
+Grab `psp5-*.zip` from [Releases](../../releases). Inside is a single file, `EBOOT.PBP`. Connect your PSP
+over USB and put things here:
+
+```
+Memory Stick (ms0:)
+├── PSP/
+│   ├── GAME/
+│   │   ├── PSP5/
+│   │   │   └── EBOOT.PBP          ← psp5 as a normal app (XMB → Game → Memory Stick)
+│   │   └── <your homebrew>/EBOOT.PBP
+│   └── SAVEDATA/
+│       └── ARK_01234/
+│           └── VBOOT.PBP          ← optional: psp5 as ARK's launcher (keep a copy of the old one!)
+├── ISO/                           ← your PSP games: .iso, .cso, .zso (one level of sub-folders is fine)
+└── PSP5/                          ← created by psp5: covers, cache and its own settings
+```
+
+The short version: copy the `PSP` folder from the zip to the root of the memory stick, and you're done.
+If you want psp5 to replace ARK's launcher, rename ARK's `VBOOT.PBP` to `VBOOT_ARKMENU.PBP` first, then put
+psp5's `EBOOT.PBP` there as `VBOOT.PBP`.
+
+[INSTALL.md](INSTALL.md) walks through all of it step by step, including how to undo it.
+
+## Buttons
+
+| Button | What it does |
 |---|---|
-| ← → / analog stick | move (hold to scroll faster) |
-| L / R | switch tab (Games / Apps) |
-| ✕ or START (○ with the Japanese button setting) | launch |
+| ← → or the analog stick | move between games (hold to go faster) |
+| L / R | switch between Games and Apps |
+| ✕ or START | start the selected game |
 | △ | settings |
-| ○ | back (in settings) |
-| HOME | quit to XMB |
+| ○ | back |
+| HOME | quit to the XMB |
+
+If something ever goes wrong, hold **SELECT** while the PSP boots – ARK then skips its settings and you land
+in the normal XMB.
+
+## Covers
+
+psp5 uses each game's own icon and background automatically. If you'd like your own covers, or just want
+everything prepared up front, run `tools/covers.py` on your computer with the PSP connected:
+
+```sh
+py -m pip install --user pillow lz4
+py tools/covers.py E:\
+```
+
+Drop your own pictures in `tools/covers-src/`, named after the game ID or the title (`ULES00502.jpg`,
+`LocoRoco.png`, and `ULES00502_bg.jpg` for a background). They get cropped to fit automatically.
 
 ## Status
 
-- Developed and tested on a **PSP-2000 with ARK-5**. Game launching, artwork and covers are confirmed
-  working on real hardware.
-- The settings screen, USB mode and recovery shortcut are new and have so far only been tested in PPSSPP.
-- Other models (1000/3000/Street) should work but are untested. PSP Go (`ef0:`) and PS Vita are not supported.
+I've been using psp5 on my own **PSP-2000 with ARK-5**, and launching games, artwork and covers all work
+there. The settings screen, USB mode and the language support are newer, so let me know if something
+behaves oddly. Other PSP models should be fine but I haven't been able to try them. The PSP Go and PS Vita
+aren't supported.
 
-## Building
+## Building it yourself
 
-psp5 is built with the [pspdev](https://github.com/pspdev/pspdev) toolchain and
-[psp-cfw-sdk](https://github.com/pspdev/psp-cfw-sdk) (ARK's headers and stub libraries).
-Packages used: `psp-cfw-sdk`, `libpng`, `libintrafont`, `zlib` (plus `liblz4` and `libcisoread` from the SDK).
-
-On Linux with pspdev installed:
+psp5 is written in C and built with the [pspdev](https://github.com/pspdev/pspdev) toolchain plus
+[psp-cfw-sdk](https://github.com/pspdev/psp-cfw-sdk), which provides ARK's headers and libraries. With pspdev
+installed it's just:
 
 ```sh
 make
-# result: EBOOT.PBP
 ```
 
-On Windows the project uses a **WSL1** distro (WSL2 works too, but enables the hypervisor):
+On Windows I build it inside WSL – `tools/setup-wsl.sh` installs the toolchain and `tools/build.sh` builds
+`dist/PSP/GAME/PSP5/EBOOT.PBP`.
 
-```sh
-wsl -d pspdev -u root -- bash /mnt/c/path/to/psp5/tools/setup-wsl.sh   # once: toolchain + packages
-wsl -d pspdev --exec bash /mnt/c/path/to/psp5/tools/build.sh           # -> dist/PSP/GAME/PSP5/EBOOT.PBP
-```
+## Thanks
 
-### Testing in PPSSPP
-
-`tools/make_testdata.py` creates fake test games (iso/cso/zso/EBOOT) and `tools/run-ppsspp.ps1` copies
-everything to PPSSPP's memory stick and starts it. For automated runs, `tools/build.sh test` builds a
-variant with a scripted test mode (`src/testrun.c`) and `tools/ppsspp-test.ps1 -Script tools/tests/settings.txt`
-replays button presses and saves screenshots without touching your keyboard.
-PPSSPP has no ARK `systemctrl`, so launching games only works on a real PSP.
-
-## Project layout
-
-| Path | Contents |
-|---|---|
-| `src/main.c` | start-up, main loop, freeing everything before a game starts |
-| `src/ui.c` | home screen layout and animations |
-| `src/settings.c` | settings screen |
-| `src/gfx.c` | small 2D renderer on the PSP GPU (sceGu) + intraFont text |
-| `src/loader.c` | background thread that loads artwork near the selection |
-| `src/art.c`, `src/image.c` | covers and cache, PNG decoding, scaling, blur, NTX texture files |
-| `src/scan.c`, `src/iso.c`, `src/sfo.c` | scanning, ISO/CSO/ZSO reading, PARAM.SFO |
-| `src/launch.c` | launching through ARK-5's systemctrl |
-| `src/arkcfg.c`, `src/plugins.c` | ARK's `SETTINGS.TXT` and `PLUGINS.TXT` |
-| `src/system.c` | USB, power, XMB and recovery |
-| `src/sound.c` | synthesized interface sounds and a small audio mixer |
-| `tools/` | build, test and cover scripts |
-| `docs/README.sv.md` | Swedish developer notes |
-
-## Credits
-
-- [ARK-5](https://github.com/PSP-Arkfive) by the PSP-Arkfive team – psp5 follows arkMenu's launch logic
-  and settings format, and uses ARK's libraries through psp-cfw-sdk.
-- [pspdev](https://github.com/pspdev) – toolchain, PSPSDK and packages.
+- The [ARK-5](https://github.com/PSP-Arkfive) team – psp5 starts games and stores settings the same way
+  their arkMenu does, and uses ARK's libraries through psp-cfw-sdk.
+- [pspdev](https://github.com/pspdev) for the toolchain, PSPSDK and packages.
 - intraFont, libpng, zlib, LZ4 and libcisoread.
 
 ## License
 
 GPL-3.0 – see [LICENSE](LICENSE).
 
-psp5 is an unofficial fan project and is not affiliated with or endorsed by Sony Interactive Entertainment.
-"PSP" and "PlayStation" are trademarks of Sony Interactive Entertainment Inc.
+psp5 is an unofficial fan project by Mille Weber. It is not affiliated with or endorsed by Sony Interactive
+Entertainment. "PSP", "PS5" and "PlayStation" are trademarks of Sony Interactive Entertainment Inc.

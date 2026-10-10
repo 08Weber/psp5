@@ -1,24 +1,23 @@
 # Installing psp5
 
-psp5 can be installed in two ways:
+*psp5 – made by Mille Weber*
 
-- **A – as a normal app**: it shows up in the XMB under *Game → Memory Stick*. Nothing else changes.
-- **B – as ARK-5's launcher**: it replaces ARK's own launcher (arkMenu). ARK's *Custom Launcher* entry
-  starts psp5, and if you want, the PSP can boot straight into psp5 instead of the XMB.
+There are two ways to use psp5, and you can start with the first and switch to the second later –
+it's the same file either way.
 
-You can do A first and B later. Both use the same file.
+- **As a normal app.** psp5 shows up in the XMB under *Game → Memory Stick*. Nothing else on your PSP changes.
+- **As ARK-5's launcher.** psp5 replaces ARK's own menu (arkMenu). ARK's *Custom Launcher* item opens psp5,
+  and if you like, the PSP can boot straight into psp5 instead of the XMB.
 
-## Requirements
+## What you need
 
-- A PSP (made and tested on a PSP-2000) with **ARK-5** custom firmware installed.
-  PSP Go and PS Vita are not supported.
-- A USB cable, or another way to copy files to the memory stick.
-- Optional, for covers: a PC with Python 3.
+- A PSP with the **ARK-5** custom firmware. I made psp5 on a PSP-2000; the PSP Go and PS Vita aren't supported.
+- A USB cable (or another way to copy files to the memory stick).
+- For the optional cover tool: a computer with Python 3.
 
 ## 1. Download
 
-Download the latest `psp5-*.zip` from the [Releases](../../releases) page and unzip it.
-It contains:
+Download the newest `psp5-*.zip` from the [Releases](../../releases) page and unzip it. You'll get:
 
 ```
 PSP/
@@ -27,105 +26,84 @@ PSP/
       EBOOT.PBP
 ```
 
-## 2. Copy to the PSP
+## 2. Copy it to your PSP
 
-1. On the PSP, go to *Settings → USB Connection* and connect the cable. The memory stick appears as a drive
-   on your computer (for example `E:`).
-2. Copy the `PSP` folder from the zip to the **root** of the memory stick, so that you get
-   `E:\PSP\GAME\PSP5\EBOOT.PBP`. Let it merge with the existing `PSP` folder.
+1. On the PSP, go to *Settings → USB Connection* and plug in the cable. The memory stick shows up as a drive
+   on your computer, for example `E:`.
+2. Copy the `PSP` folder from the zip to the **root** of the memory stick and let it merge with the `PSP`
+   folder that's already there. You should end up with `E:\PSP\GAME\PSP5\EBOOT.PBP`.
 
-### Where your games should be
+While you're there, check that your games are where psp5 looks for them:
 
-| What | Where |
+| What | Where it goes |
 |---|---|
-| PSP games as `.iso`, `.cso` or `.zso` | `ms0:/ISO/` (sub-folders one level deep are fine, e.g. `ISO/Racing/`) |
-| Homebrew, PSN games, PS1 games (`EBOOT.PBP`) | `ms0:/PSP/GAME/<folder>/EBOOT.PBP` |
+| PSP games as `.iso`, `.cso` or `.zso` | `ms0:/ISO/` – one level of sub-folders is fine, e.g. `ISO/Racing/` |
+| Homebrew, PSN games and PS1 games (`EBOOT.PBP`) | `ms0:/PSP/GAME/<folder>/EBOOT.PBP` |
 
-## 3. Start it (option A)
+## 3. Start it
 
-Eject the memory stick safely on the computer, leave USB mode, and start **psp5** from
-*Game → Memory Stick*.
+Eject the memory stick safely on your computer, leave USB mode, and start **psp5** from *Game → Memory Stick*.
 
-The first start shows a short loading screen while psp5 reads all your games. After that the list is
-cached and psp5 starts quickly. psp5 creates the folder `ms0:/PSP5/` for its cache and covers.
+The very first time, psp5 spends a moment reading all your games. After that it remembers them and opens
+quickly. It keeps its cache, covers and settings in a folder called `ms0:/PSP5/`.
 
-### Updating
+psp5 picks its language from the PSP's system language. Want a different one – or Swedish, which the PSP
+itself doesn't have? Press △ → *psp5* → *Language*.
 
-To update to a newer version, copy the new `EBOOT.PBP` over the old one – to `PSP/GAME/PSP5/` and, if you
-use option B, also as `PSP/SAVEDATA/ARK_01234/VBOOT.PBP`. Your settings, covers and cache in `ms0:/PSP5/` are kept.
+## 4. Make psp5 your ARK launcher (optional)
 
-## 4. Use psp5 as ARK-5's launcher (option B, optional)
+ARK-5 starts its launcher from `ms0:/PSP/SAVEDATA/ARK_01234/VBOOT.PBP`. (`ARK_01234` is the usual name of
+the ARK folder – if yours is called something else, use that.)
 
-ARK-5 starts its launcher from `ms0:/PSP/SAVEDATA/ARK_01234/VBOOT.PBP`
-(`ARK_01234` is the default name of the ARK folder – use the name your ARK folder has).
+1. Connect the PSP over USB again.
+2. In `PSP/SAVEDATA/ARK_01234/`, **rename** `VBOOT.PBP` to `VBOOT_ARKMENU.PBP`. That's ARK's original menu,
+   and keeping it means you can always switch back.
+3. Copy psp5's `EBOOT.PBP` into that same folder and rename the copy to `VBOOT.PBP`.
+4. Eject, leave USB mode, and pick ARK's *Custom Launcher* in the XMB – it now opens psp5.
 
-1. Connect the PSP over USB.
-2. In `PSP/SAVEDATA/ARK_01234/`, **rename** `VBOOT.PBP` to `VBOOT_ARKMENU.PBP`.
-   This keeps ARK's original launcher so you can go back at any time.
-3. Copy psp5's `EBOOT.PBP` into the same folder and rename the copy to `VBOOT.PBP`.
-4. Eject and leave USB mode. ARK's *Custom Launcher* item in the XMB now opens psp5.
+To have the PSP boot straight into psp5: press △ → *psp5* → turn on *Boot into psp5*, go back with ○ and
+restart the PSP. From then on, quitting a game with HOME brings you back to psp5.
 
-**Boot straight into psp5:** in psp5 press **△** → *psp5* → turn on *Starta psp5 vid uppstart*
-("boot into psp5"), go back with ○ and restart the PSP. Games you quit with HOME now return to psp5.
-
-> An ARK update may replace `VBOOT.PBP` with arkMenu again. Just copy psp5's `EBOOT.PBP` back as `VBOOT.PBP`.
+> If you update ARK, it may put its own `VBOOT.PBP` back. Just copy psp5's `EBOOT.PBP` in again as `VBOOT.PBP`.
 
 ## 5. Covers (optional)
 
-psp5 uses the games' own icon and background automatically. To prepare all images in advance – or use your
-own covers – run the cover tool on your computer while the PSP is connected over USB:
+psp5 uses each game's own icon and background on its own. If you want to prepare everything in advance or use
+your own covers, run the cover tool on your computer while the PSP is connected:
 
 ```sh
-py -m pip install --user pillow lz4      # once
-py tools/covers.py E:\                   # E: = the PSP
+py -m pip install --user pillow lz4      # only the first time
+py tools/covers.py E:\                   # E: is your PSP
 ```
 
-Your own pictures go in `tools/covers-src/`, named after the game ID or title
-(`ULES00502.jpg`, `LocoRoco.png`). Add `_bg` for a background picture (`ULES00502_bg.jpg`).
-Images are cropped automatically. Options: `--force` (redo everything), `--clean` (remove covers of games
-you no longer have), `--dry-run`.
+Put your own pictures in `tools/covers-src/`, named after the game ID or the title – `ULES00502.jpg` or
+`LocoRoco.png` for the tile, and `ULES00502_bg.jpg` for a background. They're cropped to fit automatically.
+Useful options: `--force` redoes everything, `--clean` removes covers for games you've deleted, and `--dry-run`
+shows what would happen without changing anything.
 
-The images are written to `ms0:/PSP5/covers/`.
+## Updating
 
-## Controls
+Copy the new `EBOOT.PBP` over the old one in `PSP/GAME/PSP5/`, and – if psp5 is your ARK launcher – also over
+`PSP/SAVEDATA/ARK_01234/VBOOT.PBP`. Your settings, covers and cache in `ms0:/PSP5/` stay as they are.
 
-| Button | Action |
-|---|---|
-| ← → / analog stick | move between games |
-| L / R | switch between *Spel* (games) and *Appar* (apps) |
-| ✕ or START | launch the selected game |
-| △ | settings (*Inställningar*) |
-| HOME | quit to the XMB |
+## A few things worth knowing
 
-The menus are in Swedish. A few translations for the settings screen:
-
-| Swedish | English |
-|---|---|
-| Prestanda | Performance |
-| Ström och USB | Power and USB |
-| Starta om / Stäng av / Viloläge | Restart / Shut down / Sleep |
-| Gå till XMB | Exit to XMB |
-| Återställningsmeny | Recovery menu |
-| Rensa bildcache | Clear image cache |
-
-| Systemljud | Interface sounds |
-
-CFW settings changed in psp5 are saved to ARK's `SETTINGS.TXT` and apply **after a restart**.
-The interface sounds setting is stored in `ms0:/PSP5/psp5.cfg` and applies right away.
+- Changes to ARK's settings (CPU speed, plugins and so on) are saved to ARK's own `SETTINGS.TXT` and
+  `PLUGINS.TXT`, and take effect **after a restart**. Language and sounds change right away.
+- psp5 hides files in `ms0:/ISO` that aren't real PSP games, so a broken download won't show up as a tile.
 
 ## If something goes wrong
 
-- **Hold SELECT while the PSP boots** – ARK skips its settings, so the PSP starts in the normal XMB
-  even if *boot into psp5* is on.
-- **Hold START while the PSP boots** – ARK skips all plugins.
-- **Go back to arkMenu:** in `PSP/SAVEDATA/ARK_01234/`, delete `VBOOT.PBP` and rename
-  `VBOOT_ARKMENU.PBP` back to `VBOOT.PBP`.
-- **Wrong or missing pictures:** psp5 → △ → *psp5* → *Rensa bildcache*, or delete `ms0:/PSP5/cache/`.
-- **A game is missing:** check that it is in `ms0:/ISO` (at most one sub-folder deep) and that the file
-  is a real PSP game (psp5 hides files without `PSP_GAME/PARAM.SFO`).
+- **Hold SELECT while the PSP boots.** ARK skips its settings, so you land in the normal XMB even if
+  *Boot into psp5* is on.
+- **Hold START while the PSP boots** to skip all plugins.
+- **Want arkMenu back?** In `PSP/SAVEDATA/ARK_01234/`, delete `VBOOT.PBP` and rename `VBOOT_ARKMENU.PBP`
+  back to `VBOOT.PBP`.
+- **Pictures look wrong or are missing?** △ → *psp5* → *Clear image cache*, or delete `ms0:/PSP5/cache/`.
+- **A game doesn't show up?** Make sure it's in `ms0:/ISO` (at most one sub-folder deep).
 
-## Uninstall
+## Uninstalling
 
-1. If you used option B: restore `VBOOT_ARKMENU.PBP` as `VBOOT.PBP` (see above) and turn off
-   *boot into psp5* first (or hold SELECT when booting).
+1. If psp5 is your ARK launcher, turn off *Boot into psp5* first (or hold SELECT when booting), then put
+   `VBOOT_ARKMENU.PBP` back as `VBOOT.PBP`.
 2. Delete `ms0:/PSP/GAME/PSP5/` and `ms0:/PSP5/`.

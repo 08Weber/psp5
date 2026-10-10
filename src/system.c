@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Systemfunktioner som arkMenu har: USB, ström, XMB och återställningsmeny. */
 #include <pspkernel.h>
 #include <pspusb.h>

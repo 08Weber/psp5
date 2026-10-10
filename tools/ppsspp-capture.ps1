@@ -1,3 +1,4 @@
+# psp5 – made by Mille Weber
 # Testhjälp: skickar valfria tangenter till PPSSPP och sparar en skärmdump av fönstret.
 #   tools\ppsspp-capture.ps1 -Out shot.png [-Keys '{DOWN},{DOWN},z'] [-Delay 500]
 # PPSSPP:s standardtangenter: piltangenter = styrkors, Z = kryss, X = cirkel, mellanslag = START.

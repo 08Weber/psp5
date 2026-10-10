@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 /* Liten 2D-renderare direkt mot GU: rektanglar, gradienter, texturer,
  * rundade former via 9-slice och text via intraFont. */
 #include <pspkernel.h>
@@ -346,6 +347,18 @@ void font_init(int need_jpn)
     }
 }
 
+void font_ensure_cjk(void)
+{
+    if (s_jpn || !s_font)
+        return;
+    s_jpn = intraFontLoad("flash0:/font/jpn0.pgf", INTRAFONT_STRING_UTF8);
+    if (!s_jpn)
+        return;
+    intraFontSetAltFont(s_font, s_jpn);
+    if (s_bold != s_font)
+        intraFontSetAltFont(s_bold, s_jpn);
+}
+
 void font_term(void)
 {
     if (s_bold && s_bold != s_font)
@@ -369,7 +382,16 @@ float text_width(float size, int bold, const char *s)
     if (!f)
         return 0;
     intraFontSetStyle(f, size, 0xFFFFFFFF, 0, 0.0f, 0);
+    if (s_jpn)
+        intraFontSetStyle(s_jpn, size, 0xFFFFFFFF, 0, 0.0f, 0);
     return intraFontMeasureText(f, s);
+}
+
+float text_fit(float size, float min_size, int bold, float max_w, const char *s)
+{
+    while (size > min_size && text_width(size, bold, s) > max_w)
+        size -= 0.02f;
+    return size;
 }
 
 void text_draw(float x, float y, float size, int bold, u32 color, int align, const char *s)
@@ -378,6 +400,8 @@ void text_draw(float x, float y, float size, int bold, u32 color, int align, con
     if (!f)
         return;
     intraFontSetStyle(f, size, color, 0, 0.0f, 0);
+    if (s_jpn) /* reservtypsnittet ärver inte stilen av sig självt */
+        intraFontSetStyle(s_jpn, size, color, 0, 0.0f, 0);
     if (align != ALIGN_LEFT) {
         float w = intraFontMeasureText(f, s);
         x -= align == ALIGN_CENTER ? w / 2 : w;

@@ -1,3 +1,4 @@
+/* psp5 – made by Mille Weber */
 #ifndef IMAGE_H
 #define IMAGE_H
 

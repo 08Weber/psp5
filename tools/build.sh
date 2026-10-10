@@ -1,4 +1,5 @@
 #!/bin/bash
+# psp5 – made by Mille Weber
 # Bygger launchern i WSL och lägger resultatet i dist/PSP/GAME/PSP5.
 # Från Windows:  wsl -d pspdev -- bash /mnt/c/path/to/psp5/tools/build.sh [clean]
 set -e
