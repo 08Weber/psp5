@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ui.h"
+#include "sound.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -86,6 +87,7 @@ static void switch_tab(Ui *ui, int tab)
         return;
     ui->tab = tab;
     ui->tab_anim = 0;
+    sound_play(SND_SWIPE);
     ui->pos = ui->sel[tab] + 0.7f; /* raden glider in från höger */
     ui->still = 0;
     ui->label_for = -2;
@@ -249,8 +251,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->launch += dt / LAUNCH_LEN;
         return ui->launch >= 1 ? UI_LAUNCH : UI_NONE;
     }
-    if ((in->pressed & PSP_CTRL_TRIANGLE) && ui->intro >= 1)
+    if ((in->pressed & PSP_CTRL_TRIANGLE) && ui->intro >= 1) {
+        sound_play(SND_OPEN);
         return UI_SETTINGS;
+    }
     if (in->pressed & PSP_CTRL_LTRIGGER)
         switch_tab(ui, ui->tab - 1);
     if (in->pressed & PSP_CTRL_RTRIGGER)
@@ -264,6 +268,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         if (next != *sel) {
             *sel = next;
             ui->still = 0;
+            sound_play(SND_MOVE);
         }
     }
     ui->still += dt;
@@ -271,10 +276,13 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     /* START startar också – ut till XMB går man med HOME (systemets egen dialog) */
     u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
     if ((in->pressed & confirm) && count && ui->intro >= 1) {
-        if (ui->can_launch)
+        if (ui->can_launch) {
             ui->launch = 0;
-        else
+            sound_play(SND_LAUNCH);
+        } else {
             ui_toast(ui, "ARK hittades inte. Spel kan bara startas på PSP:n");
+            sound_play(SND_ERROR);
+        }
     }
 
     ui->pos = approach(ui->pos, *sel, 13.0f, dt);

@@ -1,13 +1,13 @@
 TARGET = psp5
 OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/launch.o \
        src/gfx.o src/image.o src/art.o src/loader.o src/ui.o \
-       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o
+       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o
 
 CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation $(EXTRA)
 ASFLAGS = $(CFLAGS)
 
 LIBS = -lintrafont -lpng -lcisoread -llz4 -lz -lm \
-       -lpspgu -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor \
+       -lpspgu -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio \
        -lpspsystemctrl_user -larkctrl -lpspkubridge
 
 BUILD_PRX = 1

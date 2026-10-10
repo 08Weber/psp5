@@ -15,13 +15,14 @@
 #include "settings.h"
 #include "system.h"
 #include "testrun.h"
+#include "sound.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 PSP_HEAP_SIZE_KB(-1024);
 
 /* psp5:s egna filer (omslag, cache) – samma plats oavsett varifrån psp5 körs */
-#define DATA_DIR "ms0:/PSP5"
+#define DATA_DIR PSP5_DATA_DIR
 
 static volatile int s_running = 1;
 static char s_self[256];
@@ -83,12 +84,14 @@ static void app_start(EntryList *list, Ui *ui)
         font_init(1);
     }
     loader_start(list);
+    sound_init();
     ui_init(ui, list, confirm_is_circle(), launch_supported());
 }
 
 /* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
 static void app_stop(EntryList *list, Ui *ui)
 {
+    sound_term();
     loader_stop();
     ui_free(ui);
     font_term();
@@ -200,6 +203,7 @@ int main(int argc, char *argv[])
     snprintf(s_list_cache, sizeof(s_list_cache), "%s/cache/list.bin", DATA_DIR);
     sceIoMkdir(DATA_DIR, 0777);
     art_init(DATA_DIR);
+    sound_load_setting(DATA_DIR);
     sys_init(s_self);
     testrun_init();
 
@@ -209,6 +213,9 @@ int main(int argc, char *argv[])
     EntryList list = { 0 };
     Ui ui;
     app_start(&list, &ui);
+#ifdef PSP5_TEST
+    sound_dump(DATA_DIR "/shots/sounds"); /* testbygge: ljuden som WAV */
+#endif
 
     int in_settings = 0;
     u32 old = 0;
@@ -256,6 +263,7 @@ int main(int argc, char *argv[])
         }
         if (action == UI_LAUNCH && ui_selected(&ui) >= 0) {
             Entry chosen = list.items[ui_selected(&ui)];
+            sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */

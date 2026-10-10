@@ -49,6 +49,11 @@ Eject the memory stick safely on the computer, leave USB mode, and start **psp5*
 The first start shows a short loading screen while psp5 reads all your games. After that the list is
 cached and psp5 starts quickly. psp5 creates the folder `ms0:/PSP5/` for its cache and covers.
 
+### Updating
+
+To update to a newer version, copy the new `EBOOT.PBP` over the old one – to `PSP/GAME/PSP5/` and, if you
+use option B, also as `PSP/SAVEDATA/ARK_01234/VBOOT.PBP`. Your settings, covers and cache in `ms0:/PSP5/` are kept.
+
 ## 4. Use psp5 as ARK-5's launcher (option B, optional)
 
 ARK-5 starts its launcher from `ms0:/PSP/SAVEDATA/ARK_01234/VBOOT.PBP`
@@ -103,7 +108,10 @@ The menus are in Swedish. A few translations for the settings screen:
 | Återställningsmeny | Recovery menu |
 | Rensa bildcache | Clear image cache |
 
+| Systemljud | Interface sounds |
+
 CFW settings changed in psp5 are saved to ARK's `SETTINGS.TXT` and apply **after a restart**.
+The interface sounds setting is stored in `ms0:/PSP5/psp5.cfg` and applies right away.
 
 ## If something goes wrong
 

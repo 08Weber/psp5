@@ -10,6 +10,7 @@
 #include "arkcfg.h"
 #include "plugins.h"
 #include "system.h"
+#include "sound.h"
 
 #define TITLE_Y     34.0f
 #define LEFT_X      32.0f
@@ -38,6 +39,7 @@ typedef struct {
     int confirm;                 /* ACTION: kräver ✕ två gånger */
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
+    int own;                     /* psp5:s egen inställning (psp5.cfg) */
 } Item;
 
 typedef struct {
@@ -58,7 +60,7 @@ static struct {
     float scroll, open;
     int confirm_item;   /* -1 = ingen */
     float confirm_time;
-    int cfw_dirty, plugins_dirty;
+    int cfw_dirty, plugins_dirty, own_dirty;
     int repeat_dir;
     float repeat_timer;
     char toast[96];
@@ -135,9 +137,11 @@ static void build(void)
     c->desc = "ARK-inställningar sparas i SETTINGS.TXT och gäller efter omstart. "
               "Håll SELECT när PSP:n startar för att hoppa över dem och komma till XMB.";
     toggle(c, "Starta psp5 vid uppstart", &g_cfw.launcher);
+    toggle(c, "Systemljud", &g_sound_on);
+    c->items[c->count - 1].own = 1;
     info(c, "psp5 är ARK:s launcher", sys_is_launcher() ? "Ja" : "Nej");
     action(c, "Rensa bildcache", SA_CLEAR_CACHE, 0);
-    info(c, "Version", "1.0");
+    info(c, "Version", "1.0.1");
 
     c = &s_cats[CAT_PERF];
     c->name = "Prestanda";
@@ -202,6 +206,8 @@ void settings_open(void)
 int settings_commit(void)
 {
     int changed = S.cfw_dirty || S.plugins_dirty;
+    if (S.own_dirty)
+        sound_save_setting(PSP5_DATA_DIR); /* gäller direkt, ingen omstart */
     if (S.cfw_dirty) {
         char path[200];
         snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
@@ -212,7 +218,7 @@ int settings_commit(void)
             plugins_get(i)->on = s_plugin_on[i];
         plugins_save();
     }
-    S.cfw_dirty = S.plugins_dirty = 0;
+    S.cfw_dirty = S.plugins_dirty = S.own_dirty = 0;
     return changed;
 }
 
@@ -242,7 +248,9 @@ static int vertical(const UiInput *in, float dt)
 
 static void mark_dirty(const Item *it)
 {
-    if (it->plugin)
+    if (it->own)
+        S.own_dirty = 1;
+    else if (it->plugin)
         S.plugins_dirty = 1;
     else
         S.cfw_dirty = 1;
@@ -266,17 +274,27 @@ int settings_update(const UiInput *in, float dt)
 
     if (S.focus == 0) {
         if (move) {
-            S.cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
+            int cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
+            if (cat != S.cat)
+                sound_play(SND_MOVE);
+            S.cat = cat;
             S.confirm_item = -1;
         }
-        if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count)
+        if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {
             S.focus = 1;
-        if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))
+            sound_play(SND_SELECT);
+        }
+        if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
+            sound_play(SND_BACK);
             return SA_CLOSE;
+        }
     } else {
         Item *it = &c->items[*sel];
         if (move) {
-            *sel = (int)clampf(*sel + move, 0, c->count - 1);
+            int next = (int)clampf(*sel + move, 0, c->count - 1);
+            if (next != *sel)
+                sound_play(SND_MOVE);
+            *sel = next;
             S.confirm_item = -1;
             it = &c->items[*sel];
         }
@@ -288,21 +306,27 @@ int settings_update(const UiInput *in, float dt)
         if (change) {
             *it->value = (*it->value + change + it->nopts) % it->nopts;
             mark_dirty(it);
+            sound_play(SND_TOGGLE);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
+            sound_play(SND_TOGGLE);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
+            sound_play(SND_SELECT);
             if (it->confirm && S.confirm_item != *sel) {
                 S.confirm_item = *sel;
                 S.confirm_time = CONFIRM_TIME;
             } else {
                 S.confirm_item = -1;
+                sound_wait(400); /* låt ljudet höras innan något stängs */
                 return it->action;
             }
         } else if ((p & PSP_CTRL_CIRCLE) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
             S.focus = 0;
             S.confirm_item = -1;
+            sound_play(SND_BACK);
         } else if (p & PSP_CTRL_TRIANGLE) {
+            sound_play(SND_BACK);
             return SA_CLOSE;
         }
     }

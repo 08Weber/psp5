@@ -32,7 +32,10 @@ All graphics are drawn by psp5 itself – no logos, icons or other artwork from 
     (CPU clock, extra memory, caches, USB charging, logos, regions, …). Unknown lines and comments are kept.
   - Enable/disable plugins in `PLUGINS.TXT`.
   - USB mode, exit to XMB, sleep, restart, shut down and ARK's recovery menu.
-  - "Boot into psp5" (ARK's launcher autoboot).
+  - "Boot into psp5" (ARK's launcher autoboot) and interface sounds on/off.
+- **Interface sounds** – soft ticks when moving, a swipe between tabs, chimes for select/back and a
+  swelling chord when a game starts. The sounds are synthesized by psp5 at start-up (no audio files, no
+  sounds taken from any console) and can be turned off in settings. Preview them in [`docs/sounds/`](docs/sounds).
 - **Cover tool for your PC** – `tools/covers.py` prepares card and background images for every game
   on the memory stick, from your own pictures or the games' own artwork.
 - **Never touches flash0.**
@@ -104,6 +107,7 @@ PPSSPP has no ARK `systemctrl`, so launching games only works on a real PSP.
 | `src/launch.c` | launching through ARK-5's systemctrl |
 | `src/arkcfg.c`, `src/plugins.c` | ARK's `SETTINGS.TXT` and `PLUGINS.TXT` |
 | `src/system.c` | USB, power, XMB and recovery |
+| `src/sound.c` | synthesized interface sounds and a small audio mixer |
 | `tools/` | build, test and cover scripts |
 | `docs/README.sv.md` | Swedish developer notes |
 

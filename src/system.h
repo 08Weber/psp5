@@ -1,6 +1,9 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
+/* psp5:s egna filer (omslag, cache, psp5.cfg) */
+#define PSP5_DATA_DIR "ms0:/PSP5"
+
 /* Läser ARK:s konfiguration (om ARK finns). Anropas en gång vid start. */
 void sys_init(const char *self_path);
 int sys_has_ark(void);

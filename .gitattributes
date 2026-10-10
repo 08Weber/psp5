@@ -5,3 +5,4 @@ Makefile text eol=lf
 *.h text eol=lf
 *.ps1 text eol=crlf
 *.png binary
+*.wav binary
