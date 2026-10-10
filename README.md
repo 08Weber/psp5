@@ -17,7 +17,7 @@ it's my own take on that style.
 |---|---|
 | ![Settings](docs/screenshots/settings.png) | ![Performance settings](docs/screenshots/settings-performance.png) |
 | ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
-| ![Startup screen](docs/screenshots/boot.png) | ![Library](docs/screenshots/library.png) |
+| ![Startup screen](docs/screenshots/boot.png) |  |
 
 ## What it does
 
