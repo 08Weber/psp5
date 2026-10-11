@@ -24,12 +24,14 @@ it's my own take on that style.
 
 psp5 starts the way a PS5 does: a small grey logo on black, a short health notice over large, dark blue
 out-of-focus circles, then golden dust that swirls up and a warm spotlight from the top left before your games
-fade in – with a soft, airy sound underneath. Any button skips it, and you can turn it off in settings. The
+fade in – with a soft, airy sound underneath. It only plays when the PSP starts, not when you come back from a
+game. Any button skips it, and you can turn it off in settings. The
 logo is psp5's own and everything is drawn and synthesized in code – no borrowed logos or sounds.
 
 Then you get your games in a row along the top. The selected one is large with a thin light
 frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO and ZSO) live under
 **Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
+A UMD in the drive shows up first under Games, and it appears or disappears as soon as you put a disc in or take it out.
 Next to them is the **Library**: everything you have, games and apps together, in a grid that's easy to scan
 through. Press □ there to sort by name or by what you added most recently.
 

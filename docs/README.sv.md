@@ -15,6 +15,17 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.3.1
+
+- **Ingen startskärm efter ett spel:** som ARK:s launcher startas psp5 om när ett spel avslutas. Före spelstart
+  skapas `ms0:/PSP5/ingame`; finns filen när psp5 startar tas den bort och startskärmen hoppas över.
+  Som vanlig app skapas filen inte (då går systemet till XMB efter spelet).
+- **UMD-skivan först under Spel** (`src/umd.c`): en tråd tittar efter skivan som arkMenu gör (sceUmdCheckMedium,
+  sceUmdActivate, vänta på PSP_UMD_READY) och läser `disc0:/PSP_GAME/PARAM.SFO`. Skivan läggs in först i listan
+  när den sätts i och tas bort när den tas ut, och markeringen ligger kvar på samma spel. Den sparas aldrig i listcachen.
+  Start: apitype 0x120 med `disc0:/PSP_GAME/SYSDIR/EBOOT.BIN`, eller 0x160 med `ms0:/PSP/GAME/<DISC_ID>/PBOOT.PBP`
+  om en uppdatering finns. I testbygget fungerar `ms0:/PSP5/fakeumd/` som skiva (testskript `tools/tests/umd.txt`).
+
 ## Version 1.3
 
 - **ARK-4 och ARK-5, PSP-1000/2000/3000:** två byggen – `tools/build.sh` (ARK-5, länkar ArkCtrl) och
@@ -77,6 +88,7 @@ Okända rader och kommentarer behålls.
 ## Vad som visas
 - `ms0:/ISO` (+ en nivå undermappar): `.iso`, `.cso`, `.zso` – fliken **Spel**
 - `ms0:/PSP/GAME/*/EBOOT.PBP`: PSN- och PS1-spel under **Spel**, övrigt under **Appar**
+- UMD-skivan i enheten: först under **Spel** och i **Bibliotek**
 
 Spel startas med samma systemctrl-anrop som ARK-5:s arkMenu (`src/launch.c`), inklusive
 installerade uppdateringar (`PBOOT.PBP`), patchade ISO:er (`EBOOT.OLD`) och okrypterad `BOOT.BIN`.
@@ -84,7 +96,7 @@ Före start frigörs allt: laddartråd, texturer, typsnitt, GU och spellistan.
 
 ## Bilder och cache
 Kort- och bakgrundsbilder letas i den här ordningen:
-1. `ms0:/PSP5/covers/<nyckel>.ico|.bg` – från `tools/covers.py` (nyckel = DISC_ID för ISO, mappnamn för EBOOT)
+1. `ms0:/PSP5/covers/<nyckel>.ico|.bg` – från `tools/covers.py` (nyckel = DISC_ID för ISO och UMD, mappnamn för EBOOT)
 2. `ms0:/PSP5/cache/` – skapas av launchern själv första gången ett spel visas
 3. ICON0/PIC1 inuti spelet
 

@@ -1,6 +1,6 @@
 /* psp5 – made by Mille Weber */
 /* Startar spel på samma sätt som ARK-5:s arkMenu
- * (Launcher-Menus/arkMenu/src/iso.cpp och eboot.cpp). */
+ * (Launcher-Menus/arkMenu/src/iso.cpp, eboot.cpp och umd.cpp). */
 #include <pspkernel.h>
 #include <pspumd.h>
 #include <psploadexec_kernel.h>
@@ -11,6 +11,7 @@
 #include "launch.h"
 #include "iso.h"
 
+#define UMD_DRIVER 0 /* MODE_UMD: den riktiga skivan */
 #define PSN_DRIVER 0
 #define ISO_DRIVER 3
 
@@ -18,6 +19,8 @@
 #define ISO_RUNLEVEL       0x123
 #define ISO_PBOOT_RUNLEVEL 0x124
 #define POPS_RUNLEVEL      0x144
+#define UMD_RUNLEVEL       0x120
+#define UMD_UPDATE_RUNLEVEL 0x160 /* skiva med uppdatering (PBOOT.PBP) på minneskortet */
 
 #define UMD_EBOOT_BIN "disc0:/PSP_GAME/SYSDIR/EBOOT.BIN"
 #define UMD_EBOOT_OLD "disc0:/PSP_GAME/SYSDIR/EBOOT.OLD"
@@ -85,6 +88,26 @@ static void launch_iso(const char *game_id)
     sctrlKernelLoadExecVSHWithApitype(apitype, s_path, &param);
 }
 
+static void launch_umd(const char *game_id)
+{
+    struct SceKernelLoadExecVSHParam param;
+    int apitype = UMD_UPDATE_RUNLEVEL;
+    if (!installed_file(game_id, "PBOOT.PBP", s_path, sizeof(s_path))) {
+        apitype = UMD_RUNLEVEL;
+        strcpy(s_path, UMD_EBOOT_BIN);
+    }
+
+    memset(&param, 0, sizeof(param));
+    param.size = sizeof(param);
+    param.key = "game";
+    param.argp = s_path;
+    param.args = strlen(s_path) + 1;
+    sctrlSESetDiscType(PSP_UMD_TYPE_GAME);
+    sctrlSESetBootConfFileIndex(UMD_DRIVER);
+    sctrlSESetUmdFile("");
+    sctrlKernelLoadExecVSHWithApitype(apitype, s_path, &param);
+}
+
 static void launch_homebrew(void)
 {
     struct SceKernelLoadExecVSHParam param;
@@ -145,6 +168,7 @@ int launch_entry(const Entry *e)
     case ENTRY_HOMEBREW: launch_homebrew();   break;
     case ENTRY_PSN:      launch_psn();        break;
     case ENTRY_POPS:     launch_pops();       break;
+    case ENTRY_UMD:      launch_umd(game_id); break;
     }
     return -2; /* LoadExec returnerar bara om något gick fel */
 }

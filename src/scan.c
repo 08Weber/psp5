@@ -104,7 +104,7 @@ static void strip_marks(char *s)
     }
 }
 
-static void read_sfo_fields(Entry *e, const u8 *sfo, u32 size)
+void entry_read_sfo(Entry *e, const u8 *sfo, u32 size)
 {
     sfo_get_string(sfo, size, "TITLE", e->title, sizeof(e->title));
     strip_marks(e->title);
@@ -138,7 +138,7 @@ static void add_iso(ScanState *s, const char *path, const char *name, u32 size, 
     char *dot = strrchr(e->title, '.');
     if (dot)
         *dot = 0;
-    read_sfo_fields(e, sfo, sfo_size);
+    entry_read_sfo(e, sfo, sfo_size);
     free(sfo);
 
     IsoFile f;
@@ -216,7 +216,7 @@ static void add_eboot(ScanState *s, const char *path, const char *folder)
             sceIoLseek32(fd, h.param_offset, PSP_SEEK_SET);
             if (sceIoRead(fd, sfo, sfo_size) == (int)sfo_size) {
                 char cat[8] = "";
-                read_sfo_fields(e, sfo, sfo_size);
+                entry_read_sfo(e, sfo, sfo_size);
                 sfo_get_string(sfo, sfo_size, "CATEGORY", cat, sizeof(cat));
                 if (strcmp(cat, "EG") == 0)
                     e->type = ENTRY_PSN;
@@ -317,9 +317,26 @@ void scan_free(EntryList *list)
     memset(list, 0, sizeof(*list));
 }
 
+int scan_insert_front(EntryList *list, const Entry *e)
+{
+    if (!add_entry(list))
+        return 0;
+    memmove(&list->items[1], &list->items[0], (list->count - 1) * sizeof(Entry));
+    list->items[0] = *e;
+    return 1;
+}
+
+void scan_remove_front(EntryList *list)
+{
+    if (!list->count)
+        return;
+    list->count--;
+    memmove(&list->items[0], &list->items[1], list->count * sizeof(Entry));
+}
+
 void entry_cover_key(const Entry *e, char *out, int out_size)
 {
-    if (e->type == ENTRY_ISO && e->game_id[0]) {
+    if ((e->type == ENTRY_ISO || e->type == ENTRY_UMD) && e->game_id[0]) {
         snprintf(out, out_size, "%s", e->game_id);
         return;
     }
