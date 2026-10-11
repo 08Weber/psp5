@@ -20,6 +20,10 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Ingen startskärm efter ett spel:** som ARK:s launcher startas psp5 om när ett spel avslutas. Före spelstart
   skapas `ms0:/PSP5/ingame`; finns filen när psp5 startar tas den bort och startskärmen hoppas över.
   Som vanlig app skapas filen inte (då går systemet till XMB efter spelet).
+- **Startskärm efter viloläge:** en strömcallback (`scePowerRegisterCallback`, `PSP_POWER_CB_RESUME_COMPLETE`)
+  visar startskärmen igen när PSP:n väcks med sidoknappen. Startljudet räknas fram på nytt i ljudtråden
+  (`sound_prepare_boot`), musik pausas under tiden och korten glider in igen (`ui_replay_intro`).
+  Testskript: `tools/tests/resume.txt` (`resume 1` låtsas att PSP:n vaknade).
 - **UMD-skivan först under Spel** (`src/umd.c`): en tråd tittar efter skivan som arkMenu gör (sceUmdCheckMedium,
   sceUmdActivate, vänta på PSP_UMD_READY) och läser `disc0:/PSP_GAME/PARAM.SFO`. Skivan läggs in först i listan
   när den sätts i och tas bort när den tas ut, och markeringen ligger kvar på samma spel. Den sparas aldrig i listcachen.

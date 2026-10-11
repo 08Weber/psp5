@@ -1,0 +1,13 @@
+wait 40
+press right
+wait 40
+shot 01-before-sleep
+resume 1
+wait 60
+shot 02-logo
+wait 200
+shot 03-warning
+wait 260
+shot 04-intro
+wait 60
+shot 05-home

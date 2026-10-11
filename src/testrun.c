@@ -13,7 +13,7 @@
 #define MAX_STEPS 128
 
 typedef struct {
-    char op;        /* 'w' vänta, 'p' tryck, 's' skärmdump */
+    char op;        /* 'w' vänta, 'p' tryck, 's' skärmdump, 'r' vakna ur viloläge */
     int frames;
     u32 button;
     char name[32];
@@ -22,6 +22,7 @@ typedef struct {
 static Step s_steps[MAX_STEPS];
 static int s_count, s_pos, s_wait, s_hold;
 static int s_active;
+static int s_resume;
 
 static u32 button_by_name(const char *n)
 {
@@ -63,6 +64,8 @@ void testrun_init(void)
         } else if (!strcmp(op, "press")) {
             s->op = 'p';
             s->button = button_by_name(arg);
+        } else if (!strcmp(op, "resume")) {
+            s->op = 'r';
         } else if (!strcmp(op, "shot")) {
             s->op = 's';
             snprintf(s->name, sizeof(s->name), "%s", arg);
@@ -98,9 +101,21 @@ u32 testrun_buttons(u32 real)
             s_hold = 1;
             return s->button;
         }
+        if (s->op == 'r') {
+            s_pos++;
+            s_resume = 1;
+            return 0;
+        }
         return 0; /* 's' hanteras i testrun_frame */
     }
     return 0;
+}
+
+int testrun_take_resume(void)
+{
+    int r = s_resume;
+    s_resume = 0;
+    return r;
 }
 
 /* Skärmdump: lämna NAMN.req och vänta tills testskriptet på datorn har fotograferat

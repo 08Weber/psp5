@@ -36,6 +36,7 @@ static int s_channel = -1;
 static volatile int s_quit;
 static volatile int s_built;
 static volatile int s_fade; /* >0: block kvar av uttoningen */
+static volatile int s_boot_req; /* startljudet ska räknas fram igen */
 /* två buffertar: den ena spelas medan nästa fylls – annars skrivs ljudet över
  * mitt i uppspelningen och små bitar upprepas */
 static short __attribute__((aligned(64))) s_out[2][BLOCK * 2];
@@ -244,6 +245,11 @@ static int audio_thread(SceSize args, void *argp)
         build_sounds();
     int buf = 0, tail = 0;
     while (!s_quit) {
+        if (s_boot_req) { /* startskärmen efter viloläge – inget annat spelas då */
+            s_bt_lo = s_bt_band = s_air_lo = 0;
+            render(SND_BOOT, 5.2f, 0.40f, gen_boot);
+            s_boot_req = 0;
+        }
         int any = 0;
         for (int v = 0; v < VOICES; v++)
             any |= s_voices[v].active;
@@ -341,7 +347,13 @@ void sound_play(SoundId id)
 
 int sound_ready(void)
 {
-    return s_built || s_thread < 0;
+    return (s_built && !s_boot_req) || s_thread < 0;
+}
+
+void sound_prepare_boot(void)
+{
+    if (g_sound_on && s_thread >= 0 && !s_samples[SND_BOOT].data)
+        s_boot_req = 1;
 }
 
 

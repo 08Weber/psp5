@@ -303,6 +303,13 @@ void ui_free(Ui *ui)
     }
 }
 
+void ui_replay_intro(Ui *ui)
+{
+    ui->intro = 0;
+    if (ui->tab != TAB_MUSIC)
+        ui->pos = ui->sel[ui->tab] + 1.5f;
+}
+
 void ui_toast(Ui *ui, const char *msg)
 {
     snprintf(ui->toast, sizeof(ui->toast), "%s", msg);
