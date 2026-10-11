@@ -37,7 +37,8 @@ PSP_HEAP_SIZE_KB(-7168);
 #define INGAME_MARK DATA_DIR "/ingame"
 
 static volatile int s_running = 1;
-static volatile int s_resumed; /* PSP:n vaknade ur viloläge – visa startskärmen */
+static volatile int s_sleeping; /* PSP:n går in i viloläge – skärmen hålls svart */
+static volatile int s_resumed;  /* PSP:n har vaknat klart – visa startskärmen */
 static char s_self[256];
 static char s_list_cache[256];
 static u64 s_scan_start;
@@ -52,6 +53,8 @@ static int power_callback(int unknown, int flags, void *common)
 {
     if (flags & PSP_POWER_CB_RESUME_COMPLETE)
         s_resumed = 1;
+    else if (flags & PSP_POWER_CB_SUSPENDING)
+        s_sleeping = 1;
     return 0;
 }
 
@@ -134,13 +137,34 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     ui_init(ui, list, confirm_is_circle(), launch_supported());
 }
 
-/* Startskärmen igen när PSP:n vaknar ur viloläge (sidoknappen). Musiken pausas under tiden. */
-static void resume_boot(Ui *ui)
+/* Viloläge med sidoknappen: när PSP:n somnar ritas skärmen svart, så att det är
+ * svart som syns när den vaknar (inte menyn). Svart tills PSP:n har vaknat klart,
+ * sedan startskärmen. Musiken pausas under tiden. */
+#define WAKE_TIMEOUT 4.0f /* sekunder vaken utan "vaknat klart" – visa startskärmen ändå */
+
+static void sleep_and_wake(Ui *ui)
 {
     int music = music_state() == MUSIC_PLAYING;
     if (music)
         music_toggle_pause();
     sound_prepare_boot(); /* startljudet frigjordes efter förra startskärmen */
+
+    /* har vi inte sett PSP:n somna (t.ex. viloläge från inställningarna) blir det direkt startskärm */
+    u64 last = sceKernelGetSystemTimeWide();
+    float awake = 0; /* systemtiden står still medan PSP:n sover */
+    while (s_sleeping && s_running && !s_resumed && awake < WAKE_TIMEOUT) {
+        gfx_begin(RGBA(0, 0, 0, 255));
+        gfx_end();
+        u64 now = sceKernelGetSystemTimeWide();
+        float dt = (now - last) / 1000000.0f;
+        last = now;
+        awake += dt < 0.1f ? dt : 0.1f;
+        testrun_buttons(0); /* testbygget: skriptet går vidare */
+        if (testrun_take_resume())
+            s_resumed = 1;
+    }
+    s_sleeping = s_resumed = 0;
+
     boot_run(&s_running);
     if (music)
         music_toggle_pause();
@@ -229,7 +253,7 @@ static void usb_mode(void)
         gfx_end();
     }
     sys_usb_stop();
-    s_resumed = 0; /* viloläge under USB-läget: ingen startskärm efteråt */
+    s_sleeping = s_resumed = 0; /* viloläge under USB-läget: ingen startskärm efteråt */
     font_term();
     gfx_term();
 }
@@ -301,19 +325,22 @@ int main(int argc, char *argv[])
     sound_dump(DATA_DIR "/shots/sounds"); /* testbygge: ljuden som WAV */
 #endif
 
-    s_resumed = 0; /* viloläge under startskärmen räknas inte */
+    s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
     u32 old = 0;
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
+        if (testrun_take_sleep())
+            s_sleeping = 1;
         if (testrun_take_resume())
             s_resumed = 1;
-        if (s_resumed) {
-            s_resumed = 0;
+        if (s_sleeping || s_resumed) {
             if (g_boot_anim && ui.launch < 0) {
-                resume_boot(&ui);
+                sleep_and_wake(&ui);
                 old = ~0u; /* knappen som hoppade över startskärmen räknas inte */
                 last = sceKernelGetSystemTimeWide();
+            } else {
+                s_sleeping = s_resumed = 0;
             }
         }
         UiInput in;

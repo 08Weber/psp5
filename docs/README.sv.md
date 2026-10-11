@@ -15,6 +15,14 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.3.2
+
+- **Ingen meny innan startskärmen efter viloläge:** "vaknat klart" (`PSP_POWER_CB_RESUME_COMPLETE`) kommer ungefär
+  en sekund efter att skärmen tänts, och fram till dess syntes menyn. Nu ritas skärmen svart redan när PSP:n
+  somnar (`PSP_POWER_CB_SUSPENDING`) och hålls svart tills den har vaknat klart, sedan startskärmen
+  (`sleep_and_wake` i `src/main.c`, högst 4 s vaken utan signal). Musiken pausas när PSP:n somnar.
+  Testskript: `tools/tests/resume.txt` (`sleep 1`, `resume 1`).
+
 ## Version 1.3.1
 
 - **Ingen startskärm efter ett spel:** som ARK:s launcher startas psp5 om när ett spel avslutas. Före spelstart
