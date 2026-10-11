@@ -4,6 +4,7 @@
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <psputility.h>
+#include <psppower.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -36,6 +37,7 @@ PSP_HEAP_SIZE_KB(-7168);
 #define INGAME_MARK DATA_DIR "/ingame"
 
 static volatile int s_running = 1;
+static volatile int s_resumed; /* PSP:n vaknade ur viloläge – visa startskärmen */
 static char s_self[256];
 static char s_list_cache[256];
 static u64 s_scan_start;
@@ -46,10 +48,19 @@ static int exit_callback(int arg1, int arg2, void *common)
     return 0;
 }
 
+static int power_callback(int unknown, int flags, void *common)
+{
+    if (flags & PSP_POWER_CB_RESUME_COMPLETE)
+        s_resumed = 1;
+    return 0;
+}
+
 static int callback_thread(SceSize args, void *argp)
 {
     int cb = sceKernelCreateCallback("Exit Callback", exit_callback, NULL);
     sceKernelRegisterExitCallback(cb);
+    int pcb = sceKernelCreateCallback("Power Callback", power_callback, NULL);
+    scePowerRegisterCallback(-1, pcb);
     sceKernelSleepThreadCB();
     return 0;
 }
@@ -121,6 +132,19 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     loader_start(list);
     music_init(); /* läser in ms0:/MUSIC i bakgrunden */
     ui_init(ui, list, confirm_is_circle(), launch_supported());
+}
+
+/* Startskärmen igen när PSP:n vaknar ur viloläge (sidoknappen). Musiken pausas under tiden. */
+static void resume_boot(Ui *ui)
+{
+    int music = music_state() == MUSIC_PLAYING;
+    if (music)
+        music_toggle_pause();
+    sound_prepare_boot(); /* startljudet frigjordes efter förra startskärmen */
+    boot_run(&s_running);
+    if (music)
+        music_toggle_pause();
+    ui_replay_intro(ui);
 }
 
 /* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
@@ -205,6 +229,7 @@ static void usb_mode(void)
         gfx_end();
     }
     sys_usb_stop();
+    s_resumed = 0; /* viloläge under USB-läget: ingen startskärm efteråt */
     font_term();
     gfx_term();
 }
@@ -276,10 +301,21 @@ int main(int argc, char *argv[])
     sound_dump(DATA_DIR "/shots/sounds"); /* testbygge: ljuden som WAV */
 #endif
 
+    s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
     u32 old = 0;
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
+        if (testrun_take_resume())
+            s_resumed = 1;
+        if (s_resumed) {
+            s_resumed = 0;
+            if (g_boot_anim && ui.launch < 0) {
+                resume_boot(&ui);
+                old = ~0u; /* knappen som hoppade över startskärmen räknas inte */
+                last = sceKernelGetSystemTimeWide();
+            }
+        }
         UiInput in;
         read_pad(&in, &old);
 

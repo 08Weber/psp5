@@ -70,6 +70,8 @@ void ui_relist(Ui *ui, int removed_front, int added_front);
 int ui_update(Ui *ui, const UiInput *in, float dt);
 void ui_draw(Ui *ui);
 void ui_toast(Ui *ui, const char *msg);
+/* Låter korten glida in igen som vid start (efter startskärmen). */
+void ui_replay_intro(Ui *ui);
 /* Index i spellistan för markerad post, eller -1. */
 int ui_selected(const Ui *ui);
 

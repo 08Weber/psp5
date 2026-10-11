@@ -24,8 +24,8 @@ it's my own take on that style.
 
 psp5 starts the way a PS5 does: a small grey logo on black, a short health notice over large, dark blue
 out-of-focus circles, then golden dust that swirls up and a warm spotlight from the top left before your games
-fade in – with a soft, airy sound underneath. It only plays when the PSP starts, not when you come back from a
-game. Any button skips it, and you can turn it off in settings. The
+fade in – with a soft, airy sound underneath. It plays when the PSP starts and when it wakes up from sleep, but not
+when you come back from a game. Any button skips it, and you can turn it off in settings. The
 logo is psp5's own and everything is drawn and synthesized in code – no borrowed logos or sounds.
 
 Then you get your games in a row along the top. The selected one is large with a thin light
