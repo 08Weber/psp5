@@ -162,6 +162,21 @@ static void info(Category *c, const char *label, const char *value)
     snprintf(add(c, label, IT_INFO)->info, sizeof(((Item *)0)->info), "%s", value);
 }
 
+/* "ARK-5 · PSP-2000" – vilken CFW och modell psp5 upptäckte */
+static const char *system_name(void)
+{
+    static char buf[40];
+    int m = sys_model();
+    const char *model = m == 0 ? "PSP-1000" : m == 1 ? "PSP-2000"
+                      : (m == 2 || m == 3 || m == 5 || m == 6 || m == 7 || m == 8) ? "PSP-3000"
+                      : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
+    if (sys_ark_version())
+        snprintf(buf, sizeof(buf), "ARK-%d  ·  %s", sys_ark_version(), model);
+    else
+        snprintf(buf, sizeof(buf), "-");
+    return buf;
+}
+
 /* rebuild = 1: menyn byggs om (t.ex. nytt språk) utan att tappa osparade val */
 static void build(int rebuild)
 {
@@ -181,20 +196,44 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
-    info(c, L(S_VERSION), "1.2.0");
+#ifdef PSP5_ARK4
+    info(c, L(S_VERSION), "1.3 (ARK-4)");
+#else
+    info(c, L(S_VERSION), "1.3 (ARK-5)");
+#endif
+    info(c, "CFW", system_name());
 
     c = &s_cats[CAT_PERF];
     c->name = L(S_CAT_PERF);
     c->desc = L(S_DESC_PERF);
-    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, (const char **)OPT_CLOCK, N(OPT_CLOCK));
-    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, (const char **)OPT_CLOCK, N(OPT_CLOCK));
-    choice(c, L(S_EXTRA_MEM), &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
-    choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
+    /* ARK-4 har bara Auto/133/222/333 och på/av för extra minne och minneskortscache;
+     * PSP-1000 har varken extra minne eller USB-laddning (som i arkMenu) */
+    int ark4 = sys_ark_version() == 4, psp1000 = sys_is_psp1000();
+    if (ark4) {
+        if (g_cfw.clock_game > CLOCK_333) g_cfw.clock_game = CLOCK_333;
+        if (g_cfw.clock_vsh > CLOCK_333) g_cfw.clock_vsh = CLOCK_333;
+        if (g_cfw.highmem > 1) g_cfw.highmem = 1;
+        if (g_cfw.mscache > 1) g_cfw.mscache = 1;
+    }
+    int nclock = ark4 ? CLOCK_333 + 1 : N(OPT_CLOCK);
+    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, (const char **)OPT_CLOCK, nclock);
+    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, (const char **)OPT_CLOCK, nclock);
+    if (!psp1000) {
+        if (ark4)
+            toggle(c, L(S_EXTRA_MEM), &g_cfw.highmem);
+        else
+            choice(c, L(S_EXTRA_MEM), &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
+    }
+    if (ark4)
+        toggle(c, L(S_MS_CACHE), &g_cfw.mscache);
+    else
+        choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
     choice(c, L(S_ISO_CACHE), &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
 
     c = &s_cats[CAT_SYSTEM];
     c->name = L(S_CAT_SYSTEM);
-    toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
+    if (!psp1000)
+        toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
     choice(c, L(S_SKIP_LOGOS), &g_cfw.skiplogos, OPT_LOGOS, N(OPT_LOGOS));
     choice(c, L(S_HIDE_PICS), &g_cfw.hidepics, OPT_PICS, N(OPT_PICS));
@@ -203,7 +242,8 @@ static void build(int rebuild)
     toggle(c, L(S_NO_LED), &g_cfw.noled);
     toggle(c, L(S_NO_UMD), &g_cfw.noumd);
     toggle(c, L(S_NO_ANALOG), &g_cfw.noanalog);
-    toggle(c, L(S_VITA_MUTE), &g_cfw.vitamute);
+    if (!ark4)
+        toggle(c, L(S_VITA_MUTE), &g_cfw.vitamute);
     toggle(c, L(S_QA_FLAGS), &g_cfw.qaflags);
     choice(c, L(S_UMD_REGION), &g_cfw.regionchange, OPT_UMDREG, N(OPT_UMDREG));
     choice(c, L(S_XMB_REGION), &g_cfw.vshregion, OPT_VSHREG, N(OPT_VSHREG));

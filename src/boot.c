@@ -1,47 +1,60 @@
 /* psp5 – made by Mille Weber */
-/* Startskärm i stil med en modern konsols uppstart: ljuspartiklar virvlar in mot
- * mitten, möts i en blixt och lämnar kvar psp5-loggan, som ett ljusskimmer sveper
- * över innan allt tonar ut. Loggan ritas med egna linjer – inga bilder eller
- * andras logotyper. Valfri knapp hoppar över. */
+/* Startskärm i samma stil och ordning som en PS5:s uppstart:
+ *   1. en liten grå logga mitt på svart (psp5:s egen symbol – inte Sonys)
+ *   2. svart, sedan en liten grå hälsovarning
+ *   3. stora, mörkt marinblå bokeh-cirklar som glider långsamt
+ *   4. små ljusa bokeh-cirklar och gyllene damm som virvlar upp
+ *   5. en varm ljuskägla uppifrån vänster med svävande damm och golvsken
+ * och därefter tonar launchern in. Allt ritas här, valfri knapp hoppar över. */
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <math.h>
+#include <stdio.h>
+#include <string.h>
 #include "boot.h"
 #include "gfx.h"
 #include "sound.h"
+#include "lang.h"
 #include "testrun.h"
 
 #define PI 3.14159265f
-#define PARTICLES 72
-#define TRAIL 4
 
-#define T_CONVERGE 2.25f /* partiklarna möts, loggan tänds */
-#define T_SWEEP    2.75f /* ljusskimret börjar */
-#define T_FADE     4.35f /* uttoning börjar */
-#define T_END      5.05f
+/* tidslinje (sekunder) */
+#define T_LOGO_IN    0.15f
+#define T_LOGO_OUT   2.10f
+#define T_WARN       2.55f /* varning + ljud börjar */
+#define T_WARN_OUT   4.55f
+#define T_BOKEH      2.75f
+#define T_DUST       4.55f /* dammet virvlar upp */
+#define T_SPOT       5.50f /* ljuskäglan tänds */
+#define T_FADE       7.40f
+#define T_END        7.95f
 
-/* loggans mått (pixlar vid skala 1): x-höjd 34, p:s nedstapel till 50 */
+#define BIG_BOKEH   4
+#define SMALL_BOKEH 9
+#define DUST        110
+
+/* loggans mått (pixlar vid skala 1) */
 #define LOGO_W 137.0f
 #define LOGO_H 34.0f
-#define STROKE 6.5f
 #define MAX_PTS 48
 
-typedef struct {
-    float a0, r0, delay, speed, size, hue;
-} Particle;
-
-static Particle s_p[PARTICLES];
-
-typedef struct {
-    float xy[MAX_PTS * 2];
-    int n;
-} Path;
+typedef struct { float xy[MAX_PTS * 2]; int n; } Path;
+typedef struct { float x, y, r, vx, vy, a; } Bokeh;
+typedef struct { float x, y, size, warm, phase, speed, swirl; } Dust;
 
 static Path s_paths[8];
 static int s_path_count;
+static Bokeh s_big[BIG_BOKEH], s_small[SMALL_BOKEH];
+static Dust s_dust[DUST];
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float smooth(float t) { t = clampf(t, 0, 1); return t * t * (3 - 2 * t); }
+/* 0→1 mellan a och b, 1→0 mellan c och d */
+static float window(float t, float a, float b, float c, float d)
+{
+    return smooth((t - a) / (b - a)) * (1 - smooth((t - c) / (d - c)));
+}
 
 static unsigned s_seed = 0x5eed5;
 static float rnd(void)
@@ -50,7 +63,7 @@ static float rnd(void)
     return (s_seed >> 8) / 16777216.0f;
 }
 
-/* --- loggan: bokstäverna som linjer --- */
+/* --- psp5-symbolen: bokstäverna som linjer --- */
 
 static Path *new_path(void)
 {
@@ -82,148 +95,199 @@ static void build_p(float x)
     Path *stem = new_path();
     add_pt(stem, x + 3, 0);
     add_pt(stem, x + 3, 50);
-    Path *bowl = new_path();
-    add_arc(bowl, x + 18, 17, 15, -180, 180, 40);
+    add_arc(new_path(), x + 18, 17, 15, -180, 180, 40);
 }
 
 static void build_logo(void)
 {
     s_path_count = 0;
     build_p(0);
-    Path *s = new_path(); /* s: två halvcirklar */
+    Path *s = new_path();
     add_arc(s, 53, 8.5f, 8.5f, -30, -270, 22);
     add_arc(s, 53, 25.5f, 8.5f, -90, 150, 22);
     build_p(70);
-    Path *five = new_path(); /* 5: tak, stapel och mage */
+    Path *five = new_path();
     add_pt(five, 135, 0);
     add_pt(five, 116, 0);
     add_pt(five, 115.5f, 17);
     add_arc(five, 125, 22.5f, 11.5f, -150, 145, 30);
 }
 
-/* Ritar loggan centrerad i (cx, cy). sweep = ljusskimrets x-position (skärmkoordinat). */
-static void draw_logo(float cx, float cy, float scale, float alpha, float sweep)
+/* liten, matt grå och utan glöd – som konsolens egen startlogga */
+static void draw_logo(float alpha)
 {
     static u32 col[MAX_PTS];
-    float ox = cx - LOGO_W / 2 * scale, oy = cy - LOGO_H / 2 * scale - 4 * scale;
+    const float scale = 0.36f, width = 10.5f * scale;
+    float ox = SCREEN_W / 2 - LOGO_W / 2 * scale, oy = SCREEN_H / 2 - (LOGO_H / 2 + 6) * scale;
     for (int pass = 0; pass < 2; pass++) {
-        /* ett tunt mjukt lager under kärnan ger mjukare kanter */
-        float w = (pass == 0 ? STROKE + 1.5f : STROKE) * scale;
-        float base = pass == 0 ? 0.4f : 1.0f;
+        float w = pass ? width : width + 1.2f;
+        u32 c = RGBA(178, 178, 180, (int)(255 * alpha * (pass ? 1.0f : 0.35f)));
         for (int k = 0; k < s_path_count; k++) {
             Path *p = &s_paths[k];
             float pts[MAX_PTS * 2];
             for (int i = 0; i < p->n; i++) {
-                float x = ox + p->xy[i * 2] * scale, y = oy + p->xy[i * 2 + 1] * scale;
-                pts[i * 2] = x;
-                pts[i * 2 + 1] = y;
-                float d = (x - sweep) / 26.0f;
-                float hl = expf(-d * d); /* ljusare där skimret passerar */
-                int r = 200 + (int)(55 * hl), g = 212 + (int)(43 * hl);
-                float a = alpha * base;
-                col[i] = RGBA(r, g, 255, (int)(255 * clampf(a, 0, 1)));
+                pts[i * 2] = ox + p->xy[i * 2] * scale;
+                pts[i * 2 + 1] = oy + p->xy[i * 2 + 1] * scale;
+                col[i] = c;
             }
             gfx_stroke(pts, col, p->n, w);
         }
     }
 }
 
-/* --- partiklar --- */
+/* --- hälsovarningen --- */
 
-static void init_particles(void)
+static void draw_warning(float alpha)
 {
-    for (int i = 0; i < PARTICLES; i++) {
-        Particle *p = &s_p[i];
-        p->a0 = rnd() * 2 * PI;
-        p->r0 = 230 + rnd() * 160;
-        p->delay = 0.25f + rnd() * 0.7f;
-        p->speed = 1.6f + rnd() * 0.9f; /* varv under inflygningen */
-        p->size = 0.8f + rnd() * 1.6f;
-        p->hue = rnd();
+    if (alpha <= 0.01f)
+        return;
+    char buf[400];
+    snprintf(buf, sizeof(buf), "%s", L(S_HEALTH));
+    float y = SCREEN_H * 0.455f;
+    char *line = buf;
+    while (line) {
+        char *nl = strchr(line, '\n');
+        if (nl)
+            *nl = 0;
+        float size = text_fit(0.38f, 0.30f, 0, SCREEN_W * 0.80f, line);
+        text_draw(SCREEN_W * 0.16f, y, size, 0, RGBA(150, 152, 158, (int)(220 * alpha)), ALIGN_LEFT, line);
+        y += 10;
+        line = nl ? nl + 1 : NULL;
     }
 }
 
-/* Position för partikeln vid tiden t; returnerar ljusstyrka 0–1. */
-static float particle_at(const Particle *p, float t, float *x, float *y)
+/* --- bokeh och damm --- */
+
+static void init_scene(void)
 {
-    float cx = SCREEN_W / 2, cy = SCREEN_H / 2;
-    if (t < T_CONVERGE) {
-        float e = clampf((t - p->delay) / (T_CONVERGE - p->delay), 0, 1);
-        if (e <= 0)
-            return 0;
-        float k = e * e * e; /* långsamt först, snabbt in mot mitten */
-        float r = p->r0 * (1 - k);
-        float a = p->a0 + p->speed * k * 2 * PI * 0.35f;
-        *x = cx + r * cosf(a);
-        *y = cy + r * sinf(a) * 0.62f;
-        return smooth(e * 3) * (0.5f + 0.5f * k);
+    s_seed = 0x5eed5;
+    for (int i = 0; i < BIG_BOKEH; i++) {
+        Bokeh *b = &s_big[i];
+        b->x = SCREEN_W * (0.25f + 0.5f * rnd());
+        b->y = SCREEN_H * (0.3f + 0.4f * rnd());
+        b->r = 150 + rnd() * 70;
+        b->vx = (rnd() - 0.5f) * 22;
+        b->vy = (rnd() - 0.5f) * 10;
+        b->a = 0.5f + rnd() * 0.5f;
     }
-    /* efter blixten: driver långsamt utåt och slocknar */
-    float e = clampf((t - T_CONVERGE) / 1.8f, 0, 1);
-    float a = p->a0 + p->speed * 2 * PI * 0.35f + e * 0.6f;
-    float r = 18 + e * (60 + p->r0 * 0.25f);
-    *x = cx + r * cosf(a);
-    *y = cy + r * sinf(a) * 0.62f;
-    return (1 - e) * 0.6f;
+    for (int i = 0; i < SMALL_BOKEH; i++) {
+        Bokeh *b = &s_small[i];
+        b->x = SCREEN_W * (0.3f + 0.6f * rnd());
+        b->y = SCREEN_H * (0.15f + 0.7f * rnd());
+        b->r = 9 + rnd() * 16;
+        b->vx = (rnd() - 0.6f) * 26;
+        b->vy = (rnd() - 0.5f) * 14;
+        b->a = 0.4f + rnd() * 0.6f;
+    }
+    for (int i = 0; i < DUST; i++) {
+        Dust *d = &s_dust[i];
+        d->x = SCREEN_W * (0.1f + 0.85f * rnd());
+        d->y = SCREEN_H * (0.05f + 0.9f * rnd());
+        d->size = 0.45f + rnd() * rnd() * 1.6f;
+        d->warm = rnd();
+        d->phase = rnd() * 2 * PI;
+        d->speed = 0.4f + rnd();
+        d->swirl = 20 + rnd() * 50;
+    }
 }
 
-static void draw_particles(float t, float alpha)
+static void draw_bokeh(float t)
 {
-    gfx_blend_add(1);
-    for (int i = 0; i < PARTICLES; i++) {
-        Particle *p = &s_p[i];
-        int cb = 255, cg = 200 + (int)(55 * p->hue), cr = 150 + (int)(90 * p->hue);
-        for (int k = TRAIL - 1; k >= 0; k--) {
-            float x, y;
-            float b = particle_at(p, t - k * 0.035f, &x, &y);
-            if (b <= 0)
-                continue;
-            float fade = 1 - k / (float)TRAIL;
-            float s = p->size * (0.6f + 0.4f * fade);
-            gfx_dot(x, y, s, RGBA(cr, cg, cb, (int)(255 * clampf(b * fade * alpha, 0, 1))), 0);
-            if (k == 0)
-                gfx_dot(x, y, s * 5, RGBA(cr, cg, cb, (int)(80 * clampf(b * alpha, 0, 1))), 1);
+    /* stora, mjuka och mycket mörka – ljuset bygger upp sig i lager */
+    float big = window(t, T_BOKEH, T_BOKEH + 1.3f, T_SPOT - 0.6f, T_SPOT + 0.5f);
+    if (big > 0.01f) {
+        float dt = t - T_BOKEH;
+        for (int i = 0; i < BIG_BOKEH; i++) {
+            Bokeh *b = &s_big[i];
+            float x = b->x + b->vx * dt, y = b->y + b->vy * dt;
+            gfx_dot(x, y, b->r * 1.12f, RGBA(14, 30, 52, (int)(70 * big * b->a)), 1);
+            gfx_dot(x, y, b->r, RGBA(12, 26, 46, (int)(120 * big * b->a)), 0);
         }
+    }
+    /* små ljusa cirklar strax innan dammet */
+    float small = window(t, T_DUST - 0.7f, T_DUST - 0.1f, T_DUST + 0.5f, T_DUST + 1.3f);
+    if (small > 0.01f) {
+        float dt = t - (T_DUST - 0.7f);
+        gfx_blend_add(1);
+        for (int i = 0; i < SMALL_BOKEH; i++) {
+            Bokeh *b = &s_small[i];
+            float x = b->x + b->vx * dt, y = b->y + b->vy * dt;
+            gfx_dot(x, y, b->r, RGBA(70, 96, 122, (int)(70 * small * b->a)), 0);
+            gfx_dot(x, y, b->r * 1.3f, RGBA(70, 96, 122, (int)(25 * small * b->a)), 1);
+        }
+        gfx_blend_add(0);
+    }
+}
+
+static void draw_dust(float t)
+{
+    float vis = smooth((t - T_DUST + 0.4f) / 0.6f);
+    if (vis <= 0.01f)
+        return;
+    float dt = t - (T_DUST - 0.4f);
+    /* först ett virvlande moln, sedan lugnt svävande i ljuset */
+    float burst = window(t, T_DUST - 0.4f, T_DUST + 0.2f, T_DUST + 0.6f, T_SPOT + 0.6f);
+    float cx = SCREEN_W * 0.62f, cy = SCREEN_H * 0.45f;
+    gfx_blend_add(1);
+    for (int i = 0; i < DUST; i++) {
+        Dust *d = &s_dust[i];
+        float x = d->x + sinf(d->phase + dt * d->speed * 0.6f) * 8 + dt * 4;
+        float y = d->y + cosf(d->phase * 1.3f + dt * d->speed * 0.5f) * 6 + dt * 2.5f;
+        /* virveln drar partiklarna i en båge kring molnets mitt */
+        float a = d->phase + dt * d->speed * 1.4f;
+        x = x + (cx + cosf(a) * d->swirl * 2.2f - x) * burst * 0.55f;
+        y = y + (cy + sinf(a) * d->swirl - y) * burst * 0.55f;
+        float twinkle = 0.65f + 0.35f * sinf(d->phase * 3 + t * (2 + d->speed * 3));
+        int r = 255, g = 196 + (int)(50 * (1 - d->warm)), b = 120 + (int)(120 * (1 - d->warm));
+        float al = vis * twinkle * (0.55f + 0.45f * burst);
+        gfx_dot(x, y, d->size, RGBA(r, g, b, (int)(255 * clampf(al, 0, 1))), 0);
+        if (d->size > 1.1f)
+            gfx_dot(x, y, d->size * 4, RGBA(r, g, b, (int)(50 * clampf(al, 0, 1))), 1);
     }
     gfx_blend_add(0);
 }
 
-/* --- bildruta --- */
+/* varm ljuskägla från överkanten till vänster, golvsken längst ner */
+static void draw_spotlight(float t)
+{
+    float s = smooth((t - T_SPOT) / 1.2f);
+    if (s <= 0.01f)
+        return;
+    gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, RGBA(24, 22, 32, (int)(255 * s)), RGBA(16, 17, 28, (int)(255 * s)));
+    gfx_blend_add(1);
+    const float sx = SCREEN_W * 0.24f;
+    /* två mjuka strålar (bred + smal): genomskinliga kanter, ljus mittlinje, bleknar nedåt */
+    for (int layer = 0; layer < 2; layer++) {
+        float k = layer ? 0.6f : 1.0f, a = (layer ? 44 : 40) * s;
+        float tl = sx - 16 * k, tr = sx + 20 * k, tc = sx + 2;           /* överkant */
+        float bl = sx - 80 * k, br = sx + 400 * k, bc = sx + 135 * k;    /* nederkant */
+        u32 top = RGBA(255, 228, 208, (int)a), bot = RGBA(200, 190, 200, (int)(a * 0.22f));
+        u32 clear_t = RGBA(255, 228, 208, 0), clear_b = RGBA(200, 190, 200, 0);
+        float left[8] = { tl, -2, tc, -2, bl, SCREEN_H, bc, SCREEN_H };
+        u32 lc[4] = { clear_t, top, clear_b, bot };
+        gfx_quad(left, lc);
+        float right[8] = { tc, -2, tr, -2, bc, SCREEN_H, br, SCREEN_H };
+        u32 rc[4] = { top, clear_t, bot, clear_b };
+        gfx_quad(right, rc);
+    }
+    gfx_dot(sx, -10, 70, RGBA(255, 232, 214, (int)(150 * s)), 1); /* själva lampan */
+    gfx_dot(sx, -6, 26, RGBA(255, 240, 228, (int)(160 * s)), 1);
+    gfx_glow(40, SCREEN_H - 14, SCREEN_W - 80, 10, 40, RGBA(150, 150, 170, (int)(45 * s)));
+    gfx_blend_add(0);
+}
 
 static void draw_frame(float t, float out)
 {
-    float cx = SCREEN_W / 2, cy = SCREEN_H / 2;
     gfx_begin(RGBA(0, 0, 0, 255));
-
-    /* djupblått ljus som växer fram bakom allt */
-    float bg = smooth((t - 0.6f) / 1.8f) * out;
-    gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 4, 14, (int)(255 * bg)), RGBA(2, 10, 34, (int)(255 * bg)));
-    gfx_blend_add(1);
-    gfx_glow(cx - 90, cy - 30, 180, 60, 150, RGBA(30, 70, 190, (int)(120 * bg)));
-    gfx_glow(-60, SCREEN_H - 40, SCREEN_W + 120, 30, 90, RGBA(20, 50, 150, (int)(60 * bg)));
-    gfx_blend_add(0);
-
-    draw_particles(t, out);
-
-    /* blixten när partiklarna möts */
-    float flash = expf(-fabsf(t - T_CONVERGE) * (t < T_CONVERGE ? 9.0f : 3.2f));
-    if (flash > 0.01f) {
-        gfx_blend_add(1);
-        gfx_glow(cx - 40, cy - 12, 80, 24, 120 * flash + 20, RGBA(160, 200, 255, (int)(200 * flash * out)));
-        gfx_glow(cx - 6, cy - 6, 12, 12, 40, RGBA(255, 255, 255, (int)(230 * flash * out)));
-        gfx_blend_add(0);
-    }
-
-    /* loggan */
-    float show = smooth((t - (T_CONVERGE - 0.1f)) / 0.55f);
-    if (show > 0) {
-        float scale = 1.0f + 0.14f * (1 - smooth((t - T_CONVERGE + 0.1f) / 1.2f));
-        float sweep_t = (t - T_SWEEP) / 1.1f;
-        float sweep = sweep_t < 0 ? -1000 : cx - 140 + sweep_t * 280;
-        gfx_blend_add(1);
-        gfx_glow(cx - 60, cy - 18, 120, 36, 60, RGBA(60, 110, 230, (int)(70 * show * out)));
-        gfx_blend_add(0);
-        draw_logo(cx, cy, scale, show * out, sweep);
+    if (t < T_WARN) {
+        draw_logo(window(t, T_LOGO_IN, T_LOGO_IN + 0.35f, T_LOGO_OUT, T_LOGO_OUT + 0.3f) * out);
+    } else {
+        draw_bokeh(t);
+        draw_spotlight(t);
+        draw_dust(t);
+        draw_warning(window(t, T_WARN, T_WARN + 0.25f, T_WARN_OUT - 0.4f, T_WARN_OUT));
+        if (out < 1)
+            gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - out))));
     }
     gfx_end();
 }
@@ -231,16 +295,10 @@ static void draw_frame(float t, float out)
 void boot_run(volatile int *running)
 {
     build_logo();
-    init_particles();
-
-    /* vänta (högst 1,5 s) på att ljuden räknats fram, så att ljud och bild följs åt */
-    for (int i = 0; i < 150 && !sound_ready(); i++) {
-        gfx_begin(RGBA(0, 0, 0, 255));
-        gfx_end();
-    }
-    sound_play(SND_BOOT);
+    init_scene();
 
     u64 start = sceKernelGetSystemTimeWide();
+    int sound_started = 0;
     float skip_at = -1; /* tid då en knapp trycktes */
     u32 old = ~0u;      /* knappar som hålls vid start räknas inte */
     while (*running) {
@@ -250,9 +308,16 @@ void boot_run(volatile int *running)
         u32 b = testrun_buttons(pad.Buttons);
         if ((b & ~old) && skip_at < 0 && t > 0.3f) {
             skip_at = t;
-            sound_fade_out();
+            if (sound_started)
+                sound_fade_out();
         }
         old = b;
+        /* ljudet börjar med varningen (loggan visas i tystnad, som på konsolen);
+         * ljuden räknas fram medan loggan visas */
+        if (!sound_started && t >= T_WARN && skip_at < 0 && sound_ready()) {
+            sound_play(SND_BOOT);
+            sound_started = 1;
+        }
 
         float out = 1 - smooth((t - T_FADE) / (T_END - T_FADE));
         if (skip_at >= 0)
@@ -263,4 +328,8 @@ void boot_run(volatile int *running)
     }
     gfx_begin(RGBA(0, 0, 0, 255));
     gfx_end();
+    sound_wait(400);
+#ifndef PSP5_TEST /* testbygget sparar ljudet som WAV efteråt (sound_dump) */
+    sound_release(SND_BOOT); /* ~450 KB tillbaka (viktigt på PSP-1000) */
+#endif
 }

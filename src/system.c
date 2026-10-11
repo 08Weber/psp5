@@ -1,5 +1,6 @@
 /* psp5 – made by Mille Weber */
-/* Systemfunktioner som arkMenu har: USB, ström, XMB och återställningsmeny. */
+/* Systemfunktioner som arkMenu har: USB, ström, XMB och återställningsmeny.
+ * Fungerar på både ARK-4 och ARK-5 – versionen känns av vid start. */
 #include <pspkernel.h>
 #include <pspusb.h>
 #include <pspusbstor.h>
@@ -26,7 +27,12 @@ int scePowerRequestStandby(void);
 static int exists(const char *path);
 static void resume_launcher(void);
 
+/* ARK-4: sctrlArkGetConfig ligger i SystemCtrlForUser (src/ark4stub.S) */
+ARKConfig *sctrlArkGetConfig_ark4(ARKConfig *conf);
+
 static ARKConfig s_conf;
+static int s_ark;        /* 4, 5 eller 0 = ingen ARK */
+static int s_model = -1; /* kuKernelGetModel(), -1 = okänd */
 static int s_has_ark;
 static int s_is_launcher;
 static int s_usb_on;
@@ -37,13 +43,28 @@ void sys_init(const char *self_path)
     snprintf(s_ark_dir, sizeof(s_ark_dir), DEFAULT_ARK_DIR);
     /* ARK:s funktioner finns bara med CFW – inte i t.ex. PPSSPP */
     if (launch_supported()) {
+        int major = sctrlSEGetVersion();
+        s_ark = major == 4 ? 4 : 5; /* ARK-4 ger 4, ARK-5 ger 5 */
+        s_model = kuKernelGetModel();
         memset(&s_conf, 0, sizeof(s_conf));
-        sctrlArkGetConfig(&s_conf);
+        /* anropa bara den variant som finns i den ARK som körs */
+        if (s_ark == 4)
+            sctrlArkGetConfig_ark4(&s_conf);
+#ifndef PSP5_ARK4
+        else
+            sctrlArkGetConfig(&s_conf);
+#endif
         if (IS_ARK_CONFIG(&s_conf) && s_conf.arkpath[0]) {
             s_has_ark = 1;
             snprintf(s_ark_dir, sizeof(s_ark_dir), "%s", s_conf.arkpath);
+        } else if (exists(DEFAULT_ARK_DIR "SETTINGS.TXT") || exists(DEFAULT_ARK_DIR "VBOOT.PBP")) {
+            s_has_ark = 1; /* konfigurationen gick inte att läsa – standardmappen finns */
+        } else if (s_ark == 4 && exists("ms0:/SEPLUGINS/SETTINGS.TXT")) {
+            s_has_ark = 1; /* ARK-4 utan ARK-mapp använder ms0:/SEPLUGINS/ */
+            snprintf(s_ark_dir, sizeof(s_ark_dir), "ms0:/SEPLUGINS/");
         }
     }
+    g_arkcfg_ark4 = s_ark == 4;
     char launcher[200];
     snprintf(launcher, sizeof(launcher), "%sVBOOT.PBP", s_ark_dir);
     s_is_launcher = self_path && !strcasecmp(self_path, launcher);
@@ -51,6 +72,9 @@ void sys_init(const char *self_path)
 }
 
 int sys_has_ark(void) { return s_has_ark; }
+int sys_ark_version(void) { return s_ark; }
+int sys_model(void) { return s_model; }
+int sys_is_psp1000(void) { return s_model == 0; }
 const char *sys_ark_dir(void) { return s_ark_dir; }
 int sys_is_launcher(void) { return s_is_launcher; }
 
@@ -97,15 +121,20 @@ void sys_exit_xmb(void)
         return;
     }
     pause_launcher();
-    /* stäng också av läget i minnet, så att inget i den här sessionen startar launchern */
-    SEConfigARK se;
-    memset(&se, 0, sizeof(se));
-    if (sctrlSEGetConfigEx((SEConfig *)&se, sizeof(se)) >= 0 && se.magic == ARK_CONFIG_MAGIC) {
-        se.launcher_mode = 0;
-        sctrlSESetConfigEx((SEConfig *)&se, sizeof(se));
+    if (s_ark >= 5) {
+        /* stäng också av läget i minnet, så att inget i den här sessionen startar launchern.
+         * (ARK-4 har en annan SEConfig-layout och läser ändå om SETTINGS.TXT vid omstarten.) */
+        SEConfigARK se;
+        memset(&se, 0, sizeof(se));
+        if (sctrlSEGetConfigEx((SEConfig *)&se, sizeof(se)) >= 0 && se.magic == ARK_CONFIG_MAGIC) {
+            se.launcher_mode = 0;
+            sctrlSESetConfigEx((SEConfig *)&se, sizeof(se));
+        }
+#ifndef PSP5_ARK4
+        s_conf.launcher[0] = 0;
+        sctrlArkSetConfig(&s_conf);
+#endif
     }
-    s_conf.launcher[0] = 0;
-    sctrlArkSetConfig(&s_conf);
     sctrlKernelExitVSH(NULL);
 }
 

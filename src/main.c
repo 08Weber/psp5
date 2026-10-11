@@ -20,10 +20,13 @@
 #include "lang.h"
 #include "config.h"
 #include "boot.h"
+#include "music.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-PSP_HEAP_SIZE_KB(-1024);
+/* Lämna 7 MB fritt: ARK:s RECOVERY.PRX (4 MB egen heap), MP3-avkodarens moduler och
+ * trådarnas stackar. Resten (~17 MB på PSP-1000) räcker gott – psp5 använder under 10 MB. */
+PSP_HEAP_SIZE_KB(-7168);
 
 /* psp5:s egna filer (omslag, cache) – samma plats oavsett varifrån psp5 körs */
 #define DATA_DIR PSP5_DATA_DIR
@@ -89,12 +92,14 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     if (has_non_ascii(list))
         font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
+    music_init(); /* läser in ms0:/MUSIC i bakgrunden */
     ui_init(ui, list, confirm_is_circle(), launch_supported());
 }
 
 /* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
 static void app_stop(EntryList *list, Ui *ui)
 {
+    music_term();
     sound_term();
     loader_stop();
     ui_free(ui);

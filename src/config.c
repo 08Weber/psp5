@@ -32,7 +32,8 @@ void config_save(const char *data_dir)
 {
     char path[200], buf[64];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
-    int n = snprintf(buf, sizeof(buf), "sound=%d\nlang=%s\n", g_sound_on ? 1 : 0, lang_code(g_lang_setting));
+    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\n", g_sound_on ? 1 : 0,
+                     g_boot_anim ? 1 : 0, lang_code(g_lang_setting));
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {
         sceIoWrite(fd, buf, n);

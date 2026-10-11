@@ -458,3 +458,12 @@ void gfx_clip_reset(void)
 {
     sceGuScissor(0, 0, SCREEN_W, SCREEN_H);
 }
+
+void gfx_quad(const float *xy, const u32 *colors)
+{
+    CVert *v = sceGuGetMemory(4 * sizeof(CVert));
+    for (int i = 0; i < 4; i++)
+        v[i] = (CVert){ colors[i], xy[i * 2], xy[i * 2 + 1], 0 };
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDrawArray(GU_TRIANGLE_STRIP, CVERT_FMT, 4, 0, v);
+}

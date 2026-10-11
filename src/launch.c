@@ -29,7 +29,10 @@ static char s_argp[256];
 
 int launch_supported(void)
 {
-    return sctrlHENGetVersion() > 0;
+    /* sctrlSEGetVersion ger huvudversionen (4 eller 5). sctrlHENGetVersion ger bara
+     * mellanversionen, som är 0 på t.ex. ARK 5.0.x – den räcker inte ensam.
+     * Utan ARK (PPSSPP) är funktionerna inte länkade och ger 0 eller ett felvärde. */
+    return sctrlSEGetVersion() > 0 || sctrlHENGetVersion() > 0;
 }
 
 static int file_exists(const char *path)

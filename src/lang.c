@@ -243,6 +243,38 @@ static const char *const T[S_COUNT][NL] = {
     [S_BOOT_ANIM] = { "Startup animation", "Startanimation", "Startanimation", "Animation de démarrage",
                       "Animación de inicio", "Animazione di avvio", "Opstartanimatie", "Animação de arranque",
                       "Заставка при запуске", "起動アニメーション" },
+    /* hälsovarningen på startskärmen – rader skiljs med \n */
+    [S_HEALTH] = { "PHOTOSENSITIVITY WARNING: SOME PEOPLE MAY HAVE SEIZURES WHEN EXPOSED TO FLASHING LIGHTS\n"
+                   "OR PATTERNS, EVEN WITHOUT ANY HISTORY OF EPILEPSY. IF YOU FEEL UNWELL WHILE PLAYING,\n"
+                   "STOP IMMEDIATELY AND CONSULT A DOCTOR. TAKE REGULAR BREAKS.",
+                   "VARNING FÖR LJUSKÄNSLIGHET: VISSA PERSONER KAN FÅ ANFALL AV BLINKANDE LJUS ELLER MÖNSTER,\n"
+                   "ÄVEN UTAN TIDIGARE EPILEPSI. OM DU MÅR DÅLIGT NÄR DU SPELAR, SLUTA GENAST OCH\n"
+                   "KONTAKTA EN LÄKARE. TA REGELBUNDNA PAUSER." },
+    [S_TAB_MUSIC] = { "Music", "Musik", "Musik", "Musique", "Música", "Musica", "Muziek", "Música", "Музыка",
+                      "ミュージック" },
+    [S_NO_MUSIC] = { "No music found", "Ingen musik hittades", "Keine Musik gefunden", "Aucune musique trouvée",
+                     "No se encontró música", "Nessuna musica trovata", "Geen muziek gevonden",
+                     "Nenhuma música encontrada", "Музыка не найдена", "ミュージックが見つかりません" },
+    [S_HINT_MUSIC] = { "Put MP3 files in ms0:/MUSIC", "Lägg MP3-filer i ms0:/MUSIC", "Lege MP3-Dateien in ms0:/MUSIC",
+                       "Placez vos fichiers MP3 dans ms0:/MUSIC", "Copia archivos MP3 en ms0:/MUSIC",
+                       "Copia file MP3 in ms0:/MUSIC", "Zet MP3-bestanden in ms0:/MUSIC",
+                       "Coloque ficheiros MP3 em ms0:/MUSIC", "Поместите файлы MP3 в ms0:/MUSIC",
+                       "MP3を ms0:/MUSIC に入れてください" },
+    [S_NOW_PLAYING] = { "Now playing", "Spelas nu", "Wird gespielt", "En cours", "Reproduciendo", "In riproduzione",
+                        "Speelt nu", "A tocar", "Сейчас играет", "再生中" },
+    [S_NOTHING_PLAYING] = { "Nothing playing", "Inget spelas", "Keine Wiedergabe", "Aucune lecture",
+                            "Nada en reproducción", "Nessuna riproduzione", "Er speelt niets", "Nada a tocar",
+                            "Ничего не играет", "再生していません" },
+    [S_PLAY] = { "Play", "Spela", "Abspielen", "Lire", "Reproducir", "Riproduci", "Afspelen", "Tocar",
+                 "Играть", "再生" },
+    [S_PAUSE] = { "Pause", "Paus", "Pause", "Pause", "Pausa", "Pausa", "Pauze", "Pausa", "Пауза", "一時停止" },
+    [S_TRACK] = { "Track", "Spår", "Titel", "Piste", "Pista", "Brano", "Nummer", "Faixa", "Трек", "曲" },
+    [S_LOADING_MUSIC] = { "Loading music", "Läser in musik", "Musik wird geladen", "Chargement de la musique",
+                          "Cargando música", "Caricamento musica", "Muziek laden", "A carregar música",
+                          "Загрузка музыки", "ミュージックを読み込み中" },
+    [S_UNKNOWN_ARTIST] = { "Unknown artist", "Okänd artist", "Unbekannter Künstler", "Artiste inconnu",
+                           "Artista desconocido", "Artista sconosciuto", "Onbekende artiest",
+                           "Artista desconhecido", "Неизвестный исполнитель", "不明なアーティスト" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

@@ -25,6 +25,8 @@ void sound_play(SoundId id);
 void sound_wait(int timeout_ms);
 /* 1 när ljuden är framräknade (görs i bakgrunden efter sound_init) */
 int sound_ready(void);
+/* Frigör ett ljud som inte behövs mer (startljudet efter startskärmen). */
+void sound_release(SoundId id);
 /* Tonar snabbt ut allt som spelas (t.ex. när startskärmen hoppas över). */
 void sound_fade_out(void);
 

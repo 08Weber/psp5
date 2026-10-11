@@ -165,42 +165,49 @@ static float gen_error(float t)
     return s * (env(t, 0.004f, 0.04f) + env(t - 0.09f, 0.004f, 0.05f));
 }
 
-/* startskärmen: ett luftigt sus som stiger, glasklara stänk som tätnar och
- * ett varmt, brett ackord (Dess-dur med nia) som slår ut när partiklarna möts */
-#define BOOT_HIT 2.25f
-static float s_bt_lo, s_bt_band;
-static const float s_ping_t[] = { 0.45f, 0.78f, 1.05f, 1.27f, 1.46f, 1.62f, 1.76f, 1.88f, 1.98f, 2.07f, 2.14f };
-static const float s_ping_f[] = { 1864.7f, 2217.5f, 2793.8f, 2489.0f, 3322.4f, 2960.0f, 3729.3f, 2217.5f, 4434.9f, 3322.4f, 2793.8f };
+/* startskärmen (spelas från hälsovarningen, loggan visas i tystnad):
+ * ett mjukt, luftigt ackord som sväller fram under de mörka cirklarna, en liten
+ * dipp, och sedan ett skimrande svep med glittrande toner när dammet virvlar upp */
+#define BOOT_SHIMMER 2.0f /* dammet, sekunder efter ljudets start */
+static float s_bt_lo, s_bt_band, s_air_lo;
+static const float s_ping_t[] = { 1.86f, 1.97f, 2.05f, 2.13f, 2.22f, 2.30f, 2.41f, 2.52f, 2.66f, 2.83f, 3.05f, 3.32f };
+static const float s_ping_f[] = { 2093.0f, 2637.0f, 3136.0f, 2349.3f, 3520.0f, 2793.8f, 4186.0f, 3136.0f,
+                                  2637.0f, 3520.0f, 2349.3f, 3136.0f };
 static float gen_boot(float t)
 {
-    /* sus: brus genom ett bandpass som sveper uppåt mot blixten */
-    float rise = fminf(t / BOOT_HIT, 1.0f);
-    float f = 250 + 2800 * rise * rise;
-    float c = 2 * sinf(PI * f / RATE);
-    float hi = noise() - s_bt_lo - 0.35f * s_bt_band;
-    s_bt_band += c * hi;
-    s_bt_lo += c * s_bt_band;
-    float swell = t < BOOT_HIT ? rise * rise * rise : expf(-(t - BOOT_HIT) / 0.25f);
-    float out = s_bt_band * swell * 0.4f;
+    /* ackordet (A-dur med nia), varje ton i två lätt ostämda kopior */
+    static const float notes[] = { 110.0f, 164.8f, 220.0f, 277.2f, 329.6f, 493.9f };
+    static const float gain[] = { 0.50f, 0.45f, 0.40f, 0.30f, 0.26f, 0.14f };
+    float pad_env = fminf(t / 1.3f, 1.0f);
+    pad_env *= pad_env;
+    if (t > 1.55f)
+        pad_env *= 1.0f - 0.45f * fminf((t - 1.55f) / 0.35f, 1.0f);   /* dippen före dammet */
+    if (t > BOOT_SHIMMER)
+        pad_env *= 0.55f + 0.45f * expf(-(t - BOOT_SHIMMER) / 1.4f);
+    pad_env *= 1.0f - fminf(fmaxf(t - 3.6f, 0) / 1.5f, 1.0f);          /* tonar ut */
+    float pad = 0;
+    for (int i = 0; i < 6; i++)
+        pad += (tone(t, notes[i] * 1.0021f) + tone(t, notes[i] * 0.9979f)) * gain[i];
+    /* luft: lågpassat brus under ackordet */
+    s_air_lo += 0.04f * (noise() - s_air_lo);
+    float out = (pad * 0.16f + s_air_lo * 0.9f) * pad_env;
 
-    /* stänk */
-    for (unsigned i = 0; i < sizeof(s_ping_t) / sizeof(s_ping_t[0]); i++) {
-        float d = t - s_ping_t[i];
-        if (d >= 0 && d < 1.2f)
-            out += tone(d, s_ping_f[i]) * env(d, 0.002f, 0.22f) * (0.10f + 0.10f * s_ping_t[i] / BOOT_HIT);
+    /* svepet: brus genom ett bandpass som sveper uppåt och klingar av */
+    float d = t - (BOOT_SHIMMER - 0.35f);
+    if (d > 0 && d < 3.0f) {
+        float f = 700 + 4800 * fminf(d / 0.7f, 1.0f);
+        float c = 2 * sinf(PI * f / RATE);
+        float hi = noise() - s_bt_lo - 0.4f * s_bt_band;
+        s_bt_band += c * hi;
+        s_bt_lo += c * s_bt_band;
+        float sw = d < 0.45f ? d / 0.45f : expf(-(d - 0.45f) / 0.55f);
+        out += s_bt_band * sw * sw * 0.32f;
     }
-
-    /* ackordet, varje ton i två lätt ostämda kopior för bredd */
-    static const float notes[] = { 69.3f, 138.6f, 207.7f, 277.2f, 349.2f, 415.3f, 622.3f, 830.6f };
-    static const float gain[] = { 0.55f, 0.6f, 0.5f, 0.5f, 0.42f, 0.38f, 0.26f, 0.16f };
-    float d = t - BOOT_HIT + 0.04f;
-    if (d > 0) {
-        float e = (d < 0.09f ? d / 0.09f : 1.0f) * expf(-d / 1.25f);
-        float sum = 0;
-        for (int i = 0; i < 8; i++)
-            sum += (tone(t, notes[i] * 1.0018f) + tone(t, notes[i] * 0.9982f)) * gain[i];
-        out += sum * e * 0.4f;
-        out += tone(d, 2*1661.2f) * env(d, 0.003f, 0.5f) * 0.08f; /* ljus klang i anslaget */
+    /* glitter */
+    for (unsigned i = 0; i < sizeof(s_ping_t) / sizeof(s_ping_t[0]); i++) {
+        float p = t - s_ping_t[i];
+        if (p >= 0 && p < 1.4f)
+            out += tone(p, s_ping_f[i]) * env(p, 0.004f, 0.28f) * 0.075f;
     }
     return out;
 }
@@ -212,8 +219,8 @@ static void build_sounds(void)
     /* startljudet behövs bara första gången (inte efter USB-läge o.d.) */
     static int boot_done;
     if (!boot_done && g_boot_anim) {
-        s_bt_lo = s_bt_band = 0;
-        render(SND_BOOT, 4.6f, 0.42f, gen_boot);
+        s_bt_lo = s_bt_band = s_air_lo = 0;
+        render(SND_BOOT, 5.2f, 0.40f, gen_boot);
     }
     boot_done = 1;
     render(SND_MOVE, 0.06f, 0.22f, gen_move);
@@ -245,6 +252,7 @@ static int audio_thread(SceSize args, void *argp)
         } else if (tail > 0) {
             tail--; /* kanalen ska sluta på tystnad, inte på en bit av ljudet */
         } else {
+            s_fade = 0; /* inget spelas – en begärd uttoning gäller inte nästa ljud */
             sceKernelDelayThread(4000);
             continue;
         }
@@ -342,6 +350,19 @@ void sound_fade_out(void)
     s_fade = 24; /* ~0,3 s */
 }
 
+void sound_release(SoundId id)
+{
+    if (id >= SND_COUNT || !s_samples[id].data)
+        return;
+    for (int v = 0; v < VOICES; v++)
+        if (s_voices[v].data == s_samples[id].data)
+            s_voices[v].active = 0;
+    sceKernelDelayThread(30000); /* mixern kan vara mitt i ett block */
+    free(s_samples[id].data);
+    s_samples[id].data = NULL;
+    s_samples[id].len = 0;
+}
+
 void sound_wait(int timeout_ms)
 {
     for (int t = 0; t < timeout_ms && s_thread >= 0; t += 10) {
@@ -363,6 +384,8 @@ void sound_dump(const char *dir)
     sceIoMkdir(dir, 0777);
     for (int i = 0; i < SND_COUNT; i++) {
         char path[200];
+        if (!s_samples[i].data)
+            continue;
         snprintf(path, sizeof(path), "%s/%s.wav", dir, names[i]);
         SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
         if (fd < 0)

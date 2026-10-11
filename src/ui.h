@@ -7,7 +7,7 @@
 #include "loader.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS };
-enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_COUNT };
+enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_COUNT };
 
 typedef struct {
     u32 pressed; /* nedtryckta denna bildruta */
@@ -17,7 +17,7 @@ typedef struct {
 
 typedef struct {
     const EntryList *list;
-    LoaderView views[TAB_COUNT]; /* Spel / Appar / Bibliotek */
+    LoaderView views[TAB_COUNT]; /* Spel / Appar / Bibliotek (Musik har egen lista, se music.h) */
     int tab;
     int sel[TAB_COUNT];  /* position i respektive flik */
     float pos;           /* animerad scrollposition i aktiv flik */
@@ -52,6 +52,11 @@ typedef struct {
     int grid_target;     /* raden som ska stå överst */
     char lib_label[160];
     int lib_label_for;
+
+    /* musik */
+    int music_sel;
+    float music_scroll;
+    int music_target;
 
     char toast[96];
     float toast_time;

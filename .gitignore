@@ -6,6 +6,7 @@
 /EBOOT.PBP
 /dist/
 /dist-test/
+/dist-ark4/
 
 # lokalt: referenskod, testdata, säkerhetskopior, egna omslag
 /ref/

@@ -2,7 +2,7 @@
 #ifndef ARKCFG_H
 #define ARKCFG_H
 
-/* ARK-5:s CFW-inställningar (ARK_01234/SETTINGS.TXT).
+/* ARK:s CFW-inställningar (ARK_01234/SETTINGS.TXT), för ARK-5 och ARK-4.
  * Läses och skrivs i samma format som ARK:s egen arkMenu (Launcher-Menus/arkMenu/include/ark_settings.h). */
 
 /* hur en inställning är aktiverad (som i arkMenu) */
@@ -25,6 +25,9 @@ typedef struct {
 } CfwConf;
 
 extern CfwConf g_cfw;
+/* 1 = läs/skriv i ARK-4:s format (sätts av sys_init): klockan som overclock/defaultclock/
+ * powersave, highmem och mscache som på/av, inga deadef/vitamute */
+extern int g_arkcfg_ark4;
 
 /* Returnerar 1 om filen kunde läsas. Saknas den används ARK:s standardvärden. */
 int arkcfg_load(const char *path);
