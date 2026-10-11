@@ -2,11 +2,24 @@
 
 *psp5 – made by Mille Weber*
 
-You need a **PSP with ARK-5** and a **USB cable**. That's it.
+You need a **PSP-1000, PSP-2000 or PSP-3000 with ARK-4 or ARK-5** and a **USB cable**. That's it.
+
+## Which download?
+
+Every release has two zips – pick the one for the custom firmware on your PSP:
+
+| Your PSP runs | Download |
+|---|---|
+| **ARK-5** | `psp5-v1.3-ARK5.zip` |
+| **ARK-4** | `psp5-v1.3-ARK4.zip` |
+
+Not sure? Press **SELECT** in the XMB to open ARK's VSH menu – it shows the version (*ARK 4.x* or *ARK 5.x*).
+The same zip works on the PSP-1000, 2000 and 3000; psp5 checks the model and the ARK version by itself
+(so even the "wrong" zip will still start your games).
 
 ## Install (5 minutes)
 
-1. **Download** the newest `psp5-*.zip` from [Releases](../../releases) and unzip it.
+1. **Download** the zip for your ARK (see above) from [Releases](../../releases) and unzip it.
 2. **Connect your PSP:** on the PSP, go to *Settings → USB Connection* and plug in the cable.
    The PSP shows up on your computer as a drive (for example `E:`).
 3. **Copy the `PSP` folder** from the zip onto the PSP drive. If your computer asks, say yes to merging folders.
@@ -21,13 +34,16 @@ The first start takes a moment while psp5 finds your games. After that it opens 
 |---|---|
 | PSP games (`.iso`, `.cso`, `.zso`) | the `ISO` folder on the PSP |
 | Homebrew, PSN and PS1 games | `PSP/GAME/<game folder>/` |
+| Music (`.mp3`) | the `MUSIC` folder (sub-folders are fine) |
 
 ## Buttons
 
 | Button | Does |
 |---|---|
-| ✕ or START | Start the game |
-| L / R | Switch between Games and Apps |
+| ✕ or START | Start the game (in Music: play / pause the selected track) |
+| L / R | Switch between Games, Apps, Library and Music |
+| □ | Library: change the sort order · Music: pause / resume |
+| ← → in Music | Previous / next track |
 | △ | Settings |
 | HOME | Back to the XMB |
 
@@ -47,7 +63,7 @@ open psp5 again from *Game → Memory Stick*. Then it turns back on.
 
 ## Updating
 
-Copy the new files over the old ones, the same way you installed them:
+Download the zip for your ARK again and copy the new files over the old ones, the same way you installed them:
 
 - `PSP/GAME/PSP5/EBOOT.PBP`
 - `PSP/SAVEDATA/ARK_01234/VBOOT.PBP` (only if you did the optional step)

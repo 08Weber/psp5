@@ -15,6 +15,20 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.3
+
+- **ARK-4 och ARK-5, PSP-1000/2000/3000:** två byggen – `tools/build.sh` (ARK-5, länkar ArkCtrl) och
+  `tools/build.sh ark4` (ARK-4, `-DPSP5_ARK4`, utan ArkCtrl → `dist-ark4/`). Båda känner av ARK-versionen
+  (`sctrlSEGetVersion()`: 4/5) och modellen (`kuKernelGetModel()`: 0 = PSP-1000) vid start. På ARK-4 läses
+  ARK-konfigurationen via en egen SystemCtrlForUser-import (`src/ark4stub.S`) och SETTINGS.TXT skrivs i
+  ARK-4:s format (overclock/defaultclock/powersave, highmem/mscache på/av). PSP-1000 döljer extra minne och
+  USB-laddning.
+- **"ARK not found"-felet:** `sctrlHENGetVersion()` ger bara mellanversionen (0 på ARK 5.0.x) – nu används
+  huvudversionen.
+- **Musik:** fliken Musik spelar MP3 från `ms0:/MUSIC` (sceMp3, egen tråd, `src/music.c`), som XMB:s spelare.
+- **Startskärm som PS5:** grå logga på svart → hälsovarning med mörkblå bokeh → gyllene damm → ljuskägla.
+- Heapen lämnar 7 MB fritt (ARK:s RECOVERY.PRX behöver 4 MB).
+
 ## Startskärm och bibliotek (1.2.0)
 
 - **Startskärm:** ljuspartiklar virvlar in mot mitten, möts i en blixt och lämnar psp5-loggan kvar medan ett

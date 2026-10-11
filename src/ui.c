@@ -15,6 +15,7 @@
 #include "ui.h"
 #include "sound.h"
 #include "lang.h"
+#include "music.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -39,6 +40,12 @@
 #define GRID_ROWS  3       /* hela rader som syns */
 #define GRID_BOTTOM 234.0f /* rutnätet klipps här, ovanför titel och knapptips */
 
+/* musik: låtlista till vänster, "spelas nu" till höger */
+#define MLIST_Y    50.0f
+#define MROW_H     26.0f
+#define MROWS      7
+#define PANEL_X    306.0f
+
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
 #define LAUNCH_LEN 0.45f
@@ -49,7 +56,7 @@
 #define LIGHT       RGBA(238, 238, 242, 255)
 #define DARK        RGBA(18, 18, 22, 255)
 
-static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_APPS, S_TAB_LIBRARY };
+static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_APPS, S_TAB_LIBRARY, S_TAB_MUSIC };
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -149,7 +156,8 @@ static void switch_tab(Ui *ui, int tab)
     ui->pos = ui->sel[tab] + 0.7f; /* raden glider in från höger */
     ui->still = 0;
     ui->label_for = -2;
-    loader_set_view(view(ui));
+    if (tab != TAB_MUSIC) /* musikfliken har inga kort – låt ikonerna ligga kvar */
+        loader_set_view(view(ui));
 }
 
 /* --- färgton --- */
@@ -315,6 +323,44 @@ static void update_background(Ui *ui, float dt)
     }
 }
 
+/* Musikfliken: ↑↓ väljer, ✕ spelar (eller pausar vald låt), □ paus, ← → föregående/nästa låt */
+static void update_music(Ui *ui, const UiInput *in, float dt)
+{
+    int n = music_count();
+    UiInput vert = *in; /* ← → ska inte upprepas när de hålls in */
+    vert.held &= ~(PSP_CTRL_LEFT | PSP_CTRL_RIGHT);
+    vert.lx = 128;
+    int move = step_input(ui, &vert, dt, 1);
+    if (move && n) {
+        int next = clampf(ui->music_sel + move / 2, 0, n - 1);
+        if (next != ui->music_sel) {
+            ui->music_sel = next;
+            sound_play(SND_MOVE);
+        }
+    }
+    if (ui->intro < 1 || !n)
+        return;
+    int playing = music_current() >= 0 && music_state() != MUSIC_STOPPED;
+    if ((in->pressed & PSP_CTRL_LEFT) && playing)
+        music_prev();
+    if ((in->pressed & PSP_CTRL_RIGHT) && playing)
+        music_next();
+    if ((in->pressed & PSP_CTRL_SQUARE) && playing)
+        music_toggle_pause();
+    u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
+    if (in->pressed & confirm) {
+        if (playing && ui->music_sel == music_current())
+            music_toggle_pause();
+        else
+            music_play(ui->music_sel);
+    }
+    if (ui->music_sel < ui->music_target)
+        ui->music_target = ui->music_sel;
+    if (ui->music_sel > ui->music_target + MROWS - 1)
+        ui->music_target = ui->music_sel - (MROWS - 1);
+    ui->music_scroll = approach(ui->music_scroll, ui->music_target, 14.0f, dt);
+}
+
 int ui_update(Ui *ui, const UiInput *in, float dt)
 {
     ui->time += dt;
@@ -336,12 +382,15 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if (in->pressed & PSP_CTRL_RTRIGGER)
         switch_tab(ui, ui->tab + 1);
 
+    if (ui->tab == TAB_MUSIC)
+        update_music(ui, in, dt);
+
     int count = view(ui)->count;
     int *sel = &ui->sel[ui->tab];
     int grid = ui->tab == TAB_LIBRARY;
     if (grid && (in->pressed & PSP_CTRL_SQUARE) && count > 1 && ui->launch < 0)
         toggle_sort(ui);
-    int move = step_input(ui, in, dt, grid);
+    int move = ui->tab == TAB_MUSIC ? 0 : step_input(ui, in, dt, grid);
     if (move && count) {
         int next = *sel + move;
         if (move == 2 || move == -2) {
@@ -386,7 +435,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->pos = approach(ui->pos, *sel, 13.0f, dt);
     if (fabsf(ui->pos - *sel) < 0.001f)
         ui->pos = *sel;
-    loader_focus(*sel);
+    if (ui->tab != TAB_MUSIC)
+        loader_focus(*sel);
+    if (music_needs_cjk())
+        font_ensure_cjk(); /* japanska/ryska låttitlar (laddas bara en gång) */
     update_background(ui, dt);
 
     IconSlot *slot = loader_icon(ui_selected(ui));
@@ -444,16 +496,32 @@ static void draw_battery(float x, float y, int percent, float a)
     }
 }
 
+/* Egenritad not (två noter med balk), centrerad i (cx, cy), höjd ≈ size */
+static void draw_note(float cx, float cy, float size, u32 color)
+{
+    float r = size * 0.2f, sw = fmaxf(size * 0.09f, 1.2f);
+    float lx = cx - size * 0.28f, rx = cx + size * 0.32f;
+    float ly = cy + size * 0.32f, ry = cy + size * 0.24f;
+    float top_l = cy - size * 0.42f, top_r = cy - size * 0.5f;
+    gfx_circle(lx, ly, r, color);
+    gfx_circle(rx, ry, r, color);
+    gfx_rect(lx + r - sw, top_l, sw, ly - top_l, color);
+    gfx_rect(rx + r - sw, top_r, sw, ry - top_r, color);
+    float beam = size * 0.17f;
+    float xy[8] = { lx + r - sw, top_l, rx + r, top_r, lx + r - sw, top_l + beam, rx + r, top_r + beam };
+    u32 c[4] = { color, color, color, color };
+    gfx_quad(xy, c);
+}
+
+static void format_time(char *out, int size, float sec)
+{
+    int t = sec > 0 ? (int)sec : 0;
+    snprintf(out, size, "%d:%02d", t / 60, t % 60);
+}
+
 static void draw_top_bar(Ui *ui)
 {
     float a = ui->intro;
-    float x = MARGIN;
-    for (int t = 0; t < TAB_COUNT; t++) {
-        int active = t == ui->tab;
-        text_draw(x, 25, 0.8f, active, with_alpha(active ? TEXT_MAIN : RGBA(255, 255, 255, 120), a),
-                  ALIGN_LEFT, L(TAB_NAMES[t]));
-        x += text_width(0.8f, active, L(TAB_NAMES[t])) + 22;
-    }
 
     ScePspDateTime now;
     char clock[8] = "";
@@ -464,6 +532,47 @@ static void draw_top_bar(Ui *ui)
     float bx = SCREEN_W - MARGIN - cw - 32;
     draw_battery(bx, 15.5f, scePowerIsBatteryExist() ? scePowerGetBatteryLifePercent() : -1, a);
     gfx_gear(bx - 18, 20.5f, 7.5f, with_alpha(LIGHT, 0.9f * a), RGBA(14, 14, 18, (int)(255 * a)));
+
+    /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) */
+    float room = bx - 34 - MARGIN, size = 0.8f, gap = 20;
+    for (;;) {
+        float w = 0;
+        for (int t = 0; t < TAB_COUNT; t++)
+            w += text_width(size, t == ui->tab, L(TAB_NAMES[t])) + gap;
+        if (w - gap <= room || size <= 0.56f)
+            break;
+        size -= 0.04f;
+        gap = 14;
+    }
+    float x = MARGIN;
+    for (int t = 0; t < TAB_COUNT; t++) {
+        int active = t == ui->tab;
+        text_draw(x, 25, size, active, with_alpha(active ? TEXT_MAIN : RGBA(255, 255, 255, 120), a),
+                  ALIGN_LEFT, L(TAB_NAMES[t]));
+        x += text_width(size, active, L(TAB_NAMES[t])) + gap;
+    }
+
+    /* musik som spelas syns som en liten not med titeln i de andra flikarna */
+    int cur = music_current();
+    if (ui->tab != TAB_MUSIC && cur >= 0 && music_state() != MUSIC_STOPPED) {
+        float right = bx - 30, left = x + 4;
+        if (right - left > 40) {
+            static char line[100];
+            static int line_for = -2, line_gen = -1;
+            static float line_w;
+            const Track *tr = music_track(cur);
+            if (tr && (line_for != cur || line_gen != music_generation() || line_w != right - left)) {
+                fit_text(line, sizeof(line), tr->title, 0.5f, right - left - 16);
+                line_for = cur;
+                line_gen = music_generation();
+                line_w = right - left;
+            }
+            float pulse = music_state() == MUSIC_PLAYING ? 0.75f + 0.25f * sinf(ui->time * 3) : 0.5f;
+            float tw = text_width(0.5f, 0, line);
+            draw_note(right - tw - 8, 20.5f, 10, with_alpha(LIGHT, pulse * a));
+            text_draw(right, 24.5f, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, line);
+        }
+    }
 }
 
 /* Placering för kortet på avståndet d från markeringen (0 = valt). */
@@ -714,6 +823,143 @@ static void draw_library(Ui *ui)
     }
 }
 
+/* Musikfliken: låtlista till vänster, "spelas nu" med förlopp till höger, knapptips nere till vänster */
+typedef struct { int idx; char title[100]; char sub[72]; } RowCache;
+
+static void draw_play_glyph(float cx, float cy, float r, int paused, u32 color)
+{
+    if (paused) {
+        gfx_rect(cx - r * 0.55f, cy - r * 0.6f, r * 0.38f, r * 1.2f, color);
+        gfx_rect(cx + r * 0.17f, cy - r * 0.6f, r * 0.38f, r * 1.2f, color);
+    } else {
+        float xy[6] = { cx - r * 0.42f, cy - r * 0.62f, cx + r * 0.68f, cy, cx - r * 0.42f, cy + r * 0.62f };
+        gfx_fan(cx, cy, xy, 3, color);
+    }
+}
+
+static void draw_music(Ui *ui)
+{
+    float a = ui->intro * smooth(ui->tab_anim);
+    float slide = (1 - smooth(ui->tab_anim)) * 10;
+    int n = music_count(), cur = music_current(), state = music_state();
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 150));
+
+    /* --- spelas nu --- */
+    float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
+    gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
+    text_draw(px + 12, py + 17, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_NOW_PLAYING));
+    const Track *t = cur >= 0 ? music_track(cur) : NULL;
+    /* omslagsruta: färgton från låtens nummer, egenritad not */
+    float as = 64, ax = px + (pw - as) / 2, ay = py + 28;
+    unsigned h = (cur >= 0 ? cur : 7) * 2654435761u;
+    int r0 = 60 + (h >> 8) % 120, g0 = 60 + (h >> 16) % 110, b0 = 90 + (h >> 24) % 140;
+    gfx_glow(ax, ay + 3, as, as, 8, RGBA(0, 0, 0, (int)(120 * a)));
+    gfx_round_rect(ax, ay, as, as, 8, RGBA(r0, g0, b0, (int)((t ? 255 : 90) * a)));
+    gfx_gradient_v(ax + 4, ay + as * 0.5f, as - 8, as * 0.5f - 4, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, (int)(60 * a)));
+    draw_note(ax + as / 2, ay + as / 2, 30, RGBA(255, 255, 255, (int)((t ? 230 : 120) * a)));
+
+    static char ptitle[100], partist[72];
+    static int pfor = -2, pgen = -1;
+    static const char *plang;
+    if (pfor != cur || pgen != music_generation() || plang != L(S_UNKNOWN_ARTIST)) {
+        pgen = music_generation();
+        plang = L(S_UNKNOWN_ARTIST);
+        fit_text(ptitle, sizeof(ptitle), t ? t->title : L(S_NOTHING_PLAYING), 0.6f, pw - 20);
+        fit_text(partist, sizeof(partist), t ? (t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST)) : "", 0.5f, pw - 20);
+        pfor = cur;
+    }
+    text_draw(px + pw / 2, ay + as + 20, 0.6f, 0, with_alpha(TEXT_MAIN, a), ALIGN_CENTER, ptitle);
+    text_draw(px + pw / 2, ay + as + 35, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, partist);
+    if (t) {
+        float el = music_elapsed(), du = music_duration();
+        float bw = pw - 28, bxx = px + 14, by = py + ph - 30;
+        gfx_round_rect(bxx, by, bw, 3, 1.5f, RGBA(255, 255, 255, (int)(50 * a)));
+        if (du > 0)
+            gfx_round_rect(bxx, by, fmaxf(3, bw * clampf(el / du, 0, 1)), 3, 1.5f, with_alpha(LIGHT, a));
+        char e[12], d[12];
+        format_time(e, sizeof(e), el);
+        format_time(d, sizeof(d), du);
+        text_draw(bxx, by + 15, 0.45f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, e);
+        if (du > 0)
+            text_draw(bxx + bw, by + 15, 0.45f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, d);
+        gfx_circle(px + pw / 2, by + 11, 8, with_alpha(LIGHT, 0.95f * a));
+        draw_play_glyph(px + pw / 2, by + 11, 6, state == MUSIC_PLAYING, with_alpha(DARK, a));
+    }
+
+    if (!n && music_scanning()) {
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MUSIC));
+        for (int i = 0; i < 3; i++) { /* tre punkter som pulserar i tur och ordning */
+            float p = 0.5f + 0.5f * sinf(ui->time * 6.0f - i * 0.9f);
+            gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, RGBA(240, 240, 244, (int)((90 + 165 * p) * a)));
+        }
+        return;
+    }
+    if (!n) {
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_MUSIC));
+        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_HINT_MUSIC));
+        return;
+    }
+
+    /* --- låtlistan --- */
+    static RowCache cache[MROWS + 3];
+    static int cache_gen = -1;
+    static const char *cache_lang;
+    if (cache_gen != music_generation() || cache_lang != L(S_UNKNOWN_ARTIST)) { /* ny lista eller nytt språk */
+        for (int i = 0; i < MROWS + 3; i++)
+            cache[i].idx = -1;
+        cache_gen = music_generation();
+        cache_lang = L(S_UNKNOWN_ARTIST);
+    }
+    float lw = PANEL_X - 14 - MARGIN;
+    gfx_clip(0, MLIST_Y - 2, PANEL_X - 6, MROWS * MROW_H + 2);
+    int first = (int)floorf(ui->music_scroll), last = first + MROWS;
+    for (int i = first; i <= last && i < n; i++) {
+        if (i < 0)
+            continue;
+        float y = MLIST_Y + (i - ui->music_scroll) * MROW_H + slide;
+        RowCache *c = &cache[i % (MROWS + 3)];
+        const Track *tr = music_track(i);
+        if (!tr)
+            continue;
+        if (c->idx != i) {
+            fit_text(c->title, sizeof(c->title), tr->title, 0.6f, lw - 30);
+            fit_text(c->sub, sizeof(c->sub), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.46f, lw - 30);
+            c->idx = i;
+        }
+        int selected = i == ui->music_sel;
+        if (selected)
+            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
+        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
+        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
+        if (i == cur && state != MUSIC_STOPPED) {
+            /* små staplar som rör sig medan låten spelas */
+            for (int k = 0; k < 3; k++) {
+                float hgt = state == MUSIC_PLAYING ? 3 + 7 * (0.5f + 0.5f * sinf(ui->time * (7 + k * 2.3f) + k)) : 3;
+                gfx_rect(MARGIN + 2 + k * 4, y + 18 - hgt, 2.5f, hgt, main);
+            }
+        }
+        text_draw(MARGIN + 20, y + 11.5f, 0.6f, 0, main, ALIGN_LEFT, c->title);
+        text_draw(MARGIN + 20, y + 22, 0.46f, 0, dim, ALIGN_LEFT, c->sub);
+    }
+    gfx_clip_reset();
+
+    /* knapptips nere till vänster: ✕ Spela  □ Paus  ◀ ▶ Spår */
+    float x = MARGIN, y = 246;
+    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    x += 17;
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_PLAY));
+    x += text_width(0.56f, 0, L(S_PLAY)) + 12;
+    gfx_button(x + 6.5f, y, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    x += 17;
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_PAUSE));
+    x += text_width(0.56f, 0, L(S_PAUSE)) + 12;
+    float l[6] = { x, y, x + 6, y - 4.5f, x + 6, y + 4.5f };
+    gfx_fan(x + 3, y, l, 3, with_alpha(LIGHT, 0.9f * a));
+    float r[6] = { x + 15, y, x + 9, y - 4.5f, x + 9, y + 4.5f };
+    gfx_fan(x + 12, y, r, 3, with_alpha(LIGHT, 0.9f * a));
+    text_draw(x + 20, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_TRACK));
+}
+
 static void draw_toast(Ui *ui)
 {
     if (ui->toast_time <= 0)
@@ -740,7 +986,9 @@ void ui_draw(Ui *ui)
     gfx_begin(CLEAR_COLOR);
     draw_background(ui);
     draw_top_bar(ui);
-    if (view(ui)->count && ui->tab == TAB_LIBRARY) {
+    if (ui->tab == TAB_MUSIC) {
+        draw_music(ui);
+    } else if (view(ui)->count && ui->tab == TAB_LIBRARY) {
         draw_library(ui);
     } else if (view(ui)->count) {
         draw_row(ui);

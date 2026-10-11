@@ -1,7 +1,8 @@
 /* psp5 – made by Mille Weber */
 /* Läser/skriver ARK:s SETTINGS.TXT. Logiken följer arkMenu så att filen blir
- * exakt som ARK förväntar sig. Rader som inte känns igen (kommentarer,
- * spelspecifika rader, okända nycklar) behålls oförändrade. */
+ * exakt som ARK förväntar sig – i ARK-5:s eller ARK-4:s format (g_arkcfg_ark4).
+ * Rader som inte känns igen (kommentarer, spelspecifika rader, okända nycklar)
+ * behålls oförändrade. */
 #include <pspkernel.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@
 #define LINE_LEN 160
 
 CfwConf g_cfw;
+int g_arkcfg_ark4;
 static char s_extra[MAX_EXTRA][LINE_LEN];
 static int s_extra_count;
 
@@ -26,7 +28,7 @@ static void set_defaults(void)
     memset(&g_cfw, 0, sizeof(g_cfw));
     g_cfw.usbcharge = 1;
     g_cfw.clock_game = g_cfw.clock_vsh = CLOCK_333;
-    g_cfw.highmem = 2;
+    g_cfw.highmem = g_arkcfg_ark4 ? 0 : 2; /* ARK-4: "highmem, on" betyder tvingat extra minne */
     g_cfw.wpa2 = 1;
     g_cfw.mscache = 1;
     g_cfw.infernocache = 1;
@@ -226,7 +228,13 @@ static void put_clock(OutBuf *fd, const char *runlevel, int clock)
     char line[LINE_LEN];
     if (!clock)
         return; /* Auto = ingen rad */
-    snprintf(line, sizeof(line), "%s, cpuclock:%s, on\n", runlevel, CLOCK_KEYS[clock]);
+    if (g_arkcfg_ark4) {
+        /* ARK-4 känner bara tre lägen (ARK-4 arkMenu ark_settings.h) */
+        const char *key = clock == CLOCK_133 ? "powersave" : clock == CLOCK_222 ? "defaultclock" : "overclock";
+        snprintf(line, sizeof(line), "%s, %s, on\n", runlevel, key);
+    } else {
+        snprintf(line, sizeof(line), "%s, cpuclock:%s, on\n", runlevel, CLOCK_KEYS[clock]);
+    }
     put(fd, line);
 }
 
@@ -251,8 +259,14 @@ int arkcfg_save(const char *path)
     static const char *inferno[] = { "infernocache", "infernocache:lru", "infernocache:rr" };
     static const char *logos[] = { "skiplogos", "skiplogos", "skiplogos:gameboot", "skiplogos:coldboot" };
     static const char *pics[] = { "hidepics", "hidepics", "hidepics:pic0", "hidepics:pic1" };
-    put_setting(fd, highmem[g_cfw.highmem % 5], g_cfw.highmem != 0);
-    put_setting(fd, mscache[g_cfw.mscache % 4], g_cfw.mscache != 0);
+    if (g_arkcfg_ark4) {
+        /* ARK-4: bara på/av (highmem = "tvingat extra minne") */
+        put_setting(fd, "highmem", g_cfw.highmem != 0);
+        put_setting(fd, "mscache", g_cfw.mscache != 0);
+    } else {
+        put_setting(fd, highmem[g_cfw.highmem % 5], g_cfw.highmem != 0);
+        put_setting(fd, mscache[g_cfw.mscache % 4], g_cfw.mscache != 0);
+    }
     put_setting(fd, inferno[g_cfw.infernocache % 3], g_cfw.infernocache != 0);
     put_setting(fd, "disablepause", g_cfw.disablepause);
     put_setting(fd, "oldplugin", g_cfw.oldplugin);
@@ -263,9 +277,11 @@ int arkcfg_save(const char *path)
     put_setting(fd, "hidedlc", g_cfw.hidedlc);
     put_setting(fd, "noled", g_cfw.noled);
     put_setting(fd, "noumd", g_cfw.noumd);
-    put_setting(fd, "deadef", g_cfw.deadef);
+    if (!g_arkcfg_ark4) /* finns inte i ARK-4 */
+        put_setting(fd, "deadef", g_cfw.deadef);
     put_setting(fd, "noanalog", g_cfw.noanalog);
-    put_setting(fd, "vitamute", g_cfw.vitamute);
+    if (!g_arkcfg_ark4)
+        put_setting(fd, "vitamute", g_cfw.vitamute);
     put_setting(fd, "qaflags", g_cfw.qaflags);
 
     static const char *regions[] = { "", "jp", "us", "eu" };

@@ -1,0 +1,16 @@
+wait 60
+shot 01-logo
+wait 70
+shot 02-warning
+wait 30
+shot 03-bokeh
+wait 55
+shot 04-small-bokeh
+wait 30
+shot 05-dust
+wait 60
+shot 06-spot
+wait 40
+shot 07-spot-late
+wait 200
+shot 08-home

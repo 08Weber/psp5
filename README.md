@@ -7,8 +7,8 @@ psp5: a launcher for the PSP that tries to recreate the look and feel of the **P
 the row of game tiles at the top, the big artwork filling the screen behind them, the clean dark settings
 pages – on a 480×272 screen from 2004.
 
-psp5 runs on PSPs with the **ARK-5** custom firmware. You can start it like any other homebrew, or let it
-take over as ARK's own launcher so your PSP boots straight into it.
+psp5 runs on PSPs with the **ARK-4 or ARK-5** custom firmware (PSP-1000, 2000 and 3000). You can start it
+like any other homebrew, or let it take over as ARK's own launcher so your PSP boots straight into it.
 
 Everything you see is drawn by psp5 itself. No logos, icons, sounds or other assets from Sony are used –
 it's my own take on that style.
@@ -18,12 +18,14 @@ it's my own take on that style.
 | ![Settings](docs/screenshots/settings.png) | ![Performance settings](docs/screenshots/settings-performance.png) |
 | ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
 | ![Startup screen](docs/screenshots/boot.png) |                                                         |
+| ![Music](docs/screenshots/music.png) | ![Startup screen – golden dust](docs/screenshots/boot-dust.png) |
 
 ## What it does
 
-psp5 starts with its own startup screen: points of light swirl in toward the middle, meet in a flash and leave
-the psp5 logo behind while a soft chord plays (any button skips it, and you can turn it off in settings).
-Everything is drawn and synthesized in code – no borrowed logos or sounds.
+psp5 starts the way a PS5 does: a small grey logo on black, a short health notice over large, dark blue
+out-of-focus circles, then golden dust that swirls up and a warm spotlight from the top left before your games
+fade in – with a soft, airy sound underneath. Any button skips it, and you can turn it off in settings. The
+logo is psp5's own and everything is drawn and synthesized in code – no borrowed logos or sounds.
 
 Then you get your games in a row along the top. The selected one is large with a thin light
 frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO and ZSO) live under
@@ -31,7 +33,11 @@ frame around it, and its artwork fades in behind everything. Your PSP games (ISO
 Next to them is the **Library**: everything you have, games and apps together, in a grid that's easy to scan
 through. Press □ there to sort by name or by what you added most recently.
 
-Pressing ✕ (or START) starts the game the same way ARK-5's own menu does, so updates, patched ISOs and
+The last tab is **Music**, like the music player in the XMB: it lists the MP3 files in `ms0:/MUSIC` (folders
+too) with their titles and artists, and keeps playing while you browse your games. The track that's playing
+shows up as a little note at the top of the other tabs.
+
+Pressing ✕ (or START) starts the game the same way ARK's own menu does, so updates, patched ISOs and
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
 so the game gets the whole PSP.
 
@@ -62,8 +68,10 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 |---|---|
 | ← → or the analog stick | move between games (hold to go faster) |
 | ↑ ↓ | move between rows in the Library |
-| L / R | switch between Games, Apps and Library |
-| □ | sort the Library (name / recently added) |
+| L / R | switch between Games, Apps, Library and Music |
+| □ | sort the Library (name / recently added) · pause/resume in Music |
+| ✕ in Music | play the selected track (or pause it) |
+| ← → in Music | previous / next track |
 | ✕ or START | start the selected game |
 | △ | settings |
 | any button | skip the startup screen |
@@ -80,9 +88,13 @@ tool for your computer that prepares them – see the covers section in [INSTALL
 
 ## Status
 
-I've been using psp5 on my own **PSP-2000 with ARK-5**, and launching games, artwork and covers all work
-there. The settings screen, USB mode and the language support are newer, so let me know if something
-behaves oddly. Other PSP models should be fine but I haven't been able to try them. The PSP Go and PS Vita
+psp5 runs on the **PSP-1000, PSP-2000 and PSP-3000** with **ARK-4 or ARK-5** – there's a download for
+each ARK (see [INSTALL.md](INSTALL.md)), and psp5 adapts the settings to your model and ARK version (for
+example, the PSP-1000 has no extra memory or USB charging, and ARK-4 has fewer CPU speeds).
+
+I've been using it on my own **PSP-2000 with ARK-5**, and launching games, artwork and covers all work
+there. ARK-4, the PSP-1000/3000, the music player and the new startup screen are newer and I haven't been
+able to try them on every combination, so let me know if something behaves oddly. The PSP Go and PS Vita
 aren't supported.
 
 ## Building it yourself
@@ -100,8 +112,9 @@ On Windows I build it inside WSL – `tools/setup-wsl.sh` installs the toolchain
 
 ## Thanks
 
-- The [ARK-5](https://github.com/PSP-Arkfive) team – psp5 starts games and stores settings the same way
-  their arkMenu does, and uses ARK's libraries through psp-cfw-sdk.
+- The [ARK-5](https://github.com/PSP-Arkfive) and [ARK-4](https://github.com/PSP-Archive/ARK-4) teams – psp5
+  starts games and stores settings the same way their arkMenu does, and uses ARK's libraries through
+  psp-cfw-sdk.
 - [pspdev](https://github.com/pspdev) for the toolchain, PSPSDK and packages.
 - intraFont, libpng, zlib, LZ4 and libcisoread.
 

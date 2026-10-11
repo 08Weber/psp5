@@ -51,6 +51,8 @@ void gfx_blend_add(int on);
 /* Tjock linje genom n punkter (xy[2*n]) med en färg per punkt */
 /* Prick med radien r i en enda sprite – billig för många partiklar. soft = mjuk kant */
 void gfx_dot(float cx, float cy, float r, u32 color, int soft);
+/* Fyrhörning med en färg per hörn, ordning som triangelremsa (0-1 överst, 2-3 nederst) */
+void gfx_quad(const float *xy, const u32 *colors);
 /* Ritar bara inom rektangeln tills gfx_clip_reset */
 void gfx_clip(float x, float y, float w, float h);
 void gfx_clip_reset(void);
