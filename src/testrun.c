@@ -13,7 +13,7 @@
 #define MAX_STEPS 128
 
 typedef struct {
-    char op;        /* 'w' vänta, 'p' tryck, 's' skärmdump, 'r' vakna ur viloläge */
+    char op;        /* 'w' vänta, 'p' tryck, 's' skärmdump, 'z' somna, 'r' vakna ur viloläge */
     int frames;
     u32 button;
     char name[32];
@@ -22,7 +22,7 @@ typedef struct {
 static Step s_steps[MAX_STEPS];
 static int s_count, s_pos, s_wait, s_hold;
 static int s_active;
-static int s_resume;
+static int s_resume, s_sleep;
 
 static u32 button_by_name(const char *n)
 {
@@ -64,6 +64,8 @@ void testrun_init(void)
         } else if (!strcmp(op, "press")) {
             s->op = 'p';
             s->button = button_by_name(arg);
+        } else if (!strcmp(op, "sleep")) {
+            s->op = 'z';
         } else if (!strcmp(op, "resume")) {
             s->op = 'r';
         } else if (!strcmp(op, "shot")) {
@@ -101,14 +103,24 @@ u32 testrun_buttons(u32 real)
             s_hold = 1;
             return s->button;
         }
-        if (s->op == 'r') {
+        if (s->op == 'r' || s->op == 'z') {
             s_pos++;
-            s_resume = 1;
+            if (s->op == 'r')
+                s_resume = 1;
+            else
+                s_sleep = 1;
             return 0;
         }
         return 0; /* 's' hanteras i testrun_frame */
     }
     return 0;
+}
+
+int testrun_take_sleep(void)
+{
+    int r = s_sleep;
+    s_sleep = 0;
+    return r;
 }
 
 int testrun_take_resume(void)
