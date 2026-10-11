@@ -89,17 +89,21 @@ int ui_selected(const Ui *ui)
     return v->count ? v->idx[ui->sel[ui->tab]] : -1;
 }
 
-/* biblioteket sorteras efter namn eller efter när filen lades till */
+/* biblioteket sorteras efter namn eller efter när filen lades till – UMD-skivan alltid först */
 static const EntryList *s_sort_list;
 static int cmp_name(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
+        return x->type == ENTRY_UMD ? -1 : 1;
     int c = strcasecmp(x->title, y->title);
     return c ? c : *(const int *)a - *(const int *)b;
 }
 static int cmp_recent(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
+        return x->type == ENTRY_UMD ? -1 : 1;
     if (x->file_time != y->file_time)
         return x->file_time > y->file_time ? -1 : 1;
     return cmp_name(a, b);
@@ -241,6 +245,49 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     build_views(ui);
     ui->tab = ui->views[TAB_GAMES].count || !ui->views[TAB_APPS].count ? TAB_GAMES : TAB_APPS;
     ui->pos = 1.5f; /* korten glider in vid start */
+    loader_set_view(view(ui));
+}
+
+/* Spellistans index före → efter att första posten tagits bort och/eller lagts till. */
+static int remap_index(int i, int removed_front, int added_front)
+{
+    if (i < 0 || (removed_front && i == 0))
+        return -1;
+    return i - removed_front + added_front;
+}
+
+void ui_relist(Ui *ui, int removed_front, int added_front)
+{
+    int chosen[TAB_COUNT];
+    int old_sel = ui->sel[ui->tab];
+    for (int t = 0; t < TAB_COUNT; t++) {
+        LoaderView *v = &ui->views[t];
+        chosen[t] = -1;
+        if (t != TAB_MUSIC && v->count && v->idx)
+            chosen[t] = remap_index(v->idx[ui->sel[t]], removed_front, added_front);
+        /* står man först i fliken blir en nyinsatt skiva markerad */
+        if (added_front && (t == TAB_GAMES || t == TAB_LIBRARY) && ui->sel[t] == 0)
+            chosen[t] = 0;
+        free(v->idx);
+        v->idx = NULL;
+        v->count = 0;
+    }
+    build_views(ui);
+    for (int t = 0; t < TAB_COUNT; t++) {
+        if (t == TAB_MUSIC)
+            continue;
+        LoaderView *v = &ui->views[t];
+        ui->sel[t] = 0;
+        for (int p = 0; p < v->count; p++)
+            if (v->idx[p] == chosen[t])
+                ui->sel[t] = p;
+    }
+    if (ui->tab != TAB_MUSIC)
+        ui->pos += ui->sel[ui->tab] - old_sel; /* raden står still om samma kort är markerat */
+    ui->still = 0;
+    ui->bg_index = remap_index(ui->bg_index, removed_front, added_front);
+    ui->label_for = -2;
+    ui->lib_label_for = -2;
     loader_set_view(view(ui));
 }
 
@@ -671,6 +718,7 @@ static const char *type_name(u32 t)
     case ENTRY_HOMEBREW: return "APP";
     case ENTRY_PSN:      return "PSN";
     case ENTRY_POPS:     return "PS1";
+    case ENTRY_UMD:      return "UMD";
     }
     return "";
 }

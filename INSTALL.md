@@ -10,8 +10,8 @@ Every release has two zips – pick the one for the custom firmware on your PSP:
 
 | Your PSP runs | Download |
 |---|---|
-| **ARK-5** | `psp5-v1.3-ARK5.zip` |
-| **ARK-4** | `psp5-v1.3-ARK4.zip` |
+| **ARK-5** | `psp5-v1.3.1-ARK5.zip` |
+| **ARK-4** | `psp5-v1.3.1-ARK4.zip` |
 
 Not sure? Press **SELECT** in the XMB to open ARK's VSH menu – it shows the version (*ARK 4.x* or *ARK 5.x*).
 The same zip works on the PSP-1000, 2000 and 3000; psp5 checks the model and the ARK version by itself

@@ -21,6 +21,7 @@
 #include "config.h"
 #include "boot.h"
 #include "music.h"
+#include "umd.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -30,6 +31,9 @@ PSP_HEAP_SIZE_KB(-7168);
 
 /* psp5:s egna filer (omslag, cache) – samma plats oavsett varifrån psp5 körs */
 #define DATA_DIR PSP5_DATA_DIR
+/* Finns medan ett spel körs: när spelet avslutas startar systemet om psp5
+ * (som ARK:s launcher), och då ska startskärmen inte visas igen. */
+#define INGAME_MARK DATA_DIR "/ingame"
 
 static volatile int s_running = 1;
 static char s_self[256];
@@ -79,16 +83,39 @@ static int confirm_is_circle(void)
     return v == 0; /* 0 = ○ bekräftar (japansk inställning) */
 }
 
+static int take_ingame_mark(void)
+{
+    SceIoStat st;
+    if (sceIoGetstat(INGAME_MARK, &st) < 0)
+        return 0;
+    sceIoRemove(INGAME_MARK);
+    return 1;
+}
+
+static void set_ingame_mark(void)
+{
+    if (!sys_is_launcher())
+        return; /* som vanlig app går systemet till XMB efter spelet */
+    SceUID fd = sceIoOpen(INGAME_MARK, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (fd >= 0)
+        sceIoClose(fd);
+}
+
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
 static void app_start(EntryList *list, Ui *ui, int boot)
 {
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
+    umd_start(); /* skivan hinner snurra upp under startskärmen */
     if (boot && g_boot_anim)
         boot_run(&s_running); /* startskärmen, innan spelen läses in */
     s_scan_start = sceKernelGetSystemTimeWide();
     scan_all(list, s_self, s_list_cache, scan_progress);
+    Entry disc;
+    int has_disc;
+    if (umd_poll(&disc, &has_disc) && has_disc)
+        scan_insert_front(list, &disc); /* UMD-skivan först */
     if (has_non_ascii(list))
         font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
@@ -99,6 +126,7 @@ static void app_start(EntryList *list, Ui *ui, int boot)
 /* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
 static void app_stop(EntryList *list, Ui *ui)
 {
+    umd_stop();
     music_term();
     sound_term();
     loader_stop();
@@ -106,6 +134,27 @@ static void app_stop(EntryList *list, Ui *ui)
     font_term();
     gfx_term();
     scan_free(list);
+}
+
+/* UMD-skivan har satts i eller tagits ut: lägg in den först i listan eller ta bort den. */
+static void umd_refresh(EntryList *list, Ui *ui)
+{
+    Entry disc;
+    int has;
+    if (!umd_poll(&disc, &has))
+        return;
+    int had = list->count > 0 && list->items[0].type == ENTRY_UMD;
+    if (!had && !has)
+        return;
+    loader_stop(); /* laddarens platser följer listans index */
+    if (had)
+        scan_remove_front(list);
+    if (has && !scan_insert_front(list, &disc))
+        has = 0;
+    loader_start(list);
+    ui_relist(ui, had, has);
+    if (has && has_non_ascii(list))
+        font_ensure_cjk();
 }
 
 static void read_pad(UiInput *in, u32 *old)
@@ -222,7 +271,7 @@ int main(int argc, char *argv[])
 
     EntryList list = { 0 };
     Ui ui;
-    app_start(&list, &ui, 1);
+    app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
 #ifdef PSP5_TEST
     sound_dump(DATA_DIR "/shots/sounds"); /* testbygge: ljuden som WAV */
 #endif
@@ -265,6 +314,8 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        if (ui.launch < 0)
+            umd_refresh(&list, &ui);
         int action = ui_update(&ui, &in, dt);
         if (action == UI_SETTINGS) {
             settings_open();
@@ -275,8 +326,10 @@ int main(int argc, char *argv[])
             Entry chosen = list.items[ui_selected(&ui)];
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
+            set_ingame_mark();
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */
+            sceIoRemove(INGAME_MARK);
             app_start(&list, &ui, 0);
             ui_toast(&ui, L(S_LAUNCH_FAILED));
             continue;

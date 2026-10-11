@@ -64,6 +64,9 @@ typedef struct {
 
 void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch);
 void ui_free(Ui *ui);
+/* Spellistan har ändrats först (UMD-skivan togs ut och/eller sattes i).
+ * Bygger om flikarna och behåller markeringen. Laddaren ska redan vara omstartad. */
+void ui_relist(Ui *ui, int removed_front, int added_front);
 int ui_update(Ui *ui, const UiInput *in, float dt);
 void ui_draw(Ui *ui);
 void ui_toast(Ui *ui, const char *msg);
