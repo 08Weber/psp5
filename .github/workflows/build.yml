@@ -17,7 +17,6 @@ jobs:
         run: |
           bash tools/build.sh
           bash tools/build.sh ark4
-          bash tools/build.sh go
       - name: Zips
         run: python3 tools/make_release.py
       - uses: actions/upload-artifact@v4

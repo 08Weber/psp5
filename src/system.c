@@ -11,14 +11,19 @@
 #include <systemctrl_se.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include "system.h"
 #include "launch.h"
 #include "arkcfg.h"
 
-#define DEFAULT_ARK_DIR PSP5_ROOT "/PSP/SAVEDATA/ARK_01234/"
 #define USBSTOR_EF_DRIVERNAME "USBStorEFlash_Driver"
 /* finns när launcherläget är pausat för att psp5 gick till XMB */
-#define LAUNCHER_PAUSED PSP5_DATA_DIR "/launcher.paused"
+static const char *paused_mark(void)
+{
+    static char path[32];
+    snprintf(path, sizeof(path), "%s/launcher.paused", g_data_dir);
+    return path;
+}
 
 int scePowerRequestSuspend(void);
 int scePowerRequestColdReset(int unk);
@@ -36,15 +41,29 @@ static int s_has_ark;
 static int s_is_launcher;
 static int s_usb_on;
 static char s_ark_dir[ARK_PATH_SIZE];
+static int s_ms_is_ef; /* ARK låter ms0: peka på PSP Go:s internminne */
+
+char g_root[5] = "ms0:";
+char g_data_dir[16] = "ms0:/PSP5";
+
+void sys_set_root(const char *self_path)
+{
+    /* som app i ef0:/PSP/GAME/PSP5 eller som launcher i ef0:/PSP/SAVEDATA/ARK_01234 */
+    if (self_path && !strncasecmp(self_path, "ef0:", 4))
+        snprintf(g_root, sizeof(g_root), "ef0:");
+    snprintf(g_data_dir, sizeof(g_data_dir), "%s/PSP5", g_root);
+}
 
 void sys_init(const char *self_path)
 {
-    snprintf(s_ark_dir, sizeof(s_ark_dir), DEFAULT_ARK_DIR);
+    char path[200];
+    snprintf(s_ark_dir, sizeof(s_ark_dir), "%s/PSP/SAVEDATA/ARK_01234/", g_root);
     /* ARK:s funktioner finns bara med CFW – inte i t.ex. PPSSPP */
     if (launch_supported()) {
         int major = sctrlSEGetVersion();
         s_ark = major == 4 ? 4 : 5; /* ARK-4 ger 4, ARK-5 ger 5 */
         s_model = kuKernelGetModel();
+        s_ms_is_ef = sctrlKernelMsIsEf() == 1;
         memset(&s_conf, 0, sizeof(s_conf));
         /* anropa bara den variant som finns i den ARK som körs */
         if (s_ark == 4)
@@ -53,25 +72,29 @@ void sys_init(const char *self_path)
         else
             sctrlArkGetConfig(&s_conf);
 #endif
+        char settings[200], vboot[200];
+        snprintf(settings, sizeof(settings), "%sSETTINGS.TXT", s_ark_dir);
+        snprintf(vboot, sizeof(vboot), "%sVBOOT.PBP", s_ark_dir);
+        snprintf(path, sizeof(path), "%s/SEPLUGINS/SETTINGS.TXT", g_root);
         if (IS_ARK_CONFIG(&s_conf) && s_conf.arkpath[0]) {
             s_has_ark = 1;
             snprintf(s_ark_dir, sizeof(s_ark_dir), "%s", s_conf.arkpath);
-        } else if (exists(DEFAULT_ARK_DIR "SETTINGS.TXT") || exists(DEFAULT_ARK_DIR "VBOOT.PBP")) {
+        } else if (exists(settings) || exists(vboot)) {
             s_has_ark = 1; /* konfigurationen gick inte att läsa – standardmappen finns */
-        } else if (s_ark == 4 && exists(PSP5_ROOT "/SEPLUGINS/SETTINGS.TXT")) {
-            s_has_ark = 1; /* ARK-4 utan ARK-mapp använder ms0:/SEPLUGINS/ */
-            snprintf(s_ark_dir, sizeof(s_ark_dir), PSP5_ROOT "/SEPLUGINS/");
+        } else if (s_ark == 4 && exists(path)) {
+            s_has_ark = 1; /* ARK-4 utan ARK-mapp använder <lagring>/SEPLUGINS/ */
+            snprintf(s_ark_dir, sizeof(s_ark_dir), "%s/SEPLUGINS/", g_root);
         }
     }
     g_arkcfg_ark4 = s_ark == 4;
-    char launcher[200];
-    snprintf(launcher, sizeof(launcher), "%sVBOOT.PBP", s_ark_dir);
-    s_is_launcher = self_path && !strcasecmp(self_path, launcher);
+    snprintf(path, sizeof(path), "%sVBOOT.PBP", s_ark_dir);
+    s_is_launcher = self_path && !strcasecmp(self_path, path);
 }
 
 int sys_has_ark(void) { return s_has_ark; }
 int sys_ark_version(void) { return s_ark; }
 int sys_model(void) { return s_model; }
+int sys_ms_is_ef(void) { return s_ms_is_ef; }
 int sys_is_psp1000(void) { return s_model == 0; }
 const char *sys_ark_dir(void) { return s_ark_dir; }
 int sys_is_launcher(void) { return s_is_launcher; }
@@ -93,14 +116,14 @@ static void pause_launcher(void)
     g_cfw.launcher = 0;
     if (!arkcfg_save(path))
         return;
-    SceUID fd = sceIoOpen(LAUNCHER_PAUSED, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    SceUID fd = sceIoOpen(paused_mark(), PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0)
         sceIoClose(fd);
 }
 
 void sys_resume_launcher(void)
 {
-    if (!s_has_ark || !exists(LAUNCHER_PAUSED))
+    if (!s_has_ark || !exists(paused_mark()))
         return;
     char path[200];
     settings_path(path, sizeof(path));
@@ -109,7 +132,7 @@ void sys_resume_launcher(void)
         if (!arkcfg_save(path))
             return; /* försök igen nästa start */
     }
-    sceIoRemove(LAUNCHER_PAUSED);
+    sceIoRemove(paused_mark());
 }
 
 void sys_exit_xmb(void)

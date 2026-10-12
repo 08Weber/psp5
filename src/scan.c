@@ -9,10 +9,8 @@
 #include "iso.h"
 #include "system.h"
 
-#define ISO_DIR PSP5_ROOT "/ISO"
-#define GAME_DIR PSP5_ROOT "/PSP/GAME"
 #define MAX_SFO_SIZE (64 * 1024)
-#define MAX_ISO_DEPTH 1 /* ms0:/ISO + en nivå undermappar */
+#define MAX_ISO_DEPTH 1 /* ISO-mappen + en nivå undermappar */
 
 #define PBP_MAGIC 0x50425000   /* "\0PBP" */
 #define CACHE_MAGIC 0x324C564E /* "NVL2" */
@@ -302,13 +300,14 @@ void scan_all(EntryList *list, const char *self_path, const char *cache_file, Sc
     if (cache_file)
         load_cache(&s.cached, cache_file);
 
-    scan_iso_dir(&s, ISO_DIR, 0);
-    scan_game_dir(&s, GAME_DIR, self_path);
-#ifdef PSP5_GO
-    /* PSP Go: också ett Memory Stick Micro (M2) i kortplatsen, som i arkMenu */
+    /* minneskortet och PSP Go:s internminne, som arkMenu – ef0: finns bara på PSP Go */
+    int ef0 = !sys_ms_is_ef();
     scan_iso_dir(&s, "ms0:/ISO", 0);
+    if (ef0)
+        scan_iso_dir(&s, "ef0:/ISO", 0);
     scan_game_dir(&s, "ms0:/PSP/GAME", self_path);
-#endif
+    if (ef0)
+        scan_game_dir(&s, "ef0:/PSP/GAME", self_path);
     scan_free(&s.cached);
 
     if (list->count > 1)

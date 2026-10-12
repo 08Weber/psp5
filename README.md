@@ -101,9 +101,9 @@ example, the PSP-1000 has no extra memory or USB charging, and ARK-4 has fewer C
 
 I've been using it on my own **PSP-2000 with ARK-5**, and launching games, artwork and covers all work
 there. ARK-4, the PSP-1000/3000, the music player and the new startup screen are newer and I haven't been
-able to try them on every combination, so let me know if something behaves oddly. The PSP Go version is the
-newest and untested on real hardware: it keeps its files in the internal storage (`ef0:`) and also finds games
-on a Memory Stick Micro. The PS Vita isn't supported.
+able to try them on every combination, so let me know if something behaves oddly. PSP Go support is the
+newest and untested on real hardware: started from the internal storage (`ef0:`), psp5 keeps its files there,
+and it finds games and music on both the internal storage and a Memory Stick Micro. The PS Vita isn't supported.
 
 ## Building it yourself
 
@@ -116,8 +116,8 @@ make
 ```
 
 On Windows I build it inside WSL – `tools/setup-wsl.sh` installs the toolchain and `tools/build.sh` builds
-`dist/PSP/GAME/PSP5/EBOOT.PBP` (`tools/build.sh ark4` and `tools/build.sh go` build the ARK-4 and PSP Go
-versions; `make ARK=4` and `make GO=1` do the same by hand).
+`dist/PSP/GAME/PSP5/EBOOT.PBP` (`tools/build.sh ark4` or `make ARK=4` builds the ARK-4 version; both also run
+on the PSP Go).
 
 ## Thanks
 

@@ -21,7 +21,8 @@ The same zip works on the PSP-1000, 2000 and 3000; psp5 checks the model and the
 
 **PSP Go:** everything below is the same, but on the internal storage instead of the memory stick: copy the
 `PSP` folder from the PSP Go zip onto the PSP Go, and start psp5 from *Game → System Storage*.
-Games, music and the `ARK_01234` folder are on the internal storage too (games on a Memory Stick Micro show up as well).
+Games and music can be on the internal storage or on a Memory Stick Micro – psp5 looks in both. The PSP Go zips
+hold the same psp5 as the other zips (psp5 notices the PSP Go by itself), just with PSP Go instructions.
 
 ## Install (5 minutes)
 

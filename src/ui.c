@@ -16,6 +16,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "music.h"
+#include "system.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -892,6 +893,17 @@ static void draw_play_glyph(float cx, float cy, float r, int paused, u32 color)
     }
 }
 
+/* Tipstexterna säger ms0:/ – på PSP Go:s internminne visas ef0:/ i stället */
+static const char *on_root(const char *s)
+{
+    static char buf[160];
+    const char *p = strstr(s, "ms0:");
+    if (!p || !strcmp(g_root, "ms0:"))
+        return s;
+    snprintf(buf, sizeof(buf), "%.*s%s%s", (int)(p - s), s, g_root, p + 4);
+    return buf;
+}
+
 static void draw_music(Ui *ui)
 {
     float a = ui->intro * smooth(ui->tab_anim);
@@ -951,7 +963,7 @@ static void draw_music(Ui *ui)
     }
     if (!n) {
         text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_MUSIC));
-        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_HINT_MUSIC));
+        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_MUSIC)));
         return;
     }
 
@@ -1031,7 +1043,7 @@ static void draw_empty(Ui *ui)
 {
     float a = ui->intro * smooth(ui->tab_anim);
     const char *title = L(ui->tab == TAB_APPS ? S_NO_APPS : S_NO_GAMES);
-    const char *hint = L(ui->tab == TAB_APPS ? S_HINT_APPS : S_HINT_GAMES);
+    const char *hint = on_root(L(ui->tab == TAB_APPS ? S_HINT_APPS : S_HINT_GAMES));
     text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, title);
     text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, hint);
 }
