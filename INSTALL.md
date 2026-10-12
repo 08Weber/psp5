@@ -31,6 +31,17 @@ You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 
 That's it! The first start takes a moment while psp5 finds your games. After that it opens fast.
 
+## Optional: replace ARK's Custom Launcher with psp5
+
+Then *Custom Launcher* in the XMB opens psp5, and your PSP can start straight into psp5.
+
+1. Connect the PSP with USB and open `PSP/SAVEDATA/ARK_01234/`.
+2. Rename the `VBOOT.PBP` that's there to `VBOOT_ARKMENU.PBP`. That keeps ARK's own menu as a backup.
+3. Copy `VBOOT.PBP` from the zip's `ARK_LAUNCHER` folder into `ARK_01234`.
+4. In psp5, press △ → *psp5* → turn on *Boot into psp5*, then restart the PSP.
+
+To get to the XMB from there: △ → *Power and USB* → *Exit to XMB*.
+
 ## Where your games go
 
 | What | Folder |
@@ -55,18 +66,7 @@ On a PSP Go, psp5 looks in these folders on both the internal storage and a Memo
 ## Updating
 
 Do steps 1 and 2 again with the new zip. Your settings and covers stay.
-If you use psp5 as ARK's launcher (see below), copy `ARK_LAUNCHER/VBOOT.PBP` again too.
-
-## Optional: start the PSP straight into psp5
-
-This makes psp5 ARK's launcher, so ARK's *Custom Launcher* opens psp5.
-
-1. Connect the PSP with USB and open `PSP/SAVEDATA/ARK_01234/`.
-2. Rename the `VBOOT.PBP` that's there to `VBOOT_ARKMENU.PBP`. That keeps ARK's own menu as a backup.
-3. Copy `VBOOT.PBP` from the zip's `ARK_LAUNCHER` folder into `ARK_01234`.
-4. In psp5, press △ → *psp5* → turn on *Boot into psp5*, then restart the PSP.
-
-To get to the XMB from there: △ → *Power and USB* → *Exit to XMB*.
+If you replaced ARK's Custom Launcher with psp5 (see above), copy `ARK_LAUNCHER/VBOOT.PBP` again too.
 
 ## Help!
 
