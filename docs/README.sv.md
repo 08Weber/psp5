@@ -15,7 +15,7 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
-## Version 1.3.4
+## Version 1.4.0
 
 - **PSP Go** – samma EBOOT på alla modeller: `sys_set_root` (`src/system.c`) väljer `g_root` efter argv[0].
   Startas psp5 från `ef0:` (PSP Go:s internminne) ligger psp5:s filer (`ef0:/PSP5`), standardmappen för ARK och
@@ -24,7 +24,7 @@ startar PSP:n direkt i psp5 i stället för XMB.
   apityper för internminnet (0x125/0x126 ISO och PSN, 0x155 PS1; homebrew som vanligt 0x141), och uppdateringar
   (`PBOOT.PBP`) söks på båda. Ingen UMD-tråd på PSP Go (modell 4). Tidigare letade psp5 bara på `ms0:`, så
   spel i `ef0:/PSP/GAME` och musik i `ef0:/MUSIC` syntes inte på PSP Go.
-  Release-zipparna `psp5-v1.3.4-PSPGo-ARK5.zip` och `-PSPGo-ARK4.zip` har samma EBOOT som ARK5/ARK4-zipparna,
+  Release-zipparna `psp5-v1.4.0-PSPGo-ARK5.zip` och `-PSPGo-ARK4.zip` har samma EBOOT som ARK5/ARK4-zipparna,
   bara med en READ ME för PSP Go (`tools/make_release.py`).
 - **Inställningar på PSP Go** (`src/settings.c`, modell 4): *Stäng av Pausa spel* (`disablepause`) och
   *Behåll det pausade spelet* (`hibblock`) visas, *Stäng av UMD-enheten* döljs – som i arkMenu.
