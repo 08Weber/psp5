@@ -281,6 +281,14 @@ static const char *const T[S_COUNT][NL] = {
                        "Inicio seguro: el último inicio no terminó", "Avvio sicuro: l'ultimo avvio non è finito",
                        "Veilige start: vorige start niet voltooid", "Arranque seguro: o último não terminou",
                        "Безопасный запуск: прошлый не завершился", "セーフモード：前回の起動が完了しませんでした" },
+    [S_NO_PAUSE] = { "Disable Pause Game", "Stäng av Pausa spel", "Spiel pausieren deaktivieren",
+                     "Désactiver la pause du jeu", "Desactivar pausar juego", "Disattiva pausa gioco",
+                     "Spel pauzeren uitschakelen", "Desativar pausar jogo", "Отключить паузу игры",
+                     "ゲームの一時停止を無効化" },
+    [S_HIB_BLOCK] = { "Keep the paused game", "Behåll det pausade spelet", "Pausiertes Spiel behalten",
+                      "Garder le jeu en pause", "Conservar el juego pausado", "Mantieni il gioco in pausa",
+                      "Gepauzeerd spel bewaren", "Manter o jogo pausado", "Сохранять игру на паузе",
+                      "一時停止中のゲームを保持" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

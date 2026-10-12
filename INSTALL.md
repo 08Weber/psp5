@@ -6,20 +6,21 @@ You need a **PSP-1000, PSP-2000, PSP-3000 or PSP Go with ARK-4 or ARK-5** and a 
 
 ## Which download?
 
-Every release has three zips – pick the one for your PSP and its custom firmware:
+Every release has four zips – pick the one for your PSP and its custom firmware:
 
 | Your PSP runs | Download |
 |---|---|
 | **ARK-5** | `psp5-v1.3.4-ARK5.zip` |
 | **ARK-4** | `psp5-v1.3.4-ARK4.zip` |
-| **PSP Go** (ARK-5 or ARK-4) | `psp5-v1.3.4-PSPGo.zip` – use its `ARK-5` or `ARK-4` folder |
+| **PSP Go with ARK-5** | `psp5-v1.3.4-PSPGo-ARK5.zip` |
+| **PSP Go with ARK-4** | `psp5-v1.3.4-PSPGo-ARK4.zip` |
 
 Not sure? Press **SELECT** in the XMB to open ARK's VSH menu – it shows the version (*ARK 4.x* or *ARK 5.x*).
 The same zip works on the PSP-1000, 2000 and 3000; psp5 checks the model and the ARK version by itself
 (so even the "wrong" zip will still start your games).
 
 **PSP Go:** everything below is the same, but on the internal storage instead of the memory stick: copy the
-`PSP` folder from the zip's `ARK-5` or `ARK-4` folder onto the PSP Go, and start psp5 from *Game → System Storage*.
+`PSP` folder from the PSP Go zip onto the PSP Go, and start psp5 from *Game → System Storage*.
 Games, music and the `ARK_01234` folder are on the internal storage too (games on a Memory Stick Micro show up as well).
 
 ## Install (5 minutes)
