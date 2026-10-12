@@ -19,6 +19,9 @@ int sys_is_psp1000(void);
 const char *sys_ark_dir(void);
 /* 1 om psp5 körs som ARK:s launcher (ARK-mappen/VBOOT.PBP) */
 int sys_is_launcher(void);
+/* Slår på launcherläget igen om psp5 pausade det för att gå till XMB.
+ * Anropas först när psp5 har startat klart. */
+void sys_resume_launcher(void);
 
 void sys_exit_xmb(void);
 void sys_restart(void);

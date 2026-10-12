@@ -15,6 +15,22 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.3.3
+
+- **Startskydd mot semi-brick** (`src/main.c`): `ms0:/PSP5/starting` skapas först av allt vid start och innehåller
+  antalet starter i rad som inte blev klara. Filen tas bort när menyn har gått i 5 s och musiklistan är inläst,
+  eller när ett spel startas eller något väljs i inställningarna.
+  - 1 misslyckad start: **felsäker start** – ingen startskärm, ingen musik, ingen UMD-tråd, `ms0:/PSP5/cache` töms
+    och en toast visas.
+  - 2 i rad som ARK:s launcher: psp5 går direkt till XMB (`sys_exit_xmb`, launcherläget pausas) och skriver 1 i
+    filen, så att nästa start som launcher blir felsäker i stället för XMB igen.
+  - Pausat launcherläge slås på igen först när en start har blivit klar (`sys_resume_launcher`), inte direkt i `sys_init`.
+- **Viloläge utan grafik:** när PSP:n somnar ritas två svarta bildrutor, sedan väntar psp5 med `sceKernelDelayThread`
+  i stället för att rita hela tiden medan PSP:n somnar och vaknar. Ingen startskärm efter viloläge i felsäkert läge.
+- `sctrlArkSetConfig` anropas bara med en konfiguration som gick att läsa (`IS_ARK_CONFIG`).
+- HOME-menyn i spel: psp5 finns inte i minnet då (LoadExec startar om systemet) och startar spel med exakt samma
+  anrop som arkMenu. Hjälptext om plugins och ARK:s kombination L + R + START + ↓ i INSTALL.md.
+
 ## Version 1.3.2
 
 - **Ingen meny innan startskärmen efter viloläge:** "vaknat klart" (`PSP_POWER_CB_RESUME_COMPLETE`) kommer ungefär

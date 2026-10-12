@@ -25,7 +25,6 @@ int scePowerRequestColdReset(int unk);
 int scePowerRequestStandby(void);
 
 static int exists(const char *path);
-static void resume_launcher(void);
 
 /* ARK-4: sctrlArkGetConfig ligger i SystemCtrlForUser (src/ark4stub.S) */
 ARKConfig *sctrlArkGetConfig_ark4(ARKConfig *conf);
@@ -68,7 +67,6 @@ void sys_init(const char *self_path)
     char launcher[200];
     snprintf(launcher, sizeof(launcher), "%sVBOOT.PBP", s_ark_dir);
     s_is_launcher = self_path && !strcasecmp(self_path, launcher);
-    resume_launcher();
 }
 
 int sys_has_ark(void) { return s_has_ark; }
@@ -100,7 +98,7 @@ static void pause_launcher(void)
         sceIoClose(fd);
 }
 
-static void resume_launcher(void)
+void sys_resume_launcher(void)
 {
     if (!s_has_ark || !exists(LAUNCHER_PAUSED))
         return;
@@ -131,8 +129,10 @@ void sys_exit_xmb(void)
             sctrlSESetConfigEx((SEConfig *)&se, sizeof(se));
         }
 #ifndef PSP5_ARK4
-        s_conf.launcher[0] = 0;
-        sctrlArkSetConfig(&s_conf);
+        if (IS_ARK_CONFIG(&s_conf)) { /* skriv aldrig tillbaka en konfiguration som inte gick att läsa */
+            s_conf.launcher[0] = 0;
+            sctrlArkSetConfig(&s_conf);
+        }
 #endif
     }
     sctrlKernelExitVSH(NULL);

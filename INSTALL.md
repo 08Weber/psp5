@@ -10,8 +10,8 @@ Every release has two zips – pick the one for the custom firmware on your PSP:
 
 | Your PSP runs | Download |
 |---|---|
-| **ARK-5** | `psp5-v1.3.2-ARK5.zip` |
-| **ARK-4** | `psp5-v1.3.2-ARK4.zip` |
+| **ARK-5** | `psp5-v1.3.3-ARK5.zip` |
+| **ARK-4** | `psp5-v1.3.3-ARK4.zip` |
 
 Not sure? Press **SELECT** in the XMB to open ARK's VSH menu – it shows the version (*ARK 4.x* or *ARK 5.x*).
 The same zip works on the PSP-1000, 2000 and 3000; psp5 checks the model and the ARK version by itself
@@ -73,6 +73,15 @@ Your settings and covers stay.
 ## Help!
 
 - **Stuck in psp5 or something is broken?** Hold **SELECT** while turning on the PSP. You'll land in the normal XMB.
+- **psp5 says "Safe start"?** The last start didn't finish – the PSP froze or was switched off while psp5 was
+  starting. psp5 then starts without the startup screen, music and UMD, and clears its image cache. If that start
+  doesn't finish either, the next one goes to the XMB instead, so the PSP can't get stuck in psp5. *Boot into psp5*
+  turns back on the next time psp5 starts properly from *Game → Memory Stick*.
+- **The HOME menu in a game doesn't react, and the game still gets the buttons?** psp5 isn't running at that
+  point. It shuts itself down and starts the game the same way ARK's own menu does, so the HOME menu belongs to
+  the PSP and ARK. Turn your plugins off (△ → *Plugins*), restart the PSP and try again – cheat, button-remap
+  and analog plugins read the buttons too. Also check that L and R aren't stuck. To leave a game anyway, press
+  **L + R + START + ↓** together. That combination is built into ARK and quits the game straight away.
 - **Want ARK's own menu back?** In `PSP/SAVEDATA/ARK_01234/`, delete `VBOOT.PBP` and rename
   `VBOOT_ARKMENU.PBP` back to `VBOOT.PBP`.
 - **A game is missing?** Check that it's in the `ISO` folder (sub-folders are fine, but only one level deep).

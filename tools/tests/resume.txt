@@ -3,8 +3,6 @@ press right
 wait 40
 shot 01-before-sleep
 sleep 1
-wait 20
-shot 02-going-to-sleep
 wait 40
 resume 1
 wait 50

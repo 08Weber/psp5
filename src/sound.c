@@ -37,6 +37,7 @@ static volatile int s_quit;
 static volatile int s_built;
 static volatile int s_fade; /* >0: block kvar av uttoningen */
 static volatile int s_boot_req; /* startljudet ska räknas fram igen */
+static int s_skip_boot;         /* felsäker start: ingen startskärm */
 /* två buffertar: den ena spelas medan nästa fylls – annars skrivs ljudet över
  * mitt i uppspelningen och små bitar upprepas */
 static short __attribute__((aligned(64))) s_out[2][BLOCK * 2];
@@ -219,7 +220,7 @@ static void build_sounds(void)
         s_sin[i] = sinf(2 * PI * i / SIN_N);
     /* startljudet behövs bara första gången (inte efter USB-läge o.d.) */
     static int boot_done;
-    if (!boot_done && g_boot_anim) {
+    if (!boot_done && g_boot_anim && !s_skip_boot) {
         s_bt_lo = s_bt_band = s_air_lo = 0;
         render(SND_BOOT, 5.2f, 0.40f, gen_boot);
     }
@@ -356,6 +357,11 @@ void sound_prepare_boot(void)
         s_boot_req = 1;
 }
 
+
+void sound_skip_boot(void)
+{
+    s_skip_boot = 1;
+}
 
 void sound_fade_out(void)
 {

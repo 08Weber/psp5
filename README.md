@@ -81,7 +81,12 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | HOME | quit to the XMB |
 
 If something ever goes wrong, hold **SELECT** while the PSP boots – ARK then skips its settings and you land
-in the normal XMB.
+in the normal XMB. psp5 also looks after itself. If a start doesn't finish (the PSP froze or was switched off
+while psp5 was starting), the next start is a *safe start* without the startup screen, music and UMD. If that
+doesn't finish either, psp5 sends the PSP to the XMB.
+
+If the HOME menu doesn't respond inside a game, see *Help!* in [INSTALL.md](INSTALL.md).
+**L + R + START + ↓** always quits a game. That one is built into ARK.
 
 ## Covers
 

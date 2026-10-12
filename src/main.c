@@ -35,8 +35,16 @@ PSP_HEAP_SIZE_KB(-7168);
 /* Finns medan ett spel körs: när spelet avslutas startar systemet om psp5
  * (som ARK:s launcher), och då ska startskärmen inte visas igen. */
 #define INGAME_MARK DATA_DIR "/ingame"
+/* Startskydd: filen finns medan psp5 startar och tas bort när menyn har gått en stund.
+ * Blir den kvar har psp5 hängt sig eller kraschat under starten. Då blir nästa start
+ * felsäker, och som ARK:s launcher går psp5 efter två sådana starter i rad direkt
+ * till XMB – så att PSP:n aldrig fastnar i en start som inte fungerar. */
+#define START_MARK DATA_DIR "/starting"
+#define START_OK_AFTER 5.0f /* sekunder i menyn innan starten räknas som klar */
 
 static volatile int s_running = 1;
+static int s_safe;     /* felsäker start: ingen startskärm, musik eller UMD, cachen tömd */
+static int s_start_ok; /* starten är klar och startskyddet borttaget */
 static volatile int s_sleeping; /* PSP:n går in i viloläge – skärmen hålls svart */
 static volatile int s_resumed;  /* PSP:n har vaknat klart – visa startskärmen */
 static char s_self[256];
@@ -115,14 +123,51 @@ static void set_ingame_mark(void)
         sceIoClose(fd);
 }
 
+static void start_write(int count)
+{
+    char c = '0' + (count > 9 ? 9 : count);
+    SceUID fd = sceIoOpen(START_MARK, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (fd >= 0) {
+        sceIoWrite(fd, &c, 1);
+        sceIoClose(fd);
+    }
+}
+
+/* Hur många starter i rad som inte blev klara. Räknar samtidigt upp för den här. */
+static int start_begin(void)
+{
+    int failed = 0;
+    SceUID fd = sceIoOpen(START_MARK, PSP_O_RDONLY, 0);
+    if (fd >= 0) {
+        char c = 0;
+        failed = 1; /* filen finns: minst en start blev inte klar */
+        if (sceIoRead(fd, &c, 1) == 1 && c >= '1' && c <= '9')
+            failed = c - '0';
+        sceIoClose(fd);
+    }
+    start_write(failed + 1);
+    return failed;
+}
+
+/* psp5 har startat klart: ta bort startskyddet och slå på launcherläget igen om det var pausat. */
+static void start_confirmed(void)
+{
+    if (s_start_ok)
+        return;
+    s_start_ok = 1;
+    sceIoRemove(START_MARK);
+    sys_resume_launcher();
+}
+
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
 static void app_start(EntryList *list, Ui *ui, int boot)
 {
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
-    umd_start(); /* skivan hinner snurra upp under startskärmen */
-    if (boot && g_boot_anim)
+    if (!s_safe)
+        umd_start(); /* skivan hinner snurra upp under startskärmen */
+    if (boot && g_boot_anim && !s_safe)
         boot_run(&s_running); /* startskärmen, innan spelen läses in */
     s_scan_start = sceKernelGetSystemTimeWide();
     scan_all(list, s_self, s_list_cache, scan_progress);
@@ -133,7 +178,8 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     if (has_non_ascii(list))
         font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
-    music_init(); /* läser in ms0:/MUSIC i bakgrunden */
+    if (!s_safe)
+        music_init(); /* läser in ms0:/MUSIC i bakgrunden */
     ui_init(ui, list, confirm_is_circle(), launch_supported());
 }
 
@@ -149,12 +195,19 @@ static void sleep_and_wake(Ui *ui)
         music_toggle_pause();
     sound_prepare_boot(); /* startljudet frigjordes efter förra startskärmen */
 
-    /* har vi inte sett PSP:n somna (t.ex. viloläge från inställningarna) blir det direkt startskärm */
+    /* Svart i båda bildbuffertarna, sedan vilar psp5 utan att rita: grafikkretsen ska
+     * inte arbeta medan PSP:n somnar och vaknar. Har vi inte sett PSP:n somna (t.ex.
+     * viloläge från inställningarna) blir det direkt startskärm. */
+    if (s_sleeping) {
+        for (int i = 0; i < 2; i++) {
+            gfx_begin(RGBA(0, 0, 0, 255));
+            gfx_end();
+        }
+    }
     u64 last = sceKernelGetSystemTimeWide();
     float awake = 0; /* systemtiden står still medan PSP:n sover */
     while (s_sleeping && s_running && !s_resumed && awake < WAKE_TIMEOUT) {
-        gfx_begin(RGBA(0, 0, 0, 255));
-        gfx_end();
+        sceKernelDelayThread(20000);
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
         last = now;
@@ -279,6 +332,12 @@ static void delete_dir_files(const char *dir)
 /* Utför en åtgärd från inställningarna. Returnerar 1 om appen ska byggas upp igen. */
 static int run_action(int action, EntryList *list, Ui *ui)
 {
+    /* psp5 fungerar uppenbarligen. Till XMB tas bara startskyddet bort: launcherläget
+     * ska vara fortsatt pausat där. */
+    if (action == SA_XMB)
+        sceIoRemove(START_MARK);
+    else
+        start_confirmed();
     switch (action) {
     case SA_SUSPEND:
         sys_suspend();
@@ -310,10 +369,25 @@ int main(int argc, char *argv[])
     snprintf(s_self, sizeof(s_self), "%s", argc > 0 && argv[0] ? argv[0] : "ms0:/PSP/GAME/PSP5/EBOOT.PBP");
     snprintf(s_list_cache, sizeof(s_list_cache), "%s/cache/list.bin", DATA_DIR);
     sceIoMkdir(DATA_DIR, 0777);
+    int failed = start_begin(); /* först av allt – före allt som kan hänga sig */
     art_init(DATA_DIR);
     config_load(DATA_DIR); /* ljud och språk */
     sys_init(s_self);
     testrun_init();
+
+    if (failed >= 2 && sys_is_launcher() && sys_has_ark()) {
+        /* Två starter i rad har inte blivit klara: lämna PSP:n till XMB. Nästa start
+         * som launcher blir felsäker (inte XMB direkt igen). */
+        start_write(1);
+        sys_exit_xmb();
+        sceKernelExitGame();
+        return 0;
+    }
+    s_safe = failed > 0;
+    if (s_safe) {
+        delete_dir_files(DATA_DIR "/cache"); /* en trasig cachefil ska inte kunna stoppa starten */
+        sound_skip_boot();
+    }
 
     sceCtrlSetSamplingCycle(0);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
@@ -321,6 +395,8 @@ int main(int argc, char *argv[])
     EntryList list = { 0 };
     Ui ui;
     app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
+    if (s_safe)
+        ui_toast(&ui, L(S_SAFE_START));
 #ifdef PSP5_TEST
     sound_dump(DATA_DIR "/shots/sounds"); /* testbygge: ljuden som WAV */
 #endif
@@ -328,6 +404,7 @@ int main(int argc, char *argv[])
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
     u32 old = 0;
+    float up = 0; /* sekunder i menyn – för startskyddet */
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
         if (testrun_take_sleep())
@@ -335,7 +412,7 @@ int main(int argc, char *argv[])
         if (testrun_take_resume())
             s_resumed = 1;
         if (s_sleeping || s_resumed) {
-            if (g_boot_anim && ui.launch < 0) {
+            if (g_boot_anim && ui.launch < 0 && !s_safe) {
                 sleep_and_wake(&ui);
                 old = ~0u; /* knappen som hoppade över startskärmen räknas inte */
                 last = sceKernelGetSystemTimeWide();
@@ -351,6 +428,11 @@ int main(int argc, char *argv[])
         last = now;
         if (dt > 0.05f)
             dt = 0.05f;
+        if (!s_start_ok) {
+            up += dt;
+            if (up >= START_OK_AFTER && !music_scanning())
+                start_confirmed(); /* menyn och musiklistan fungerar */
+        }
 
         if (in_settings) {
             int action = settings_update(&in, dt);
@@ -389,6 +471,7 @@ int main(int argc, char *argv[])
             Entry chosen = list.items[ui_selected(&ui)];
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
+            start_confirmed();    /* ett spel som hänger sig räknas inte mot psp5 */
             set_ingame_mark();
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */
@@ -402,6 +485,7 @@ int main(int argc, char *argv[])
 
     /* HOME → Avsluta: till XMB (även när psp5 är ARK:s launcher) */
     app_stop(&list, &ui);
+    sceIoRemove(START_MARK);
     sys_exit_xmb();
     sceKernelExitGame();
     return 0;
