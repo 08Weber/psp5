@@ -61,7 +61,7 @@ On a PSP Go, psp5 looks in these folders on both the internal storage and a Memo
 | □ | Library: sort · Music: pause / resume |
 | △ | Settings |
 | ○ | Back |
-| HOME | Back to the XMB |
+| HOME | Back to the XMB (not as custom launcher)|
 
 ## Updating
 
@@ -86,14 +86,3 @@ If you replaced ARK's Custom Launcher with psp5 (see above), copy `ARK_LAUNCHER/
 
 1. If psp5 is ARK's launcher, put ARK's menu back (see *Help!*).
 2. Delete the folders `PSP/GAME/PSP5` and `PSP5`.
-
-## Extra: your own covers (for advanced users)
-
-psp5 uses each game's own pictures, so you don't need this. For your own covers, put pictures in
-`tools/covers-src/` (named like `ULES00502.jpg`, or `ULES00502_bg.jpg` for a background) and run this
-with the PSP connected (needs Python 3):
-
-```sh
-py -m pip install --user pillow lz4
-py tools/covers.py E:\
-```
