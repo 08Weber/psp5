@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include "launch.h"
 #include "iso.h"
-#include "system.h"
 
 #define UMD_DRIVER 0 /* MODE_UMD: den riktiga skivan */
 #define PSN_DRIVER 0
@@ -20,8 +19,8 @@
 #define ISO_RUNLEVEL       0x123
 #define ISO_PBOOT_RUNLEVEL 0x124
 #define POPS_RUNLEVEL      0x144
-/* samma sak från PSP Go:s internminne (ef0:) */
-#define HOMEBREW_RUNLEVEL_GO  0x152
+/* samma sak från PSP Go:s internminne (ef0:). Homebrew startas som från ms0: – arkMenu
+ * använder 0x152 bara med sin inställning redirect_ms0. */
 #define ISO_RUNLEVEL_GO       0x125
 #define ISO_PBOOT_RUNLEVEL_GO 0x126
 #define POPS_RUNLEVEL_GO      0x155
@@ -56,13 +55,18 @@ static int on_ef0(void)
     return !strncmp(s_path, "ef0:", 4);
 }
 
-/* Installerad uppdatering i PSP/GAME/<DISC_ID>/<name>? */
+/* Installerad uppdatering i ms0: eller ef0:/PSP/GAME/<DISC_ID>/<name>? (som arkMenu) */
 static int installed_file(const char *game_id, const char *name, char *out, int out_size)
 {
     if (!game_id[0])
         return 0;
-    snprintf(out, out_size, PSP5_ROOT "/PSP/GAME/%s/%s", game_id, name);
-    return file_exists(out);
+    static const char *devs[] = { "ms0:", "ef0:" };
+    for (int i = 0; i < 2; i++) {
+        snprintf(out, out_size, "%s/PSP/GAME/%s/%s", devs[i], game_id, name);
+        if (file_exists(out))
+            return 1;
+    }
+    return 0;
 }
 
 static void launch_iso(const char *game_id)
@@ -127,7 +131,7 @@ static void launch_homebrew(void)
     param.key = "game";
     param.argp = s_path;
     param.args = strlen(s_path) + 1;
-    sctrlKernelLoadExecVSHWithApitype(on_ef0() ? HOMEBREW_RUNLEVEL_GO : HOMEBREW_RUNLEVEL, s_path, &param);
+    sctrlKernelLoadExecVSHWithApitype(HOMEBREW_RUNLEVEL, s_path, &param);
 }
 
 static void launch_psn(void)
