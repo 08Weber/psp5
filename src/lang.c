@@ -275,6 +275,11 @@ static const char *const T[S_COUNT][NL] = {
     [S_UNKNOWN_ARTIST] = { "Unknown artist", "Okänd artist", "Unbekannter Künstler", "Artiste inconnu",
                            "Artista desconocido", "Artista sconosciuto", "Onbekende artiest",
                            "Artista desconhecido", "Неизвестный исполнитель", "不明なアーティスト" },
+    [S_SAFE_START] = { "Safe start: the last start didn't finish", "Felsäker start: förra starten blev inte klar",
+                       "Sicherer Start: letzter Start nicht beendet", "Démarrage sûr : le dernier n'a pas abouti",
+                       "Inicio seguro: el último inicio no terminó", "Avvio sicuro: l'ultimo avvio non è finito",
+                       "Veilige start: vorige start niet voltooid", "Arranque seguro: o último não terminou",
+                       "Безопасный запуск: прошлый не завершился", "セーフモード：前回の起動が完了しませんでした" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

@@ -28,6 +28,9 @@ int sound_ready(void);
 /* Räknar fram startljudet igen i bakgrunden (startskärmen efter viloläge).
  * sound_ready() är 0 tills det är klart. */
 void sound_prepare_boot(void);
+/* Startljudet räknas inte fram vid start (felsäker start utan startskärm).
+ * Anropas före sound_init. */
+void sound_skip_boot(void);
 /* Frigör ett ljud som inte behövs mer (startljudet efter startskärmen). */
 void sound_release(SoundId id);
 /* Tonar snabbt ut allt som spelas (t.ex. när startskärmen hoppas över). */

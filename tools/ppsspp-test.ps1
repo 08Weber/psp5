@@ -1,10 +1,11 @@
 # psp5 – made by Mille Weber
 # Kör testbygget (dist-test) i PPSSPP med ett testskript – utan att skicka tangenter till skrivbordet.
 #   powershell -ExecutionPolicy Bypass -File tools\ppsspp-test.ps1 -Script tools\tests\settings.txt -Out <mapp>
+# -StartMark N låtsas att N starter i rad inte blev klara (startskyddet, tools\tests\safe.txt använder 1).
 # psp5 skriver ms0:/PSP5/shots/NAMN.req när en skärmdump ska tas; vi fotograferar då
 # PPSSPP-fönstret med PrintWindow (fungerar även när det ligger bakom andra fönster)
 # och tar bort filen, så fortsätter skriptet.
-param([Parameter(Mandatory)][string]$Script, [Parameter(Mandatory)][string]$Out, [int]$Timeout = 120)
+param([Parameter(Mandatory)][string]$Script, [Parameter(Mandatory)][string]$Out, [int]$Timeout = 120, [int]$StartMark = 0)
 
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
@@ -60,6 +61,9 @@ New-Item -ItemType Directory -Force (Join-Path $memstick 'PSP\GAME\PSP5'), (Join
 Copy-Item -Force (Join-Path $project 'dist-test\PSP\GAME\PSP5\EBOOT.PBP') (Join-Path $memstick 'PSP\GAME\PSP5\EBOOT.PBP')
 Copy-Item -Force $Script (Join-Path $memstick 'PSP5\test.txt')
 Remove-Item -Recurse -Force $shots -ErrorAction SilentlyContinue
+# PPSSPP stängs mitt i körningen, så startskyddets fil kan ligga kvar från förra testet
+$mark = Join-Path $memstick 'PSP5\starting'
+if ($StartMark -gt 0) { [IO.File]::WriteAllText($mark, "$StartMark") } else { Remove-Item $mark -ErrorAction SilentlyContinue }
 
 $names = @(Get-Content $Script | Where-Object { $_ -match '^\s*shot\s+(\S+)' } | ForEach-Object { ($_ -split '\s+')[1] })
 

@@ -1,0 +1,4 @@
+wait 30
+shot 01-safe-start
+wait 400
+shot 02-after-5s
