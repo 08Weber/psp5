@@ -20,7 +20,8 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **PSP Go-version** (`make GO=1`, `tools/build.sh go`): `PSP5_ROOT` i `src/system.h` är `ef0:` i stället för
   `ms0:`, så psp5:s filer, spel (`ISO`, `PSP/GAME`), musik, ARK-mappen och `SEPLUGINS` läses från internminnet.
   Ett Memory Stick Micro (`ms0:`) skannas också efter spel. Spel på `ef0:` startas med ARK:s apityper för
-  internminnet (0x125/0x126 ISO och PSN, 0x152 homebrew, 0x155 PS1), som arkMenu. Ingen UMD-tråd på PSP Go.
+  internminnet (0x125/0x126 ISO och PSN, 0x155 PS1; homebrew som vanligt 0x141), som arkMenu. Uppdateringar
+  (`PBOOT.PBP`) söks i både `ms0:` och `ef0:`. Ingen UMD-tråd på PSP Go.
   Release-zipparna `psp5-v1.3.4-PSPGo-ARK5.zip` och `psp5-v1.3.4-PSPGo-ARK4.zip` (`tools/make_release.py`).
 - **Inställningar på PSP Go** (`src/settings.c`, modell 4): *Stäng av Pausa spel* (`disablepause`) och
   *Behåll det pausade spelet* (`hibblock`) visas, *Stäng av UMD-enheten* döljs – som i arkMenu.
