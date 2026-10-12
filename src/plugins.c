@@ -8,6 +8,7 @@
 #include <strings.h>
 #include <ctype.h>
 #include "plugins.h"
+#include "system.h"
 
 #define MAX_FILES 2
 #define MAX_LINES 96
@@ -99,8 +100,8 @@ int plugins_load(const char *ark_dir)
     snprintf(path, sizeof(path), "%sPLUGINS.TXT", ark_dir);
     load_file(path);
     /* ARK-4 utan ARK-mapp använder ms0:/SEPLUGINS/ som ARK-mapp – läs inte samma fil två gånger */
-    if (strcasecmp(path, "ms0:/SEPLUGINS/PLUGINS.TXT"))
-        load_file("ms0:/SEPLUGINS/PLUGINS.TXT");
+    if (strcasecmp(path, PSP5_ROOT "/SEPLUGINS/PLUGINS.TXT"))
+        load_file(PSP5_ROOT "/SEPLUGINS/PLUGINS.TXT");
     return s_count;
 }
 

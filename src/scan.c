@@ -7,9 +7,10 @@
 #include "scan.h"
 #include "sfo.h"
 #include "iso.h"
+#include "system.h"
 
-#define ISO_DIR "ms0:/ISO"
-#define GAME_DIR "ms0:/PSP/GAME"
+#define ISO_DIR PSP5_ROOT "/ISO"
+#define GAME_DIR PSP5_ROOT "/PSP/GAME"
 #define MAX_SFO_SIZE (64 * 1024)
 #define MAX_ISO_DEPTH 1 /* ms0:/ISO + en nivå undermappar */
 
@@ -234,9 +235,9 @@ static void add_eboot(ScanState *s, const char *path, const char *folder)
     sceIoClose(fd);
 }
 
-static void scan_game_dir(ScanState *s, const char *self_path)
+static void scan_game_dir(ScanState *s, const char *dir, const char *self_path)
 {
-    SceUID d = sceIoDopen(GAME_DIR);
+    SceUID d = sceIoDopen(dir);
     if (d < 0)
         return;
 
@@ -245,7 +246,7 @@ static void scan_game_dir(ScanState *s, const char *self_path)
     memset(&ent, 0, sizeof(ent));
     while (sceIoDread(d, &ent) > 0) {
         if (ent.d_name[0] != '.' && FIO_S_ISDIR(ent.d_stat.st_mode)) {
-            snprintf(path, sizeof(path), GAME_DIR "/%s/EBOOT.PBP", ent.d_name);
+            snprintf(path, sizeof(path), "%s/%s/EBOOT.PBP", dir, ent.d_name);
             /* psp5 själv (som app) ska inte synas i listan */
             if (strcasecmp(ent.d_name, "PSP5") != 0 && (!self_path || strcasecmp(path, self_path) != 0))
                 add_eboot(s, path, ent.d_name);
@@ -302,7 +303,12 @@ void scan_all(EntryList *list, const char *self_path, const char *cache_file, Sc
         load_cache(&s.cached, cache_file);
 
     scan_iso_dir(&s, ISO_DIR, 0);
-    scan_game_dir(&s, self_path);
+    scan_game_dir(&s, GAME_DIR, self_path);
+#ifdef PSP5_GO
+    /* PSP Go: också ett Memory Stick Micro (M2) i kortplatsen, som i arkMenu */
+    scan_iso_dir(&s, "ms0:/ISO", 0);
+    scan_game_dir(&s, "ms0:/PSP/GAME", self_path);
+#endif
     scan_free(&s.cached);
 
     if (list->count > 1)

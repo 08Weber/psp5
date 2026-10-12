@@ -5,6 +5,7 @@
 #include <psputility.h>
 #include <string.h>
 #include "lang.h"
+#include "system.h"
 
 #define NL (LANG_COUNT - 1) /* antal riktiga språk */
 
@@ -24,15 +25,15 @@ static const char *const T[S_COUNT][NL] = {
     [S_NO_APPS] = { "No apps found", "Inga appar hittades", "Keine Apps gefunden", "Aucune appli trouvée",
                     "No se encontraron apps", "Nessuna app trovata", "Geen apps gevonden", "Nenhuma app encontrada",
                     "Приложения не найдены", "アプリが見つかりません" },
-    [S_HINT_GAMES] = { "Put ISO, CSO or ZSO files in ms0:/ISO", "Lägg ISO, CSO eller ZSO i ms0:/ISO",
-                       "Lege ISO-, CSO- oder ZSO-Dateien in ms0:/ISO", "Placez vos fichiers ISO, CSO ou ZSO dans ms0:/ISO",
-                       "Copia archivos ISO, CSO o ZSO en ms0:/ISO", "Copia file ISO, CSO o ZSO in ms0:/ISO",
-                       "Zet ISO-, CSO- of ZSO-bestanden in ms0:/ISO", "Coloque ficheiros ISO, CSO ou ZSO em ms0:/ISO",
-                       "Поместите файлы ISO, CSO или ZSO в ms0:/ISO", "ISO・CSO・ZSOを ms0:/ISO に入れてください" },
-    [S_HINT_APPS] = { "Put apps in ms0:/PSP/GAME", "Lägg appar i ms0:/PSP/GAME", "Lege Apps in ms0:/PSP/GAME",
-                      "Placez les applis dans ms0:/PSP/GAME", "Copia las apps en ms0:/PSP/GAME",
-                      "Copia le app in ms0:/PSP/GAME", "Zet apps in ms0:/PSP/GAME", "Coloque as apps em ms0:/PSP/GAME",
-                      "Поместите приложения в ms0:/PSP/GAME", "アプリを ms0:/PSP/GAME に入れてください" },
+    [S_HINT_GAMES] = { "Put ISO, CSO or ZSO files in " PSP5_ROOT "/ISO", "Lägg ISO, CSO eller ZSO i " PSP5_ROOT "/ISO",
+                       "Lege ISO-, CSO- oder ZSO-Dateien in " PSP5_ROOT "/ISO", "Placez vos fichiers ISO, CSO ou ZSO dans " PSP5_ROOT "/ISO",
+                       "Copia archivos ISO, CSO o ZSO en " PSP5_ROOT "/ISO", "Copia file ISO, CSO o ZSO in " PSP5_ROOT "/ISO",
+                       "Zet ISO-, CSO- of ZSO-bestanden in " PSP5_ROOT "/ISO", "Coloque ficheiros ISO, CSO ou ZSO em " PSP5_ROOT "/ISO",
+                       "Поместите файлы ISO, CSO или ZSO в " PSP5_ROOT "/ISO", "ISO・CSO・ZSOを " PSP5_ROOT "/ISO に入れてください" },
+    [S_HINT_APPS] = { "Put apps in " PSP5_ROOT "/PSP/GAME", "Lägg appar i " PSP5_ROOT "/PSP/GAME", "Lege Apps in " PSP5_ROOT "/PSP/GAME",
+                      "Placez les applis dans " PSP5_ROOT "/PSP/GAME", "Copia las apps en " PSP5_ROOT "/PSP/GAME",
+                      "Copia le app in " PSP5_ROOT "/PSP/GAME", "Zet apps in " PSP5_ROOT "/PSP/GAME", "Coloque as apps em " PSP5_ROOT "/PSP/GAME",
+                      "Поместите приложения в " PSP5_ROOT "/PSP/GAME", "アプリを " PSP5_ROOT "/PSP/GAME に入れてください" },
     [S_NO_ARK] = { "ARK not found. Games can only be started on a PSP",
                    "ARK hittades inte. Spel kan bara startas på PSP:n",
                    "ARK nicht gefunden. Spiele starten nur auf einer PSP",
@@ -255,11 +256,11 @@ static const char *const T[S_COUNT][NL] = {
     [S_NO_MUSIC] = { "No music found", "Ingen musik hittades", "Keine Musik gefunden", "Aucune musique trouvée",
                      "No se encontró música", "Nessuna musica trovata", "Geen muziek gevonden",
                      "Nenhuma música encontrada", "Музыка не найдена", "ミュージックが見つかりません" },
-    [S_HINT_MUSIC] = { "Put MP3 files in ms0:/MUSIC", "Lägg MP3-filer i ms0:/MUSIC", "Lege MP3-Dateien in ms0:/MUSIC",
-                       "Placez vos fichiers MP3 dans ms0:/MUSIC", "Copia archivos MP3 en ms0:/MUSIC",
-                       "Copia file MP3 in ms0:/MUSIC", "Zet MP3-bestanden in ms0:/MUSIC",
-                       "Coloque ficheiros MP3 em ms0:/MUSIC", "Поместите файлы MP3 в ms0:/MUSIC",
-                       "MP3を ms0:/MUSIC に入れてください" },
+    [S_HINT_MUSIC] = { "Put MP3 files in " PSP5_ROOT "/MUSIC", "Lägg MP3-filer i " PSP5_ROOT "/MUSIC", "Lege MP3-Dateien in " PSP5_ROOT "/MUSIC",
+                       "Placez vos fichiers MP3 dans " PSP5_ROOT "/MUSIC", "Copia archivos MP3 en " PSP5_ROOT "/MUSIC",
+                       "Copia file MP3 in " PSP5_ROOT "/MUSIC", "Zet MP3-bestanden in " PSP5_ROOT "/MUSIC",
+                       "Coloque ficheiros MP3 em " PSP5_ROOT "/MUSIC", "Поместите файлы MP3 в " PSP5_ROOT "/MUSIC",
+                       "MP3を " PSP5_ROOT "/MUSIC に入れてください" },
     [S_NOW_PLAYING] = { "Now playing", "Spelas nu", "Wird gespielt", "En cours", "Reproduciendo", "In riproduzione",
                         "Speelt nu", "A tocar", "Сейчас играет", "再生中" },
     [S_NOTHING_PLAYING] = { "Nothing playing", "Inget spelas", "Keine Wiedergabe", "Aucune lecture",

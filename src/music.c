@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include "music.h"
+#include "system.h"
 
 #define MAX_TRACKS   1000
 #define MAX_DEPTH    3
@@ -24,7 +25,7 @@
 #define MP3_END      0x80671402 /* sceMp3Decode: strömmen är slut */
 #define ALREADY_LOADED  0x80020139
 #define ALREADY_LOADED2 0x80111102 /* samma sak, från sceUtilityLoadModule */
-#define MUSIC_ROOT   "ms0:/MUSIC"
+#define MUSIC_ROOT   PSP5_ROOT "/MUSIC"
 
 /* --- låtlistan --- */
 
