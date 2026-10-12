@@ -212,7 +212,7 @@ static void build(int rebuild)
     c->desc = L(S_DESC_PERF);
     /* ARK-4 har bara Auto/133/222/333 och på/av för extra minne och minneskortscache;
      * PSP-1000 har varken extra minne eller USB-laddning (som i arkMenu) */
-    int ark4 = sys_ark_version() == 4, psp1000 = sys_is_psp1000();
+    int ark4 = sys_ark_version() == 4, psp1000 = sys_is_psp1000(), go = sys_model() == 4;
     if (ark4) {
         if (g_cfw.clock_game > CLOCK_333) g_cfw.clock_game = CLOCK_333;
         if (g_cfw.clock_vsh > CLOCK_333) g_cfw.clock_vsh = CLOCK_333;
@@ -244,7 +244,13 @@ static void build(int rebuild)
     toggle(c, L(S_HIDE_MAC), &g_cfw.hidemac);
     toggle(c, L(S_HIDE_DLC), &g_cfw.hidedlc);
     toggle(c, L(S_NO_LED), &g_cfw.noled);
-    toggle(c, L(S_NO_UMD), &g_cfw.noumd);
+    if (go) {
+        /* PSP Go: ingen UMD-läsare, men Pausa spel (som i arkMenu) */
+        toggle(c, L(S_NO_PAUSE), &g_cfw.disablepause);
+        toggle(c, L(S_HIB_BLOCK), &g_cfw.hibblock);
+    } else {
+        toggle(c, L(S_NO_UMD), &g_cfw.noumd);
+    }
     toggle(c, L(S_NO_ANALOG), &g_cfw.noanalog);
     if (!ark4)
         toggle(c, L(S_VITA_MUTE), &g_cfw.vitamute);

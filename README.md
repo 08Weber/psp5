@@ -96,7 +96,7 @@ tool for your computer that prepares them – see the covers section in [INSTALL
 ## Status
 
 psp5 runs on the **PSP-1000, PSP-2000, PSP-3000 and PSP Go** with **ARK-4 or ARK-5** – there's a download for
-each ARK and one for the PSP Go (see [INSTALL.md](INSTALL.md)), and psp5 adapts the settings to your model and ARK version (for
+each ARK, on the PSP Go too (see [INSTALL.md](INSTALL.md)), and psp5 adapts the settings to your model and ARK version (for
 example, the PSP-1000 has no extra memory or USB charging, and ARK-4 has fewer CPU speeds).
 
 I've been using it on my own **PSP-2000 with ARK-5**, and launching games, artwork and covers all work
