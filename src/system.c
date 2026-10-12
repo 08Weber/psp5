@@ -15,7 +15,7 @@
 #include "launch.h"
 #include "arkcfg.h"
 
-#define DEFAULT_ARK_DIR "ms0:/PSP/SAVEDATA/ARK_01234/"
+#define DEFAULT_ARK_DIR PSP5_ROOT "/PSP/SAVEDATA/ARK_01234/"
 #define USBSTOR_EF_DRIVERNAME "USBStorEFlash_Driver"
 /* finns när launcherläget är pausat för att psp5 gick till XMB */
 #define LAUNCHER_PAUSED PSP5_DATA_DIR "/launcher.paused"
@@ -58,9 +58,9 @@ void sys_init(const char *self_path)
             snprintf(s_ark_dir, sizeof(s_ark_dir), "%s", s_conf.arkpath);
         } else if (exists(DEFAULT_ARK_DIR "SETTINGS.TXT") || exists(DEFAULT_ARK_DIR "VBOOT.PBP")) {
             s_has_ark = 1; /* konfigurationen gick inte att läsa – standardmappen finns */
-        } else if (s_ark == 4 && exists("ms0:/SEPLUGINS/SETTINGS.TXT")) {
+        } else if (s_ark == 4 && exists(PSP5_ROOT "/SEPLUGINS/SETTINGS.TXT")) {
             s_has_ark = 1; /* ARK-4 utan ARK-mapp använder ms0:/SEPLUGINS/ */
-            snprintf(s_ark_dir, sizeof(s_ark_dir), "ms0:/SEPLUGINS/");
+            snprintf(s_ark_dir, sizeof(s_ark_dir), PSP5_ROOT "/SEPLUGINS/");
         }
     }
     g_arkcfg_ark4 = s_ark == 4;

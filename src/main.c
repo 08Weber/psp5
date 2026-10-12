@@ -366,7 +366,7 @@ static int run_action(int action, EntryList *list, Ui *ui)
 int main(int argc, char *argv[])
 {
     setup_callbacks();
-    snprintf(s_self, sizeof(s_self), "%s", argc > 0 && argv[0] ? argv[0] : "ms0:/PSP/GAME/PSP5/EBOOT.PBP");
+    snprintf(s_self, sizeof(s_self), "%s", argc > 0 && argv[0] ? argv[0] : PSP5_ROOT "/PSP/GAME/PSP5/EBOOT.PBP");
     snprintf(s_list_cache, sizeof(s_list_cache), "%s/cache/list.bin", DATA_DIR);
     sceIoMkdir(DATA_DIR, 0777);
     int failed = start_begin(); /* först av allt – före allt som kan hänga sig */

@@ -7,6 +7,7 @@
 /dist/
 /dist-test/
 /dist-ark4/
+/dist-go/
 
 # lokalt: referenskod, testdata, säkerhetskopior, egna omslag
 /ref/

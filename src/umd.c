@@ -132,6 +132,9 @@ static int umd_thread(SceSize args, void *argp)
 
 void umd_start(void)
 {
+#ifdef PSP5_GO
+    return; /* PSP Go har ingen UMD-läsare */
+#endif
     s_quit = 0;
     s_gen = s_seen = 0;
     s_has = 0;

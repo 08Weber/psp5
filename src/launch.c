@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include "launch.h"
 #include "iso.h"
+#include "system.h"
 
 #define UMD_DRIVER 0 /* MODE_UMD: den riktiga skivan */
 #define PSN_DRIVER 0
@@ -19,6 +20,11 @@
 #define ISO_RUNLEVEL       0x123
 #define ISO_PBOOT_RUNLEVEL 0x124
 #define POPS_RUNLEVEL      0x144
+/* samma sak från PSP Go:s internminne (ef0:) */
+#define HOMEBREW_RUNLEVEL_GO  0x152
+#define ISO_RUNLEVEL_GO       0x125
+#define ISO_PBOOT_RUNLEVEL_GO 0x126
+#define POPS_RUNLEVEL_GO      0x155
 #define UMD_RUNLEVEL       0x120
 #define UMD_UPDATE_RUNLEVEL 0x160 /* skiva med uppdatering (PBOOT.PBP) på minneskortet */
 
@@ -44,22 +50,28 @@ static int file_exists(const char *path)
     return sceIoGetstat(path, &st) >= 0;
 }
 
-/* Installerad uppdatering i ms0:/PSP/GAME/<DISC_ID>/<name>? */
+/* spelet ligger i PSP Go:s internminne – ARK startar det då med en egen apitype */
+static int on_ef0(void)
+{
+    return !strncmp(s_path, "ef0:", 4);
+}
+
+/* Installerad uppdatering i PSP/GAME/<DISC_ID>/<name>? */
 static int installed_file(const char *game_id, const char *name, char *out, int out_size)
 {
     if (!game_id[0])
         return 0;
-    snprintf(out, out_size, "ms0:/PSP/GAME/%s/%s", game_id, name);
+    snprintf(out, out_size, PSP5_ROOT "/PSP/GAME/%s/%s", game_id, name);
     return file_exists(out);
 }
 
 static void launch_iso(const char *game_id)
 {
     struct SceKernelLoadExecVSHParam param;
-    int apitype = ISO_RUNLEVEL;
+    int apitype = on_ef0() ? ISO_RUNLEVEL_GO : ISO_RUNLEVEL;
 
     if (installed_file(game_id, "PBOOT.PBP", s_argp, sizeof(s_argp))) {
-        apitype = ISO_PBOOT_RUNLEVEL;
+        apitype = on_ef0() ? ISO_PBOOT_RUNLEVEL_GO : ISO_PBOOT_RUNLEVEL;
     } else {
         IsoReader r;
         IsoFile f;
@@ -115,13 +127,13 @@ static void launch_homebrew(void)
     param.key = "game";
     param.argp = s_path;
     param.args = strlen(s_path) + 1;
-    sctrlKernelLoadExecVSHWithApitype(HOMEBREW_RUNLEVEL, s_path, &param);
+    sctrlKernelLoadExecVSHWithApitype(on_ef0() ? HOMEBREW_RUNLEVEL_GO : HOMEBREW_RUNLEVEL, s_path, &param);
 }
 
 static void launch_psn(void)
 {
     struct SceKernelLoadExecVSHParam param;
-    int apitype = ISO_RUNLEVEL;
+    int apitype = on_ef0() ? ISO_RUNLEVEL_GO : ISO_RUNLEVEL;
 
     strcpy(s_argp, UMD_EBOOT_BIN);
     char *slash = strrchr(s_path, '/');
@@ -130,7 +142,7 @@ static void launch_psn(void)
         snprintf(pboot, sizeof(pboot), "%.*s/PBOOT.PBP", (int)(slash - s_path), s_path);
         if (file_exists(pboot)) {
             strcpy(s_argp, pboot);
-            apitype = ISO_PBOOT_RUNLEVEL;
+            apitype = on_ef0() ? ISO_PBOOT_RUNLEVEL_GO : ISO_PBOOT_RUNLEVEL;
         }
     }
 
@@ -150,7 +162,7 @@ static void launch_pops(void)
     param.key = "pops";
     param.argp = s_path;
     param.args = strlen(s_path) + 1;
-    sctrlKernelLoadExecVSHWithApitype(POPS_RUNLEVEL, s_path, &param);
+    sctrlKernelLoadExecVSHWithApitype(on_ef0() ? POPS_RUNLEVEL_GO : POPS_RUNLEVEL, s_path, &param);
 }
 
 int launch_entry(const Entry *e)

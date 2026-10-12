@@ -2,8 +2,15 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
+/* Lagringen psp5 ligger på: PSP Go-bygget (make GO=1) använder internminnet ef0: */
+#ifdef PSP5_GO
+#define PSP5_ROOT "ef0:"
+#else
+#define PSP5_ROOT "ms0:"
+#endif
+
 /* psp5:s egna filer (omslag, cache, psp5.cfg) */
-#define PSP5_DATA_DIR "ms0:/PSP5"
+#define PSP5_DATA_DIR PSP5_ROOT "/PSP5"
 
 /* Läser ARK:s konfiguration (om ARK finns). Anropas en gång vid start. */
 void sys_init(const char *self_path);

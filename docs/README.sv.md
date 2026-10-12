@@ -15,6 +15,15 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.3.4
+
+- **PSP Go-version** (`make GO=1`, `tools/build.sh go`): `PSP5_ROOT` i `src/system.h` är `ef0:` i stället för
+  `ms0:`, så psp5:s filer, spel (`ISO`, `PSP/GAME`), musik, ARK-mappen och `SEPLUGINS` läses från internminnet.
+  Ett Memory Stick Micro (`ms0:`) skannas också efter spel. Spel på `ef0:` startas med ARK:s apityper för
+  internminnet (0x125/0x126 ISO och PSN, 0x152 homebrew, 0x155 PS1), som arkMenu. Ingen UMD-tråd på PSP Go.
+  Release-zippen `psp5-v1.3.4-PSPGo.zip` har en mapp per ARK (`tools/make_release.py`).
+- **Bygge i GitHub Actions** (`.github/workflows/build.yml`): alla fyra versionerna och zipparna.
+
 ## Version 1.3.3
 
 - **Startskydd mot semi-brick** (`src/main.c`): `ms0:/PSP5/starting` skapas först av allt vid start och innehåller

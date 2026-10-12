@@ -7,7 +7,7 @@ psp5: a launcher for the PSP that tries to recreate the look and feel of the **P
 the row of game tiles at the top, the big artwork filling the screen behind them, the clean dark settings
 pages – on a 480×272 screen from 2004.
 
-psp5 runs on PSPs with the **ARK-4 or ARK-5** custom firmware (PSP-1000, 2000 and 3000). You can start it
+psp5 runs on PSPs with the **ARK-4 or ARK-5** custom firmware (PSP-1000, 2000, 3000 and the PSP Go). You can start it
 like any other homebrew, or let it take over as ARK's own launcher so your PSP boots straight into it.
 
 Everything you see is drawn by psp5 itself. No logos, icons, sounds or other assets from Sony are used –
@@ -95,14 +95,15 @@ tool for your computer that prepares them – see the covers section in [INSTALL
 
 ## Status
 
-psp5 runs on the **PSP-1000, PSP-2000 and PSP-3000** with **ARK-4 or ARK-5** – there's a download for
-each ARK (see [INSTALL.md](INSTALL.md)), and psp5 adapts the settings to your model and ARK version (for
+psp5 runs on the **PSP-1000, PSP-2000, PSP-3000 and PSP Go** with **ARK-4 or ARK-5** – there's a download for
+each ARK and one for the PSP Go (see [INSTALL.md](INSTALL.md)), and psp5 adapts the settings to your model and ARK version (for
 example, the PSP-1000 has no extra memory or USB charging, and ARK-4 has fewer CPU speeds).
 
 I've been using it on my own **PSP-2000 with ARK-5**, and launching games, artwork and covers all work
 there. ARK-4, the PSP-1000/3000, the music player and the new startup screen are newer and I haven't been
-able to try them on every combination, so let me know if something behaves oddly. The PSP Go and PS Vita
-aren't supported.
+able to try them on every combination, so let me know if something behaves oddly. The PSP Go version is the
+newest and untested on real hardware: it keeps its files in the internal storage (`ef0:`) and also finds games
+on a Memory Stick Micro. The PS Vita isn't supported.
 
 ## Building it yourself
 
@@ -115,7 +116,8 @@ make
 ```
 
 On Windows I build it inside WSL – `tools/setup-wsl.sh` installs the toolchain and `tools/build.sh` builds
-`dist/PSP/GAME/PSP5/EBOOT.PBP`.
+`dist/PSP/GAME/PSP5/EBOOT.PBP` (`tools/build.sh ark4` and `tools/build.sh go` build the ARK-4 and PSP Go
+versions; `make ARK=4` and `make GO=1` do the same by hand).
 
 ## Thanks
 
