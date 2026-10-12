@@ -25,7 +25,6 @@
 #define MP3_END      0x80671402 /* sceMp3Decode: strömmen är slut */
 #define ALREADY_LOADED  0x80020139
 #define ALREADY_LOADED2 0x80111102 /* samma sak, från sceUtilityLoadModule */
-#define MUSIC_ROOT   PSP5_ROOT "/MUSIC"
 
 /* --- låtlistan --- */
 
@@ -351,7 +350,9 @@ static void scan_library(void)
     s_scan_count = s_scan_cap = 0;
     unsigned char *buf = malloc(TAG_READ);
     if (buf) {
-        scan_dir(MUSIC_ROOT, NULL, 0, buf);
+        scan_dir("ms0:/MUSIC", NULL, 0, buf);
+        if (!sys_ms_is_ef())
+            scan_dir("ef0:/MUSIC", NULL, 0, buf); /* PSP Go:s internminne */
         free(buf);
     }
     if (s_quit) { /* avbruten av music_term */

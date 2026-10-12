@@ -30,16 +30,16 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
  * trådarnas stackar. Resten (~17 MB på PSP-1000) räcker gott – psp5 använder under 10 MB. */
 PSP_HEAP_SIZE_KB(-7168);
 
-/* psp5:s egna filer (omslag, cache) – samma plats oavsett varifrån psp5 körs */
+/* psp5:s egna filer (omslag, cache) – på lagringen psp5 startades från (ms0: eller PSP Go:s ef0:) */
 #define DATA_DIR PSP5_DATA_DIR
 /* Finns medan ett spel körs: när spelet avslutas startar systemet om psp5
  * (som ARK:s launcher), och då ska startskärmen inte visas igen. */
-#define INGAME_MARK DATA_DIR "/ingame"
+#define INGAME_MARK s_ingame_mark
 /* Startskydd: filen finns medan psp5 startar och tas bort när menyn har gått en stund.
  * Blir den kvar har psp5 hängt sig eller kraschat under starten. Då blir nästa start
  * felsäker, och som ARK:s launcher går psp5 efter två sådana starter i rad direkt
  * till XMB – så att PSP:n aldrig fastnar i en start som inte fungerar. */
-#define START_MARK DATA_DIR "/starting"
+#define START_MARK s_start_mark
 #define START_OK_AFTER 5.0f /* sekunder i menyn innan starten räknas som klar */
 
 static volatile int s_running = 1;
@@ -49,6 +49,7 @@ static volatile int s_sleeping; /* PSP:n går in i viloläge – skärmen hålls
 static volatile int s_resumed;  /* PSP:n har vaknat klart – visa startskärmen */
 static char s_self[256];
 static char s_list_cache[256];
+static char s_ingame_mark[32], s_start_mark[32], s_cache_dir[32]; /* i DATA_DIR, sätts i main */
 static u64 s_scan_start;
 
 static int exit_callback(int arg1, int arg2, void *common)
@@ -348,7 +349,7 @@ static int run_action(int action, EntryList *list, Ui *ui)
         return 1; /* filer kan ha ändrats – skanna om */
     case SA_CLEAR_CACHE:
         app_stop(list, ui);
-        delete_dir_files(DATA_DIR "/cache");
+        delete_dir_files(s_cache_dir);
         return 1;
     }
     /* resten lämnar psp5 – frigör allt först */
@@ -366,7 +367,11 @@ static int run_action(int action, EntryList *list, Ui *ui)
 int main(int argc, char *argv[])
 {
     setup_callbacks();
-    snprintf(s_self, sizeof(s_self), "%s", argc > 0 && argv[0] ? argv[0] : PSP5_ROOT "/PSP/GAME/PSP5/EBOOT.PBP");
+    snprintf(s_self, sizeof(s_self), "%s", argc > 0 && argv[0] ? argv[0] : "ms0:/PSP/GAME/PSP5/EBOOT.PBP");
+    sys_set_root(s_self);
+    snprintf(s_ingame_mark, sizeof(s_ingame_mark), "%s/ingame", DATA_DIR);
+    snprintf(s_start_mark, sizeof(s_start_mark), "%s/starting", DATA_DIR);
+    snprintf(s_cache_dir, sizeof(s_cache_dir), "%s/cache", DATA_DIR);
     snprintf(s_list_cache, sizeof(s_list_cache), "%s/cache/list.bin", DATA_DIR);
     sceIoMkdir(DATA_DIR, 0777);
     int failed = start_begin(); /* först av allt – före allt som kan hänga sig */
@@ -385,7 +390,7 @@ int main(int argc, char *argv[])
     }
     s_safe = failed > 0;
     if (s_safe) {
-        delete_dir_files(DATA_DIR "/cache"); /* en trasig cachefil ska inte kunna stoppa starten */
+        delete_dir_files(s_cache_dir); /* en trasig cachefil ska inte kunna stoppa starten */
         sound_skip_boot();
     }
 
@@ -398,7 +403,7 @@ int main(int argc, char *argv[])
     if (s_safe)
         ui_toast(&ui, L(S_SAFE_START));
 #ifdef PSP5_TEST
-    sound_dump(DATA_DIR "/shots/sounds"); /* testbygge: ljuden som WAV */
+    sound_dump("ms0:/PSP5/shots/sounds"); /* testbygge: ljuden som WAV */
 #endif
 
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */

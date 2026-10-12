@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "umd.h"
+#include "system.h"
 
 #define UMD_SFO   UMD_ROOT "PSP_GAME/PARAM.SFO"
 #define UMD_ICON0 UMD_ROOT "PSP_GAME/ICON0.PNG"
@@ -132,9 +133,8 @@ static int umd_thread(SceSize args, void *argp)
 
 void umd_start(void)
 {
-#ifdef PSP5_GO
-    return; /* PSP Go har ingen UMD-läsare */
-#endif
+    if (sys_model() == 4)
+        return; /* PSP Go har ingen UMD-läsare */
     s_quit = 0;
     s_gen = s_seen = 0;
     s_has = 0;

@@ -196,11 +196,7 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
-#if defined(PSP5_ARK4) && defined(PSP5_GO)
-    info(c, L(S_VERSION), "1.3.4 (ARK-4, PSP Go)");
-#elif defined(PSP5_GO)
-    info(c, L(S_VERSION), "1.3.4 (ARK-5, PSP Go)");
-#elif defined(PSP5_ARK4)
+#ifdef PSP5_ARK4
     info(c, L(S_VERSION), "1.3.4 (ARK-4)");
 #else
     info(c, L(S_VERSION), "1.3.4 (ARK-5)");

@@ -99,9 +99,11 @@ int plugins_load(const char *ark_dir)
     s_file_count = s_count = 0;
     snprintf(path, sizeof(path), "%sPLUGINS.TXT", ark_dir);
     load_file(path);
-    /* ARK-4 utan ARK-mapp använder ms0:/SEPLUGINS/ som ARK-mapp – läs inte samma fil två gånger */
-    if (strcasecmp(path, PSP5_ROOT "/SEPLUGINS/PLUGINS.TXT"))
-        load_file(PSP5_ROOT "/SEPLUGINS/PLUGINS.TXT");
+    /* ARK-4 utan ARK-mapp använder <lagring>/SEPLUGINS/ som ARK-mapp – läs inte samma fil två gånger */
+    char se[40];
+    snprintf(se, sizeof(se), "%s/SEPLUGINS/PLUGINS.TXT", g_root);
+    if (strcasecmp(path, se))
+        load_file(se);
     return s_count;
 }
 

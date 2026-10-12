@@ -1,5 +1,5 @@
 # psp5 – made by Mille Weber
-"""Packar release-zipparna (en per ARK och PSP-sort) från dist/, dist-ark4/ och dist-go/.
+"""Packar release-zipparna (en per ARK och PSP-sort) från dist/ och dist-ark4/.
 
     py tools/make_release.py 1.3.4
 
@@ -7,7 +7,8 @@ Ger release/psp5-v<version>-ARK5.zip, -ARK4.zip, -PSPGo-ARK5.zip och -PSPGo-ARK4
     PSP/GAME/PSP5/EBOOT.PBP     – psp5 som vanlig app
     ARK_LAUNCHER/VBOOT.PBP      – samma fil, för att ersätta ARK:s launcher (se INSTALL.md)
     READ ME.txt                 – kort om vilken PSP och ARK zippen är till
-Bygg först med tools/build.sh (ARK-5), tools/build.sh ark4 (ARK-4) och tools/build.sh go (PSP Go).
+PSP Go-zipparna har samma EBOOT – psp5 känner själv av internminnet (ef0:).
+Bygg först med tools/build.sh (ARK-5) och tools/build.sh ark4 (ARK-4).
 """
 import os
 import sys
@@ -82,5 +83,5 @@ if __name__ == '__main__':
     v = sys.argv[1] if len(sys.argv) > 1 else '1.3.4'
     make(v, 'ARK-5', 'dist')
     make(v, 'ARK-4', 'dist-ark4')
-    make(v, 'ARK-5', 'dist-go/ARK-5', go=True)
-    make(v, 'ARK-4', 'dist-go/ARK-4', go=True)
+    make(v, 'ARK-5', 'dist', go=True)
+    make(v, 'ARK-4', 'dist-ark4', go=True)

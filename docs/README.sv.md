@@ -17,15 +17,18 @@ startar PSP:n direkt i psp5 i stället för XMB.
 
 ## Version 1.3.4
 
-- **PSP Go-version** (`make GO=1`, `tools/build.sh go`): `PSP5_ROOT` i `src/system.h` är `ef0:` i stället för
-  `ms0:`, så psp5:s filer, spel (`ISO`, `PSP/GAME`), musik, ARK-mappen och `SEPLUGINS` läses från internminnet.
-  Ett Memory Stick Micro (`ms0:`) skannas också efter spel. Spel på `ef0:` startas med ARK:s apityper för
-  internminnet (0x125/0x126 ISO och PSN, 0x155 PS1; homebrew som vanligt 0x141), som arkMenu. Uppdateringar
-  (`PBOOT.PBP`) söks i både `ms0:` och `ef0:`. Ingen UMD-tråd på PSP Go.
-  Release-zipparna `psp5-v1.3.4-PSPGo-ARK5.zip` och `psp5-v1.3.4-PSPGo-ARK4.zip` (`tools/make_release.py`).
+- **PSP Go** – samma EBOOT på alla modeller: `sys_set_root` (`src/system.c`) väljer `g_root` efter argv[0].
+  Startas psp5 från `ef0:` (PSP Go:s internminne) ligger psp5:s filer (`ef0:/PSP5`), standardmappen för ARK och
+  `SEPLUGINS` där, och tipstexterna visar `ef0:/`. Spel (`ISO`, `PSP/GAME`) och musik (`MUSIC`) söks alltid både
+  på `ms0:` och `ef0:`, som arkMenu – så även ett Memory Stick Micro i en PSP Go. Spel på `ef0:` startas med ARK:s
+  apityper för internminnet (0x125/0x126 ISO och PSN, 0x155 PS1; homebrew som vanligt 0x141), och uppdateringar
+  (`PBOOT.PBP`) söks på båda. Ingen UMD-tråd på PSP Go (modell 4). Tidigare letade psp5 bara på `ms0:`, så
+  spel i `ef0:/PSP/GAME` och musik i `ef0:/MUSIC` syntes inte på PSP Go.
+  Release-zipparna `psp5-v1.3.4-PSPGo-ARK5.zip` och `-PSPGo-ARK4.zip` har samma EBOOT som ARK5/ARK4-zipparna,
+  bara med en READ ME för PSP Go (`tools/make_release.py`).
 - **Inställningar på PSP Go** (`src/settings.c`, modell 4): *Stäng av Pausa spel* (`disablepause`) och
   *Behåll det pausade spelet* (`hibblock`) visas, *Stäng av UMD-enheten* döljs – som i arkMenu.
-- **Bygge i GitHub Actions** (`.github/workflows/build.yml`): alla fyra versionerna och zipparna.
+- **Bygge i GitHub Actions** (`.github/workflows/build.yml`): båda versionerna och alla fyra zipparna.
 
 ## Version 1.3.3
 
