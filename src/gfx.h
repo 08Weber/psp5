@@ -26,6 +26,8 @@ void gfx_init(void);
 void gfx_term(void);
 void gfx_begin(u32 clear_color);
 void gfx_end(void); /* väntar på vblank och byter buffert */
+/* Som gfx_end, men anropar after_draw när bilden är ritad (t.ex. systemets tangentbord) */
+void gfx_end_with(void (*after_draw)(void));
 
 void gfx_rect(float x, float y, float w, float h, u32 color);
 void gfx_gradient_v(float x, float y, float w, float h, u32 top, u32 bottom);
@@ -75,5 +77,7 @@ float text_width(float size, int bold, const char *s);
 void text_draw(float x, float y, float size, int bold, u32 color, int align, const char *s);
 /* Största storlek ≤ size (ner till min_size) där texten ryms inom max_w */
 float text_fit(float size, float min_size, int bold, float max_w, const char *s);
+/* Kortar texten med "..." tills den ryms inom max_w */
+void text_ellipsis(char *out, int out_size, const char *s, float size, float max_w);
 
 #endif

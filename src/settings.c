@@ -203,9 +203,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.5.1 (ARK-4)");
+    info(c, L(S_VERSION), "1.5.2 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.5.1 (ARK-5)");
+    info(c, L(S_VERSION), "1.5.2 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
@@ -289,6 +289,7 @@ static void build(int rebuild)
     c = &s_cats[CAT_POWER];
     c->name = L(S_CAT_POWER);
     action(c, L(S_USB_MODE), SA_USB, 0);
+    action(c, L(S_FILES), SA_FILES, 0);
     action(c, L(S_TO_XMB), SA_XMB, 0);
     action(c, L(S_SLEEP), SA_SUSPEND, 1);
     action(c, L(S_RESTART), SA_RESTART, 1);

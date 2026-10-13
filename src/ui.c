@@ -78,9 +78,65 @@ static u32 with_alpha(u32 c, float a)
 
 /* --- flikar --- */
 
+/* Kort som användaren flyttat med □ till den andra fliken (homebrew till Spel, eller tvärtom),
+ * sparade i <data>/moved.txt: en rad per kort (entry_cover_key). s_moved börjar med '\n'. */
+static char s_moved[4096] = "\n";
+
+static void moved_path(char *out, int size)
+{
+    snprintf(out, size, "%s/moved.txt", g_data_dir);
+}
+
+static void moved_load(void)
+{
+    char path[64];
+    moved_path(path, sizeof(path));
+    s_moved[1] = 0;
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return;
+    int n = sceIoRead(fd, s_moved + 1, sizeof(s_moved) - 2);
+    sceIoClose(fd);
+    s_moved[n > 0 ? n + 1 : 1] = 0;
+}
+
+static char *moved_find(const Entry *e)
+{
+    char key[80];
+    entry_cover_key(e, key + 1, sizeof(key) - 2);
+    key[0] = '\n';
+    strcat(key, "\n");
+    return strstr(s_moved, key);
+}
+
+/* Flyttar kortet till den andra fliken och sparar. 0 = listan är full. */
+static int moved_toggle(const Entry *e)
+{
+    char *p = moved_find(e);
+    if (p) {
+        char *next = strchr(p + 1, '\n');
+        memmove(p, next, strlen(next) + 1);
+    } else {
+        char key[80];
+        entry_cover_key(e, key, sizeof(key));
+        int len = strlen(s_moved);
+        if (len + (int)strlen(key) + 2 > (int)sizeof(s_moved))
+            return 0;
+        snprintf(s_moved + len, sizeof(s_moved) - len, "%s\n", key);
+    }
+    char path[64];
+    moved_path(path, sizeof(path));
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (fd >= 0) {
+        sceIoWrite(fd, s_moved + 1, strlen(s_moved + 1));
+        sceIoClose(fd);
+    }
+    return 1;
+}
+
 static int is_app(const Entry *e)
 {
-    return e->type == ENTRY_HOMEBREW;
+    return (e->type == ENTRY_HOMEBREW) != (moved_find(e) != NULL);
 }
 
 static const LoaderView *view(const Ui *ui)
@@ -220,20 +276,6 @@ static void fit_label(Ui *ui)
     }
 }
 
-/* Kortar titeln med "..." tills den ryms inom max_w */
-static void fit_text(char *out, int out_size, const char *title, float size, float max_w)
-{
-    snprintf(out, out_size, "%s", title);
-    if (text_width(size, 0, out) <= max_w)
-        return;
-    char buf[160];
-    snprintf(buf, sizeof(buf), "%s", title);
-    do {
-        utf8_pop(buf);
-        snprintf(out, out_size, "%s...", buf);
-    } while (buf[0] && text_width(size, 0, out) > max_w);
-}
-
 /* --- livscykel --- */
 
 void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
@@ -249,6 +291,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->cover_for = -2;
     ui->tab_anim = 1;
     ui->accent[0] = ui->accent[1] = ui->accent[2] = 120;
+    moved_load();
     build_views(ui);
     ui->tab = ui->views[TAB_GAMES].count || !ui->views[TAB_APPS].count ? TAB_GAMES : TAB_APPS;
     ui->pos = 1.5f; /* korten glider in vid start */
@@ -295,7 +338,25 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
     ui->bg_index = remap_index(ui->bg_index, removed_front, added_front);
     ui->label_for = -2;
     ui->lib_label_for = -2;
+    ui->menu_open = 0; /* kortet menyn gällde kan ha flyttats */
     loader_set_view(view(ui));
+}
+
+/* □ i Spel/Appar: valt kort flyttas till den andra fliken, markeringen står kvar på samma plats */
+static void move_selected(Ui *ui)
+{
+    const Entry *e = &ui->list->items[ui_selected(ui)];
+    if (e->type == ENTRY_UMD || !moved_toggle(e)) {
+        sound_play(SND_ERROR);
+        return;
+    }
+    int tab = ui->tab, old = ui->sel[tab];
+    ui_relist(ui, 0, 0);
+    int n = ui->views[tab].count;
+    ui->sel[tab] = old < n ? old : (n ? n - 1 : 0);
+    ui->pos = ui->sel[tab] + 0.3f;
+    ui_toast(ui, L(tab == TAB_GAMES ? S_MOVED_TO_APPS : S_MOVED_TO_GAMES));
+    sound_play(SND_TOGGLE);
 }
 
 void ui_free(Ui *ui)
@@ -490,6 +551,21 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->launch += dt / LAUNCH_LEN;
         return ui->launch >= 1 ? UI_LAUNCH : UI_NONE;
     }
+    /* alternativmenyn: ✕ väljer, ○ eller □ stänger – resten av gränssnittet får inga knappar */
+    ui->menu_anim = clampf(ui->menu_anim + (ui->menu_open ? 7 : -7) * dt, 0, 1);
+    static const UiInput none = { 0, 0, 128, 128 };
+    if (ui->menu_open) {
+        u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
+        u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE;
+        if (in->pressed & ok) {
+            ui->menu_open = 0;
+            move_selected(ui);
+        } else if (in->pressed & back) {
+            ui->menu_open = 0;
+            sound_play(SND_BACK);
+        }
+        in = &none;
+    }
     if ((in->pressed & PSP_CTRL_TRIANGLE) && ui->intro >= 1) {
         sound_play(SND_OPEN);
         return UI_SETTINGS;
@@ -507,6 +583,11 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     int grid = ui->tab == TAB_LIBRARY;
     if (grid && (in->pressed & PSP_CTRL_SQUARE) && count > 1 && ui->launch < 0)
         toggle_sort(ui);
+    if ((ui->tab == TAB_GAMES || ui->tab == TAB_APPS) && (in->pressed & PSP_CTRL_SQUARE) && count &&
+        ui->intro >= 1 && ui->list->items[ui_selected(ui)].type != ENTRY_UMD) {
+        ui->menu_open = 1;
+        sound_play(SND_OPEN);
+    }
     int move = ui->tab == TAB_MUSIC ? 0 : step_input(ui, in, dt, grid);
     if (move && count) {
         int next = *sel + move;
@@ -707,7 +788,7 @@ static void draw_top_bar(Ui *ui)
             static float line_w;
             const Track *tr = music_track(cur);
             if (tr && (line_for != cur || line_gen != music_generation() || line_w != right - left)) {
-                fit_text(line, sizeof(line), tr->title, 0.5f, right - left - 16);
+                text_ellipsis(line, sizeof(line), tr->title, 0.5f, right - left - 16);
                 line_for = cur;
                 line_gen = music_generation();
                 line_w = right - left;
@@ -853,6 +934,47 @@ static void draw_details(Ui *ui)
     gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(LIGHT, 0.95f * fade));
     gfx_button(bx + 8 + 8, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(DARK, fade), with_alpha(LIGHT, fade));
     text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(DARK, fade), ALIGN_LEFT, go);
+
+    /* □ Alternativ (inte för UMD-skivan) */
+    if (e->type == ENTRY_UMD)
+        return;
+    float oa = fade * (1 - smooth(ui->menu_anim));
+    float mx = bx + w + 14, my = by + bh / 2;
+    gfx_button(mx + 6.5f, my, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.7f * oa), with_alpha(DARK, oa));
+    text_draw(mx + 17, my + 4.5f, 0.56f, 0, with_alpha(TEXT_DIM, oa), ALIGN_LEFT, L(S_OPTIONS));
+}
+
+/* Alternativmenyn (□): en panel nere till vänster, över Starta-knappen, med kortets namn,
+ * valet att flytta det till den andra fliken och ✕ / ○ längst ner. */
+static void draw_menu(Ui *ui)
+{
+    float a = smooth(ui->menu_anim);
+    int i = ui_selected(ui);
+    if (a <= 0 || i < 0)
+        return;
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * a)));
+    float w = 214, h = 96, x = MARGIN - 6, y = 258 - h + (1 - a) * 10;
+    gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, (int)(150 * a)));
+    gfx_round_rect(x, y, w, h, 9, RGBA(40, 41, 47, (int)(255 * a)));
+
+    char title[160];
+    text_ellipsis(title, sizeof(title), ui->list->items[i].title, 0.5f, w - 24);
+    text_draw(x + 12, y + 18, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, title);
+
+    const char *item = L(ui->tab == TAB_APPS ? S_MOVE_TO_GAMES : S_MOVE_TO_APPS);
+    gfx_round_rect(x + 6, y + 26, w - 12, 30, 7, with_alpha(LIGHT, 0.95f * a));
+    text_draw(x + 16, y + 46, text_fit(0.62f, 0.45f, 0, w - 32, item), 0, with_alpha(DARK, a), ALIGN_LEFT, item);
+
+    float fx = x + 12, fy = y + h - 18;
+    gfx_button(fx + 6.5f, fy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a),
+               with_alpha(DARK, a));
+    fx += 17;
+    text_draw(fx, fy + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_SELECT));
+    fx += text_width(0.52f, 0, L(S_SELECT)) + 12;
+    gfx_button(fx + 6.5f, fy, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, with_alpha(LIGHT, 0.9f * a),
+               with_alpha(DARK, a));
+    fx += 17;
+    text_draw(fx, fy + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_BACK));
 }
 
 static float key_cap(float x, float y, const char *key, float a)
@@ -969,7 +1091,7 @@ static void draw_library(Ui *ui)
         float tx = MARGIN + bw + 8;
         float max_w = SCREEN_W - MARGIN - hints_width() - 30 - tx;
         if (ui->lib_label_for != i) {
-            fit_text(ui->lib_label, sizeof(ui->lib_label), ui->list->items[i].title, 0.66f, max_w);
+            text_ellipsis(ui->lib_label, sizeof(ui->lib_label), ui->list->items[i].title, 0.66f, max_w);
             ui->lib_label_for = i;
         }
         text_draw(tx + (1 - focus_anim) * 6, 250.5f, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim),
@@ -1043,8 +1165,8 @@ static void draw_music(Ui *ui)
     if (pfor != cur || pgen != music_generation() || plang != L(S_UNKNOWN_ARTIST)) {
         pgen = music_generation();
         plang = L(S_UNKNOWN_ARTIST);
-        fit_text(ptitle, sizeof(ptitle), t ? t->title : L(S_NOTHING_PLAYING), 0.6f, pw - 20);
-        fit_text(partist, sizeof(partist), t ? (t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST)) : "", 0.5f, pw - 20);
+        text_ellipsis(ptitle, sizeof(ptitle), t ? t->title : L(S_NOTHING_PLAYING), 0.6f, pw - 20);
+        text_ellipsis(partist, sizeof(partist), t ? (t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST)) : "", 0.5f, pw - 20);
         pfor = cur;
     }
     text_draw(px + pw / 2, ay + as + 20, 0.6f, 0, with_alpha(TEXT_MAIN, a), ALIGN_CENTER, ptitle);
@@ -1107,8 +1229,8 @@ static void draw_music(Ui *ui)
         if (!tr)
             continue;
         if (c->idx != i) {
-            fit_text(c->title, sizeof(c->title), tr->title, 0.6f, lw - 30);
-            fit_text(c->sub, sizeof(c->sub), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.46f, lw - 30);
+            text_ellipsis(c->title, sizeof(c->title), tr->title, 0.6f, lw - 30);
+            text_ellipsis(c->sub, sizeof(c->sub), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.46f, lw - 30);
             c->idx = i;
         }
         int selected = i == ui->music_sel;
@@ -1184,6 +1306,8 @@ void ui_draw(Ui *ui)
         draw_empty(ui);
     }
     draw_hints(ui);
+    if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS)
+        draw_menu(ui);
     draw_toast(ui);
     osd_draw();
 

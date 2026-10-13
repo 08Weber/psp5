@@ -25,6 +25,7 @@
 #include "umd.h"
 #include "theme.h"
 #include "osd.h"
+#include "files.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -316,6 +317,35 @@ static void usb_mode(void)
     gfx_term();
 }
 
+/* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. */
+static void files_mode(void)
+{
+    gfx_init();
+    font_init(lang_needs_cjk());
+    sound_init();
+    files_open();
+    u32 old = PSP_CTRL_CROSS; /* ignorera knappen som öppnade den */
+    u64 last = sceKernelGetSystemTimeWide();
+    while (s_running) {
+        UiInput in;
+        read_pad(&in, &old);
+        u64 now = sceKernelGetSystemTimeWide();
+        float dt = (now - last) / 1000000.0f;
+        last = now;
+        if (dt > 0.05f)
+            dt = 0.05f;
+        osd_update(dt);
+        if (files_update(&in, dt))
+            break;
+        files_draw();
+    }
+    files_close();
+    sound_term();
+    s_sleeping = s_resumed = 0;
+    font_term();
+    gfx_term();
+}
+
 static void delete_dir_files(const char *dir)
 {
     SceUID d = sceIoDopen(dir);
@@ -351,6 +381,10 @@ static int run_action(int action, EntryList *list, Ui *ui)
         app_stop(list, ui);
         usb_mode();
         return 1; /* filer kan ha ändrats – skanna om */
+    case SA_FILES:
+        app_stop(list, ui);
+        files_mode();
+        return 1;
     case SA_CLEAR_CACHE:
         app_stop(list, ui);
         delete_dir_files(s_cache_dir);
