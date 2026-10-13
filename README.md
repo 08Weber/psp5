@@ -17,7 +17,7 @@ it's my own take on that style.
 |---|---|
 | ![Settings](docs/screenshots/settings.png) | ![Performance settings](docs/screenshots/settings-performance.png) |
 | ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
-| ![Startup screen](docs/screenshots/boot.png) |                                                         |
+| ![Startup screen](docs/screenshots/boot.png) | ![Volume](docs/screenshots/volume.png) |
 | ![Music](docs/screenshots/music.png) | ![Startup screen – golden dust](docs/screenshots/boot-dust.png) |
 | ![Themes](docs/screenshots/theme.png) | ![PS3 theme](docs/screenshots/theme-ps3.png) |
 | ![PS4 theme](docs/screenshots/theme-ps4.png) | ![PS1 theme](docs/screenshots/theme-ps1.png) |
@@ -39,7 +39,9 @@ through. Press □ there to sort by name or by what you added most recently.
 
 The last tab is **Music**, like the music player in the XMB: it lists the MP3 files in `ms0:/MUSIC` (folders
 too) with their titles and artists, and keeps playing while you browse your games. The track that's playing
-shows up as a little note at the top of the other tabs.
+shows up as a little note at the top of the other tabs. "Now playing" shows the album art – from the MP3 itself
+or a `cover.jpg` / `folder.jpg` in the album folder – and holding ← or → seeks through the track (the longer you
+hold, the faster it goes).
 
 Pressing ✕ (or START) starts the game the same way ARK's own menu does, so updates, patched ISOs and
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
@@ -65,6 +67,9 @@ A few other things I cared about:
   console with its button symbols, the dark towers and glowing orbs, the XMB wave and the blue PS4 waves.
   Highlight a theme to preview it and press ✕ to use it. You can also turn the game art in the background off,
   so the theme is always visible.
+- **It shows the volume.** Press the volume buttons anywhere in psp5 and a PS5-style bar slides in at the top,
+  with the level and a crossed-out speaker when the sound is off. While the PSP charges, the battery icon fills up
+  in a loop next to a little lightning bolt.
 - **It never touches flash0**, and you can always get back to the normal XMB.
 
 ## Installing
@@ -81,7 +86,7 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | L / R | switch between Games, Apps, Library and Music |
 | □ | sort the Library (name / recently added) · pause/resume in Music |
 | ✕ in Music | play the selected track (or pause it) |
-| ← → in Music | previous / next track |
+| ← → in Music | previous / next track · hold to seek |
 | ✕ or START | start the selected game |
 | △ | settings |
 | any button | skip the startup screen |

@@ -57,6 +57,15 @@ typedef struct {
     int music_sel;
     float music_scroll;
     int music_target;
+    int seek_dir;        /* ← / → som hålls i musikfliken: -1/1, 0 = ingen */
+    int seeking;         /* hållen länge nog: spolar i stället för att byta låt */
+    float seek_held, seek_pos;
+    float seek_show;     /* visa målet en stund efter att knappen släppts */
+
+    /* omslag till låten som spelas */
+    Texture *cover;
+    int cover_for;       /* låtens index, -1 = inget */
+    float cover_fade;
 
     char toast[96];
     float toast_time;

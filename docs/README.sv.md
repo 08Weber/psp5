@@ -15,6 +15,26 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.5.1
+
+- **Volymindikator i PS5-stil** (`src/osd.c`): volymknapparna går direkt till systemet, så psp5 läser volymen
+  (0–30) och ljud av/på med kärnans `sceImposeGetParam` – ARK hittar funktionen (`sctrlHENFindFunction`, ARK
+  översätter NID:en 0x531C9778 för 6.60/6.61, annars prövas 0xDC3BECFF) och kubridges `kuKernelCall` anropar
+  den. Ändras värdet glider en stapel in överst i 1,6 s, i alla flikar, inställningarna och USB-läget. Utan ARK
+  (PPSSPP) visas inget.
+- **Spola i musiken** (`seek_to` i `src/music.c`): kort tryck på ← / → byter låt när knappen släpps, håll i
+  0,35 s för att spola (8, sedan 20 och 45 sekunder per sekund). Avkodaren startas om vid rätt byte i filen:
+  Xing-tabellen för VBR, annars proportionellt, och sedan första giltiga bildrutan (samma version, lager och
+  frekvens som låtens första, och en giltig bildruta direkt efter). De första bildrutorna efter ett hopp får
+  misslyckas (bitreservoaren) utan att låten byts.
+- **Omslag i musiken** (`art_load_cover`, `music_cover_data`): ur ID3-taggens APIC/PIC (helst framsidan, v2.2–2.4
+  med unsynchronisation), annars `cover.jpg`, `folder.jpg`, `front.jpg`, `album.jpg`, `cover.png` eller
+  `folder.png` i albummappen. JPEG avkodas med libjpeg-turbo (skalas ner redan i avkodaren), PNG med libpng.
+  64×64 med rundade hörn, sparas i `cache/` per album och laddas i laddartråden. `loader_stop` körs nu före
+  `music_term`, eftersom laddaren läser musiklistan.
+- **Laddningsanimation:** medan batteriet laddas sveper fyllningen från nivån upp till fullt, med en blixt bredvid.
+- Testskript `tools/tests/media.txt` och nya testkommandon: `hold KNAPP:N`, `volume N`, `charging 0/1`, `battery N`.
+
 ## Version 1.5.0
 
 - **Teman** (`src/theme.c`, ny flik *Tema* i inställningarna): PS5 (som förut), PS5:s konsolskal (Midnight

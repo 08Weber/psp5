@@ -13,7 +13,7 @@
 #define MAX_STEPS 128
 
 typedef struct {
-    char op;        /* 'w' vänta, 'p' tryck, 's' skärmdump, 'z' somna, 'r' vakna ur viloläge */
+    char op;        /* 'w' vänta, 'p' tryck, 'h' håll, 's' skärmdump, 'z' somna, 'r' vakna, 'v' volym, 'c' laddning */
     int frames;
     u32 button;
     char name[32];
@@ -23,6 +23,7 @@ static Step s_steps[MAX_STEPS];
 static int s_count, s_pos, s_wait, s_hold;
 static int s_active;
 static int s_resume, s_sleep;
+static int s_volume = -1, s_charging = -1, s_battery = -1; /* låtsade värden, -1 = riktiga */
 
 static u32 button_by_name(const char *n)
 {
@@ -64,6 +65,22 @@ void testrun_init(void)
         } else if (!strcmp(op, "press")) {
             s->op = 'p';
             s->button = button_by_name(arg);
+        } else if (!strcmp(op, "hold")) { /* hold right:60 – håll knappen i 60 bildrutor */
+            s->op = 'h';
+            char *colon = strchr(arg, ':');
+            s->frames = colon ? atoi(colon + 1) : 30;
+            if (colon)
+                *colon = 0;
+            s->button = button_by_name(arg);
+        } else if (!strcmp(op, "volume")) { /* volume N – N = volym 0–30, +256 = ljudet av */
+            s->op = 'v';
+            s->frames = atoi(arg);
+        } else if (!strcmp(op, "battery")) { /* battery N – batteriet visar N % */
+            s->op = 'b';
+            s->frames = atoi(arg);
+        } else if (!strcmp(op, "charging")) {
+            s->op = 'c';
+            s->frames = atoi(arg);
         } else if (!strcmp(op, "sleep")) {
             s->op = 'z';
         } else if (!strcmp(op, "resume")) {
@@ -98,10 +115,20 @@ u32 testrun_buttons(u32 real)
             s_wait = s->frames;
             return 0;
         }
-        if (s->op == 'p') {
+        if (s->op == 'p' || s->op == 'h') {
             s_pos++;
-            s_hold = 1;
+            s_hold = s->op == 'h' && s->frames > 1 ? s->frames - 1 : 1;
             return s->button;
+        }
+        if (s->op == 'v' || s->op == 'c' || s->op == 'b') {
+            s_pos++;
+            if (s->op == 'v')
+                s_volume = s->frames;
+            else if (s->op == 'c')
+                s_charging = s->frames;
+            else
+                s_battery = s->frames;
+            continue;
         }
         if (s->op == 'r' || s->op == 'z') {
             s_pos++;
@@ -115,6 +142,10 @@ u32 testrun_buttons(u32 real)
     }
     return 0;
 }
+
+int testrun_volume(void) { return s_volume; }
+int testrun_charging(void) { return s_charging; }
+int testrun_battery(void) { return s_battery; }
 
 int testrun_take_sleep(void)
 {

@@ -10,6 +10,7 @@
 #include <systemctrl_ark.h>
 #include <systemctrl_se.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include "system.h"
@@ -54,6 +55,27 @@ void sys_set_root(const char *self_path)
     snprintf(g_data_dir, sizeof(g_data_dir), "%s/PSP5", g_root);
 }
 
+#ifdef PSP5_TEST
+/* Testbygget i PPSSPP (som saknar ARK): <data>/fake.txt med t.ex. "model=4 ark=4" låtsas vara en
+ * PSP Go med ARK-4, så att inställningarna för varje modell och ARK går att se. */
+static void fake_device(void)
+{
+    char path[64], buf[64] = "";
+    snprintf(path, sizeof(path), "%s/fake.txt", g_data_dir);
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return;
+    int n = sceIoRead(fd, buf, sizeof(buf) - 1);
+    sceIoClose(fd);
+    buf[n > 0 ? n : 0] = 0;
+    const char *p;
+    if ((p = strstr(buf, "model=")))
+        s_model = atoi(p + 6);
+    if ((p = strstr(buf, "ark=")))
+        s_ark = atoi(p + 4);
+}
+#endif
+
 void sys_init(const char *self_path)
 {
     char path[200];
@@ -86,6 +108,9 @@ void sys_init(const char *self_path)
             snprintf(s_ark_dir, sizeof(s_ark_dir), "%s/SEPLUGINS/", g_root);
         }
     }
+#ifdef PSP5_TEST
+    fake_device();
+#endif
     g_arkcfg_ark4 = s_ark == 4;
     snprintf(path, sizeof(path), "%sVBOOT.PBP", s_ark_dir);
     s_is_launcher = self_path && !strcasecmp(self_path, path);

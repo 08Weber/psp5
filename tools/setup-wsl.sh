@@ -24,11 +24,11 @@ echo "== Verktygskedja"
 psp-gcc --version | head -1
 
 echo "== Paket"
-for pkg in psp-cfw-sdk libpng libintrafont zlib; do
+for pkg in psp-cfw-sdk libpng libintrafont zlib jpeg; do
     if psp-pacman -Q "$pkg" >/dev/null 2>&1; then
         echo "$pkg: redan installerat"
     else
         psp-pacman -S --noconfirm "$pkg"
     fi
 done
-psp-pacman -Q psp-cfw-sdk libpng libintrafont zlib
+psp-pacman -Q psp-cfw-sdk libpng libintrafont zlib jpeg

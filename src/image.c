@@ -1,6 +1,9 @@
 /* psp5 – made by Mille Weber */
 #include <pspkernel.h>
 #include <png.h>
+#include <stdio.h>
+#include <setjmp.h>
+#include <jpeglib.h>
 #include <malloc.h>
 #include <math.h>
 #include <string.h>
@@ -8,6 +11,8 @@
 
 #define NTX_MAGIC 0x3158544E /* "NTX1" */
 #define MAX_PNG_PIXELS (512 * 512)
+#define MAX_COVER_PIXELS (1024 * 1024) /* omslag är ofta större än ikoner */
+#define MAX_PROGRESSIVE_PIXELS (1600 * 1600) /* progressiv JPEG avkodas i sin helhet */
 
 typedef struct {
     u32 magic;
@@ -16,14 +21,14 @@ typedef struct {
     u32 reserved;
 } NtxHeader;
 
-int img_decode_png(const void *data, u32 size, Image *out)
+static int decode_png(const void *data, u32 size, Image *out, u32 max_pixels)
 {
     png_image png;
     memset(&png, 0, sizeof(png));
     png.version = PNG_IMAGE_VERSION;
     if (!png_image_begin_read_from_memory(&png, data, size))
         return 0;
-    if (png.width * png.height > MAX_PNG_PIXELS) {
+    if (png.width * png.height > max_pixels) {
         png_image_free(&png);
         return 0;
     }
@@ -39,6 +44,103 @@ int img_decode_png(const void *data, u32 size, Image *out)
         img_free(out);
         return 0;
     }
+    return 1;
+}
+
+int img_decode_png(const void *data, u32 size, Image *out)
+{
+    return decode_png(data, size, out, MAX_PNG_PIXELS);
+}
+
+/* libjpeg avslutar programmet vid fel om man inte tar över felhanteringen */
+typedef struct {
+    struct jpeg_error_mgr pub;
+    jmp_buf jump;
+} JpegError;
+
+static void jpeg_fail(j_common_ptr cinfo)
+{
+    longjmp(((JpegError *)cinfo->err)->jump, 1);
+}
+
+static void jpeg_quiet(j_common_ptr cinfo, int level) {}
+
+static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
+{
+    struct jpeg_decompress_struct cinfo;
+    JpegError err;
+    u8 *volatile row = NULL; /* ändras efter setjmp – måste överleva longjmp */
+    out->px = NULL;
+    cinfo.err = jpeg_std_error(&err.pub);
+    err.pub.error_exit = jpeg_fail;
+    err.pub.emit_message = jpeg_quiet;
+    if (setjmp(err.jump)) {
+        jpeg_destroy_decompress(&cinfo);
+        free((void *)row);
+        img_free(out);
+        return 0;
+    }
+    jpeg_create_decompress(&cinfo);
+    jpeg_mem_src(&cinfo, (const unsigned char *)data, size);
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK ||
+        (cinfo.progressive_mode && cinfo.image_width * cinfo.image_height > MAX_PROGRESSIVE_PIXELS)) {
+        jpeg_destroy_decompress(&cinfo);
+        return 0;
+    }
+    /* skala ner redan i avkodaren (1/2, 1/4, 1/8) så länge bilden blir minst min_side */
+    int side = cinfo.image_width < cinfo.image_height ? cinfo.image_width : cinfo.image_height;
+    cinfo.scale_num = 1;
+    cinfo.scale_denom = 1;
+    while (cinfo.scale_denom < 8 && side / (int)(cinfo.scale_denom * 2) >= min_side)
+        cinfo.scale_denom *= 2;
+    cinfo.out_color_space = JCS_RGB;
+    jpeg_start_decompress(&cinfo);
+    int w = cinfo.output_width, h = cinfo.output_height;
+    if ((u32)(w * h) > MAX_COVER_PIXELS || cinfo.output_components != 3)
+        longjmp(err.jump, 1);
+    out->w = w;
+    out->h = h;
+    out->px = malloc(w * h * 4);
+    row = malloc(w * 3);
+    if (!out->px || !row)
+        longjmp(err.jump, 1);
+    while (cinfo.output_scanline < cinfo.output_height) {
+        int y = cinfo.output_scanline;
+        JSAMPROW rows[1] = { row };
+        jpeg_read_scanlines(&cinfo, rows, 1);
+        for (int x = 0; x < w; x++)
+            out->px[y * w + x] = RGBA(row[x * 3], row[x * 3 + 1], row[x * 3 + 2], 255);
+    }
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    free((void *)row);
+    return 1;
+}
+
+int img_decode_cover(const void *data, u32 size, Image *out, int min_side)
+{
+    const u8 *b = data;
+    if (size >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G')
+        return decode_png(data, size, out, MAX_COVER_PIXELS);
+    if (size >= 4 && b[0] == 0xFF && b[1] == 0xD8)
+        return decode_jpeg(data, size, out, min_side);
+    return 0;
+}
+
+int img_crop_square(Image *img)
+{
+    int side = img->w < img->h ? img->w : img->h;
+    if (img->w == img->h)
+        return 1;
+    u32 *px = malloc(side * side * 4);
+    if (!px)
+        return 0;
+    int x0 = (img->w - side) / 2, y0 = (img->h - side) / 2;
+    for (int y = 0; y < side; y++)
+        memcpy(px + y * side, img->px + (y + y0) * img->w + x0, side * 4);
+    free(img->px);
+    img->px = px;
+    img->w = img->h = side;
     return 1;
 }
 

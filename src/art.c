@@ -11,9 +11,12 @@
 #include "image.h"
 #include "iso.h"
 #include "umd.h"
+#include "music.h"
 
 #define MAX_PNG_SIZE (512 * 1024)
 #define ICON_RADIUS 7.0f
+#define COVER_RADIUS 8.0f /* som rutan i musikfliken */
+#define MAX_COVER_FILE (2 * 1024 * 1024)
 
 static char s_cache_dir[200];
 static char s_cover_dir[200];
@@ -187,6 +190,78 @@ Texture *art_load_bg(const Entry *e)
     if (fit(&img, BG_W, BG_H)) {
         img_blur(&img, blur);
         t = img_to_texture(&img, GU_PSM_5650);
+        if (t)
+            ntx_save(path, t);
+    }
+    img_free(&img);
+    return t;
+}
+
+/* --- omslag till musik --- */
+
+/* Bild som ligger bredvid låtarna i albummappen */
+static void *folder_cover(const char *mp3_path, u32 *size)
+{
+    static const char *names[] = { "cover.jpg", "folder.jpg", "front.jpg", "album.jpg", "cover.png", "folder.png" };
+    const char *slash = strrchr(mp3_path, '/');
+    if (!slash)
+        return NULL;
+    char path[300];
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        snprintf(path, sizeof(path), "%.*s/%s", (int)(slash - mp3_path), mp3_path, names[i]);
+        SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+        if (fd < 0)
+            continue;
+        int n = sceIoLseek32(fd, 0, PSP_SEEK_END);
+        void *buf = n > 0 && n <= MAX_COVER_FILE ? malloc(n) : NULL;
+        if (buf) {
+            sceIoLseek32(fd, 0, PSP_SEEK_SET);
+            if (sceIoRead(fd, buf, n) != n) {
+                free(buf);
+                buf = NULL;
+            }
+        }
+        sceIoClose(fd);
+        if (buf) {
+            *size = n;
+            return buf;
+        }
+    }
+    return NULL;
+}
+
+Texture *art_load_cover(const char *mp3_path, const char *album)
+{
+    /* ett album delar omslag (samma mapp och albumnamn); utan album gäller det låten */
+    char path[256];
+    const char *slash = strrchr(mp3_path, '/');
+    u32 h = 2166136261u;
+    if (album[0] && slash) {
+        char folder[256];
+        snprintf(folder, sizeof(folder), "%.*s", (int)(slash - mp3_path), mp3_path);
+        h = fnv1a(album, fnv1a(folder, h));
+    } else {
+        h = fnv1a(mp3_path, h);
+    }
+    snprintf(path, sizeof(path), "%s/%08X.cov", s_cache_dir, (unsigned)h);
+    Texture *t = ntx_load(path);
+    if (t)
+        return t;
+
+    u32 size = 0;
+    void *data = music_cover_data(mp3_path, &size);
+    if (!data)
+        data = folder_cover(mp3_path, &size);
+    if (!data)
+        return NULL;
+    Image img;
+    int ok = img_decode_cover(data, size, &img, COVER_SIZE);
+    free(data); /* före skalningen – omslagsfilen kan vara stor */
+    if (!ok)
+        return NULL;
+    if (img_crop_square(&img) && fit(&img, COVER_SIZE, COVER_SIZE)) {
+        img_round_corners(&img, COVER_RADIUS);
+        t = img_to_texture(&img, GU_PSM_8888);
         if (t)
             ntx_save(path, t);
     }

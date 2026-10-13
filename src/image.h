@@ -12,6 +12,11 @@ typedef struct {
 } Image;
 
 int img_decode_png(const void *data, u32 size, Image *out);
+/* Omslag (JPEG eller PNG, efter innehållet). JPEG skalas ner i avkodaren men blir minst
+ * min_side på den kortaste sidan. */
+int img_decode_cover(const void *data, u32 size, Image *out, int min_side);
+/* Beskär till en kvadrat runt mitten. */
+int img_crop_square(Image *img);
 void img_free(Image *img);
 /* Skalar till dw×dh (ytmedelvärde vid förminskning, bilinjärt vid förstoring). */
 int img_resize(const Image *src, int dw, int dh, Image *out);

@@ -18,6 +18,8 @@
 #include "music.h"
 #include "system.h"
 #include "theme.h"
+#include "osd.h"
+#include "testrun.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -51,6 +53,7 @@
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
 #define LAUNCH_LEN 0.45f
+#define SEEK_HOLD  0.35f /* så länge ← / → hålls innan musiken spolar */
 
 #define CLEAR_COLOR RGBA(10, 10, 14, 255)
 #define TEXT_MAIN   RGBA(242, 242, 246, 255)
@@ -162,6 +165,7 @@ static void switch_tab(Ui *ui, int tab)
     ui->pos = ui->sel[tab] + 0.7f; /* raden glider in från höger */
     ui->still = 0;
     ui->label_for = -2;
+    ui->seek_dir = ui->seeking = 0; /* en hållen pil gäller bara i musikfliken */
     if (tab != TAB_MUSIC) /* musikfliken har inga kort – låt ikonerna ligga kvar */
         loader_set_view(view(ui));
 }
@@ -242,6 +246,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->bg_index = -1;
     ui->label_for = -2;
     ui->lib_label_for = -2;
+    ui->cover_for = -2;
     ui->tab_anim = 1;
     ui->accent[0] = ui->accent[1] = ui->accent[2] = 120;
     build_views(ui);
@@ -298,6 +303,8 @@ void ui_free(Ui *ui)
     tex_free(ui->bg_old);
     tex_free(ui->bg_cur);
     ui->bg_old = ui->bg_cur = NULL;
+    tex_free(ui->cover);
+    ui->cover = NULL;
     for (int t = 0; t < TAB_COUNT; t++) {
         free(ui->views[t].idx);
         ui->views[t].idx = NULL;
@@ -379,6 +386,30 @@ static void update_background(Ui *ui, float dt)
     }
 }
 
+/* Omslaget till låten som spelas: begärs när låten byts och tonas in när det är laddat */
+static void update_cover(Ui *ui, float dt)
+{
+    int cur = music_current();
+    if (cur != ui->cover_for) {
+        tex_free(ui->cover);
+        ui->cover = NULL;
+        ui->cover_for = cur;
+        ui->cover_fade = 0;
+        if (cur >= 0)
+            loader_request_cover(cur);
+    }
+    int idx;
+    Texture *tex;
+    if (loader_take_cover(&idx, &tex)) {
+        if (idx == ui->cover_for && !ui->cover)
+            ui->cover = tex;
+        else
+            tex_free(tex); /* låten hann bytas */
+    }
+    if (ui->cover)
+        ui->cover_fade = clampf(ui->cover_fade + dt * 4, 0, 1);
+}
+
 /* Musikfliken: ↑↓ väljer, ✕ spelar (eller pausar vald låt), □ paus, ← → föregående/nästa låt */
 static void update_music(Ui *ui, const UiInput *in, float dt)
 {
@@ -397,10 +428,39 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
     if (ui->intro < 1 || !n)
         return;
     int playing = music_current() >= 0 && music_state() != MUSIC_STOPPED;
-    if ((in->pressed & PSP_CTRL_LEFT) && playing)
-        music_prev();
-    if ((in->pressed & PSP_CTRL_RIGHT) && playing)
-        music_next();
+    /* ← →: kort tryck byter låt (när knappen släpps), håll för att spola – fortare ju längre */
+    int dir = (in->held & PSP_CTRL_RIGHT) ? 1 : (in->held & PSP_CTRL_LEFT) ? -1 : 0;
+    if (ui->seek_show > 0)
+        ui->seek_show -= dt;
+    if (dir && playing) {
+        if (dir != ui->seek_dir) {
+            ui->seek_dir = dir;
+            ui->seek_held = 0;
+            ui->seeking = 0;
+        }
+        ui->seek_held += dt;
+        float dur = music_duration();
+        if (!ui->seeking && ui->seek_held >= SEEK_HOLD && dur > 0) {
+            ui->seeking = 1;
+            ui->seek_pos = music_elapsed();
+        }
+        if (ui->seeking) {
+            float speed = ui->seek_held < 1.5f ? 8 : ui->seek_held < 3.0f ? 20 : 45; /* sekunder per sekund */
+            ui->seek_pos = clampf(ui->seek_pos + dir * speed * dt, 0, dur);
+        }
+    } else if (ui->seek_dir) { /* släppt */
+        if (ui->seeking && playing) {
+            music_seek(ui->seek_pos);
+            ui->seek_show = 0.5f; /* tills spelartråden har hoppat */
+        } else if (playing) {
+            if (ui->seek_dir > 0)
+                music_next();
+            else
+                music_prev();
+        }
+        ui->seek_dir = 0;
+        ui->seeking = 0;
+    }
     if ((in->pressed & PSP_CTRL_SQUARE) && playing)
         music_toggle_pause();
     u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
@@ -496,6 +556,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if (music_needs_cjk())
         font_ensure_cjk(); /* japanska/ryska låttitlar (laddas bara en gång) */
     update_background(ui, dt);
+    update_cover(ui, dt);
 
     IconSlot *slot = loader_icon(ui_selected(ui));
     float target[3] = { 120, 120, 120 };
@@ -539,14 +600,30 @@ static void draw_background(Ui *ui)
     gfx_gradient_v(0, 160, SCREEN_W, SCREEN_H - 160, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 175));
 }
 
-static void draw_battery(float x, float y, int percent, float a)
+/* Laddas batteriet sveper fyllningen från nivån upp till fullt om och om igen,
+ * och en liten blixt syns till vänster om batteriet. */
+static void draw_battery(float x, float y, int percent, int charging, float time, float a)
 {
     gfx_round_rect(x, y, 20, 10, 2.5f, with_alpha(LIGHT, 0.85f * a));
     gfx_round_rect(x + 1.3f, y + 1.3f, 17.4f, 7.4f, 1.8f, with_alpha(DARK, a));
     gfx_rect(x + 20, y + 3, 1.8f, 4, with_alpha(LIGHT, 0.85f * a));
     if (percent >= 0) {
-        u32 c = percent <= 15 ? RGBA(255, 95, 85, 255) : LIGHT;
-        gfx_round_rect(x + 2.6f, y + 2.6f, 14.8f * percent / 100.0f + 0.4f, 4.8f, 1, with_alpha(c, a));
+        const float full = 14.8f;
+        float w = full * percent / 100.0f;
+        if (charging) {
+            float p = fmodf(time, 1.8f) / 1.8f;
+            float sweep = w + (full - w) * smooth(p / 0.8f);
+            float fade = 1 - smooth((p - 0.75f) / 0.25f);
+            gfx_round_rect(x + 2.6f, y + 2.6f, sweep + 0.4f, 4.8f, 1, with_alpha(LIGHT, 0.5f * fade * a));
+        }
+        u32 c = percent <= 15 && !charging ? RGBA(255, 95, 85, 255) : LIGHT;
+        gfx_round_rect(x + 2.6f, y + 2.6f, w + 0.4f, 4.8f, 1, with_alpha(c, a));
+    }
+    if (charging) {
+        float cx = x - 6, cy = y + 5;
+        float bolt[12] = { cx + 1.6f, cy - 5.2f, cx - 2.6f, cy + 0.9f, cx - 0.2f, cy + 0.9f,
+                           cx - 1.6f, cy + 5.2f, cx + 2.6f, cy - 0.9f, cx + 0.2f, cy - 0.9f };
+        gfx_fan(cx, cy, bolt, 6, with_alpha(LIGHT, 0.9f * a));
     }
 }
 
@@ -584,7 +661,10 @@ static void draw_top_bar(Ui *ui)
     text_draw(SCREEN_W - MARGIN, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock);
     float cw = text_width(0.8f, 0, clock);
     float bx = SCREEN_W - MARGIN - cw - 32;
-    draw_battery(bx, 15.5f, scePowerIsBatteryExist() ? scePowerGetBatteryLifePercent() : -1, a);
+    int battery = scePowerIsBatteryExist();
+    int charging = testrun_charging() >= 0 ? testrun_charging() : battery && scePowerIsBatteryCharging() > 0;
+    int level = testrun_battery() >= 0 ? testrun_battery() : battery ? scePowerGetBatteryLifePercent() : -1;
+    draw_battery(bx, 15.5f, level, charging, ui->time, a);
     gfx_gear(bx - 18, 20.5f, 7.5f, with_alpha(LIGHT, 0.9f * a), RGBA(14, 14, 18, (int)(255 * a)));
 
     /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
@@ -910,6 +990,16 @@ static void draw_play_glyph(float cx, float cy, float r, int paused, u32 color)
     }
 }
 
+/* Spolning: två trianglar åt hållet man spolar (▶▶ eller ◀◀) */
+static void draw_seek_glyph(float cx, float cy, float r, int dir, u32 color)
+{
+    for (int k = 0; k < 2; k++) {
+        float tip = cx + dir * (k ? r : 0), back = tip - dir * r;
+        float xy[6] = { back, cy - r * 0.7f, tip, cy, back, cy + r * 0.7f };
+        gfx_fan((back + tip) / 2, cy, xy, 3, color);
+    }
+}
+
 /* Tipstexterna säger ms0:/ – på PSP Go:s internminne visas ef0:/ i stället */
 static const char *on_root(const char *s)
 {
@@ -933,7 +1023,7 @@ static void draw_music(Ui *ui)
     gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
     text_draw(px + 12, py + 17, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_NOW_PLAYING));
     const Track *t = cur >= 0 ? music_track(cur) : NULL;
-    /* omslagsruta: färgton från låtens nummer, egenritad not */
+    /* omslaget, eller en ruta med färgton från låtens nummer och en egenritad not */
     float as = 64, ax = px + (pw - as) / 2, ay = py + 28;
     unsigned h = (cur >= 0 ? cur : 7) * 2654435761u;
     int r0 = 60 + (h >> 8) % 120, g0 = 60 + (h >> 16) % 110, b0 = 90 + (h >> 24) % 140;
@@ -941,6 +1031,10 @@ static void draw_music(Ui *ui)
     gfx_round_rect(ax, ay, as, as, 8, RGBA(r0, g0, b0, (int)((t ? 255 : 90) * a)));
     gfx_gradient_v(ax + 4, ay + as * 0.5f, as - 8, as * 0.5f - 4, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, (int)(60 * a)));
     draw_note(ax + as / 2, ay + as / 2, 30, RGBA(255, 255, 255, (int)((t ? 230 : 120) * a)));
+    if (ui->cover && ui->cover_for == cur && cur >= 0) {
+        float ca = smooth(ui->cover_fade);
+        gfx_tex(ui->cover, ax, ay, as, as, RGBA(255, 255, 255, (int)(255 * a * ca)));
+    }
 
     static char ptitle[100], partist[72];
     static int pfor = -2, pgen = -1;
@@ -955,11 +1049,14 @@ static void draw_music(Ui *ui)
     text_draw(px + pw / 2, ay + as + 20, 0.6f, 0, with_alpha(TEXT_MAIN, a), ALIGN_CENTER, ptitle);
     text_draw(px + pw / 2, ay + as + 35, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, partist);
     if (t) {
-        float el = music_elapsed(), du = music_duration();
+        int seek = ui->seeking || ui->seek_show > 0;
+        float el = seek ? ui->seek_pos : music_elapsed(), du = music_duration();
         float bw = pw - 28, bxx = px + 14, by = py + ph - 30;
         gfx_round_rect(bxx, by, bw, 3, 1.5f, RGBA(255, 255, 255, (int)(50 * a)));
         if (du > 0)
             gfx_round_rect(bxx, by, fmaxf(3, bw * clampf(el / du, 0, 1)), 3, 1.5f, with_alpha(theme_cur()->accent, a));
+        if (du > 0 && ui->seeking) /* spolning: en knopp på målet */
+            gfx_circle(bxx + bw * clampf(el / du, 0, 1), by + 1.5f, 4.5f, with_alpha(LIGHT, a));
         char e[12], d[12];
         format_time(e, sizeof(e), el);
         format_time(d, sizeof(d), du);
@@ -967,7 +1064,10 @@ static void draw_music(Ui *ui)
         if (du > 0)
             text_draw(bxx + bw, by + 15, 0.45f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, d);
         gfx_circle(px + pw / 2, by + 11, 8, with_alpha(LIGHT, 0.95f * a));
-        draw_play_glyph(px + pw / 2, by + 11, 6, state == MUSIC_PLAYING, with_alpha(DARK, a));
+        if (ui->seeking)
+            draw_seek_glyph(px + pw / 2, by + 11, 5.5f, ui->seek_dir, with_alpha(DARK, a));
+        else
+            draw_play_glyph(px + pw / 2, by + 11, 6, state == MUSIC_PLAYING, with_alpha(DARK, a));
     }
 
     if (!n && music_scanning()) {
@@ -1041,7 +1141,9 @@ static void draw_music(Ui *ui)
     gfx_fan(x + 3, y, l, 3, with_alpha(LIGHT, 0.9f * a));
     float r[6] = { x + 15, y, x + 9, y - 4.5f, x + 9, y + 4.5f };
     gfx_fan(x + 12, y, r, 3, with_alpha(LIGHT, 0.9f * a));
-    text_draw(x + 20, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_TRACK));
+    /* krymper hellre än krockar med L R-tipsen till höger */
+    float tsize = text_fit(0.56f, 0.4f, 0, SCREEN_W - MARGIN - hints_width() - 26 - (x + 20), L(S_TRACK));
+    text_draw(x + 20, y + 4.5f, tsize, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_TRACK));
 }
 
 static void draw_toast(Ui *ui)
@@ -1082,6 +1184,7 @@ void ui_draw(Ui *ui)
     }
     draw_hints(ui);
     draw_toast(ui);
+    osd_draw();
 
     /* in- och uttoning från/till svart */
     float black = 1 - ui->intro;
