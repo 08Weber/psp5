@@ -446,7 +446,8 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
         }
         if (ui->seeking) {
             float speed = ui->seek_held < 1.5f ? 8 : ui->seek_held < 3.0f ? 20 : 45; /* sekunder per sekund */
-            ui->seek_pos = clampf(ui->seek_pos + dir * speed * dt, 0, dur);
+            /* stannar en sekund före slutet: att släppa där ska inte byta låt */
+            ui->seek_pos = clampf(ui->seek_pos + dir * speed * dt, 0, dur > 1 ? dur - 1 : 0);
         }
     } else if (ui->seek_dir) { /* släppt */
         if (ui->seeking && playing) {
