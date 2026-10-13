@@ -15,6 +15,21 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.5.2
+
+- **Flytta mellan Spel och Appar:** □ på ett kort i Spel eller Appar öppnar en liten alternativmeny (`draw_menu`)
+  med kortets namn och *Flytta till Spel/Appar*. ✕ väljer, ○ eller □ stänger, så inget flyttas av misstag. Sparas
+  i `<data>/moved.txt`, en rad per kort med `entry_cover_key` (mappnamnet för EBOOT, spel-ID för ISO). UMD-skivan
+  har ingen meny. Tipset "□ Alternativ" står svagt bredvid Starta-knappen.
+- **Filhanterare** (`src/files.c`, Inställningar → Ström och USB): körs som USB-läget, med resten av psp5 stängt
+  (`files_mode` i `main.c`), och spellistan läses om efteråt. ms0: och på PSP Go även ef0: (enhetslista överst),
+  aldrig flash0. Mappar först, sorterat på namn; □ markerar, △ (eller ✕ på en fil) öppnar menyn: Klistra in här,
+  Kopiera, Flytta, Byt namn, Radera, Ny mapp. Kopiera/flytta/radera körs i en egen tråd (`worker`) med förlopp och
+  ○ för att avbryta; en avbruten eller misslyckad kopia städas bort, och ledigt utrymme kontrolleras först
+  (`sceIoDevctl` 0x02425818). Flytt på samma enhet är ett `sceIoRename`, annars kopiera + radera. Finns namnet
+  redan blir det "namn (2)". Radera frågar alltid, med Avbryt förvalt. Namn skrivs med PSP:ns tangentbord
+  (`sceUtilityOsk*`, via `gfx_end_with`). Ledigt utrymme visas med en tunn stapel uppe till höger.
+
 ## Version 1.5.1
 
 - **Volymindikator i PS5-stil** (`src/osd.c`): volymknapparna går direkt till systemet, så psp5 läser volymen

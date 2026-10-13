@@ -7,6 +7,7 @@
 #include <intraFont.h>
 #include <malloc.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include "gfx.h"
 #include "testrun.h"
@@ -157,8 +158,15 @@ void gfx_begin(u32 clear_color)
 
 void gfx_end(void)
 {
+    gfx_end_with(NULL);
+}
+
+void gfx_end_with(void (*after_draw)(void))
+{
     sceGuFinish();
     sceGuSync(0, 0);
+    if (after_draw)
+        after_draw();
     testrun_frame((const void *)(0x44000000 + (u32)s_draw)); /* bara i testbyggen */
     sceDisplayWaitVblankStart();
     s_draw = sceGuSwapBuffers();
@@ -401,6 +409,22 @@ float text_fit(float size, float min_size, int bold, float max_w, const char *s)
     while (size > min_size && text_width(size, bold, s) > max_w)
         size -= 0.02f;
     return size;
+}
+
+void text_ellipsis(char *out, int out_size, const char *s, float size, float max_w)
+{
+    snprintf(out, out_size, "%s", s);
+    if (text_width(size, 0, out) <= max_w)
+        return;
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s", s);
+    int n = strlen(buf);
+    do {
+        while (n > 0 && ((u8)buf[--n] & 0xC0) == 0x80) /* ett helt UTF-8-tecken */
+            ;
+        buf[n] = 0;
+        snprintf(out, out_size, "%s...", buf);
+    } while (n > 0 && text_width(size, 0, out) > max_w);
 }
 
 void text_draw(float x, float y, float size, int bold, u32 color, int align, const char *s)

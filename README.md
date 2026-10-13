@@ -33,6 +33,7 @@ logo is psp5's own and everything is drawn and synthesized in code – no borrow
 Then you get your games in a row along the top. The selected one is large with a thin light
 frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO and ZSO) live under
 **Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
+Is a homebrew game sitting under Apps? Press □ on it for its options and choose *Move to Games* (and back again), and psp5 remembers it.
 A UMD in the drive shows up first under Games, and it appears or disappears as soon as you put a disc in or take it out.
 Next to them is the **Library**: everything you have, games and apps together, in a grid that's easy to scan
 through. Press □ there to sort by name or by what you added most recently.
@@ -70,6 +71,10 @@ A few other things I cared about:
 - **It shows the volume.** Press the volume buttons anywhere in psp5 and a PS5-style bar slides in at the top,
   with the level and a crossed-out speaker when the sound is off. While the PSP charges, the battery icon fills up
   in a loop next to a little lightning bolt.
+- **It has a file manager**, like ARK's own launcher: *Settings → Power and USB → File manager*. Browse the
+  Memory Stick (and the internal storage on a PSP Go), mark files with □, and copy, move, rename or delete them
+  or make a new folder from the △ menu. Copying shows a progress bar and can be cancelled with ○, and deleting
+  always asks first.
 - **It never touches flash0**, and you can always get back to the normal XMB.
 
 ## Installing
@@ -84,7 +89,7 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | ← → or the analog stick | move between games (hold to go faster) |
 | ↑ ↓ | move between rows in the Library |
 | L / R | switch between Games, Apps, Library and Music |
-| □ | sort the Library (name / recently added) · pause/resume in Music |
+| □ | options (move to Games / Apps) · sort the Library (name / recently added) · pause/resume in Music |
 | ✕ in Music | play the selected track (or pause it) |
 | ← → in Music | previous / next track · hold to seek |
 | ✕ or START | start the selected game |

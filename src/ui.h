@@ -67,6 +67,10 @@ typedef struct {
     int cover_for;       /* låtens index, -1 = inget */
     float cover_fade;
 
+    /* □ i Spel/Appar: en liten alternativmeny för valt kort */
+    int menu_open;
+    float menu_anim;     /* 0→1 in-/uttoning */
+
     char toast[96];
     float toast_time;
 } Ui;

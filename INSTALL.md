@@ -58,11 +58,16 @@ On a PSP Go, psp5 looks in these folders on both the internal storage and a Memo
 |---|---|
 | ✕ or START | Start the game (in Music: play / pause) |
 | L / R | Switch between Games, Apps, Library and Music |
-| □ | Library: sort · Music: pause / resume |
+| □ | Games / Apps: options (move to the other tab) · Library: sort · Music: pause / resume |
 | ← → in Music | Previous / next track · hold to seek |
 | △ | Settings |
 | ○ | Back |
 | HOME | Back to the XMB (not as custom launcher)|
+
+## File manager
+
+*Settings → Power and USB → File manager* lets you manage files right on the PSP. ✕ opens a folder, □ marks
+files, △ shows what you can do (copy, move, paste, rename, delete, new folder) and ○ goes back.
 
 ## Updating
 
