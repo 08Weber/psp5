@@ -15,6 +15,26 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.5.0
+
+- **Teman** (`src/theme.c`, ny flik *Tema* i inställningarna): PS5 (som förut), PS5:s konsolskal (Midnight
+  Black, Cosmic Red, Nova Pink, Starlight Blue, Galactic Purple, Deep Earth-serien Volcanic Red/Cobalt Blue/
+  Sterling Silver och Chroma Indigo/Teal/Pearl) och PS1–PS4 som PS5:s inställning *Utseende*: PS1 grå med
+  handkontrollens symboler, PS2 mörk med blå torn och klot, PS3 med XMB-vågen och PS4 blå med vågor och
+  partiklar. Allt ritas i kod. Markerat tema förhandsvisas i inställningarna, ✕ väljer det. Temat färgar
+  bakgrunden (när spelet saknar bild), inställningarna, USB-läget, laddningsskärmen, platshållarkorten,
+  reglagen, musikens förlopp och laddningsprickarna. *Spelens bilder i bakgrunden* kan stängas av – då syns
+  temat alltid och inga bakgrundsbilder laddas. Sparas i `psp5.cfg` (`theme=`, `themeart=`).
+- **Snabbare ritning:** inställningarna bröt om kategoribeskrivningen (många `text_width`) för varje rad i varje
+  bildruta – nu bara när texten byts. Flikarnas och knapptipsens bredd mäts bara om när något ändras.
+  `gfx.c` binder inte om samma textur (och tömmer inte texturcachen) för varje form i rad. Ytan under
+  spelets bild ritas inte när bilden täcker hela skärmen. Ikonens medelfärg räknas direkt ur texturen
+  i stället för på en kopia (46 KB mindre att kopiera per ikon).
+- **Rättat:** en bakgrundsbild som laddades klart precis när markeringen flyttade kastades och laddades sedan
+  aldrig igen om man gick tillbaka till spelet (`s_bg_last` i `src/loader.c`). En trasig katalogpost i en ISO
+  (för kort post eller för långt namn) kunde läsas utanför sektorbufferten (`src/iso.c`).
+- Testskript `tools/tests/theme.txt`; `settings.txt` och `lang.txt` har ett steg till för den nya fliken.
+
 ## Version 1.4.0
 
 - **PSP Go** – samma EBOOT på alla modeller: `sys_set_root` (`src/system.c`) väljer `g_root` efter argv[0].

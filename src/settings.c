@@ -15,6 +15,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "config.h"
+#include "theme.h"
 
 #define TITLE_Y     34.0f
 #define LEFT_X      32.0f
@@ -31,7 +32,7 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME } ItemType;
 
 typedef struct {
     const char *label;
@@ -39,7 +40,7 @@ typedef struct {
     unsigned char *value;        /* TOGGLE/CHOICE */
     const char **opts;           /* CHOICE */
     int nopts;
-    int action;                  /* ACTION: SA_* */
+    int action;                  /* ACTION: SA_*, THEME: temats index */
     int confirm;                 /* ACTION: kräver ✕ två gånger */
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
@@ -53,15 +54,18 @@ typedef struct {
     int count;
 } Category;
 
-enum { CAT_PSP5, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
+enum { CAT_PSP5, CAT_THEME, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
 
 static Category s_cats[CAT_COUNT];
 static unsigned char s_plugin_on[MAX_PLUGINS];
+/* Radbrytningen mäter texten många gånger – gör den bara när texten byts, inte varje bildruta */
+static const char *s_wrapped; /* texten som s_desc håller, NULL = inget */
+static int s_wrapped_n;
 
 static struct {
     int cat, item[CAT_COUNT];
     int focus;          /* 0 = kategorier, 1 = alternativ */
-    float scroll, open;
+    float scroll, open, time;
     int confirm_item;   /* -1 = ingen */
     float confirm_time;
     int cfw_dirty, plugins_dirty, own_dirty;
@@ -182,6 +186,7 @@ static void build(int rebuild)
 {
     build_options();
     memset(s_cats, 0, sizeof(s_cats));
+    s_wrapped = NULL; /* nytt språk eller typsnitt: bryt om beskrivningarna */
     Category *c;
 
     c = &s_cats[CAT_PSP5];
@@ -197,11 +202,22 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.4.0 (ARK-4)");
+    info(c, L(S_VERSION), "1.5.0 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.4.0 (ARK-5)");
+    info(c, L(S_VERSION), "1.5.0 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
+
+    c = &s_cats[CAT_THEME];
+    c->name = L(S_CAT_THEME);
+    c->desc = L(S_DESC_THEME);
+    toggle(c, L(S_THEME_ART), &g_theme_art);
+    c->items[c->count - 1].own = 1;
+    for (int i = 0; i < theme_count() && c->count < MAX_ITEMS; i++) {
+        Item *it = add(c, theme_get(i)->name, IT_THEME);
+        it->action = i;
+        it->own = 1;
+    }
 
     c = &s_cats[CAT_PERF];
     c->name = L(S_CAT_PERF);
@@ -350,6 +366,7 @@ static float row_y(const Category *c, int i);
 int settings_update(const UiInput *in, float dt)
 {
     S.open = clampf(S.open + dt * 5.0f, 0, 1);
+    S.time += dt;
     if (S.toast_time > 0)
         S.toast_time -= dt;
     if (S.confirm_time > 0 && (S.confirm_time -= dt) <= 0)
@@ -401,6 +418,12 @@ int settings_update(const UiInput *in, float dt)
                     font_ensure_cjk();
                 build(1);
             }
+        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
+            if (g_theme != it->action) {
+                g_theme = it->action;
+                mark_dirty(it);
+            }
+            sound_play(SND_TOGGLE);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
@@ -452,7 +475,7 @@ static int utf8_len(const char *p)
 
 /* Radbryter beskrivningen till högerspaltens bredd. Bryter vid mellanslag, och
  * mellan enskilda tecken när ett "ord" inte får plats (japanska har inga mellanslag). */
-static int wrap_desc(const char *text)
+static int wrap_desc_now(const char *text)
 {
     const float max_w = RIGHT_W - 8;
     int lines = 0;
@@ -496,6 +519,15 @@ static int wrap_desc(const char *text)
     return lines;
 }
 
+static int wrap_desc(const char *text)
+{
+    if (text != s_wrapped) {
+        s_wrapped_n = wrap_desc_now(text);
+        s_wrapped = text;
+    }
+    return s_wrapped_n;
+}
+
 static float desc_line_h(void)
 {
     return lang_needs_cjk() ? 15.0f : 13.0f;
@@ -511,19 +543,25 @@ static float row_y(const Category *c, int i)
     return desc_height(c) + i * ROW_H;
 }
 
-static void draw_background(void)
+/* Temat som visas: det markerade i temalistan (förhandsvisning), annars det valda */
+static const Theme *shown_theme(void)
 {
-    gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, RGBA(48, 46, 50, 255), RGBA(22, 23, 29, 255));
-    gfx_gradient_h(SCREEN_W / 2, 0, SCREEN_W / 2, SCREEN_H, RGBA(18, 22, 34, 0), RGBA(18, 22, 34, 150));
-    /* strålkastarljus uppe till vänster och ett svagt dis nere */
-    gfx_glow(70, -60, 60, 60, 120, RGBA(215, 198, 186, 80));
-    gfx_glow(90, -30, 20, 30, 40, RGBA(235, 222, 212, 50));
-    gfx_glow(-30, 236, 280, 30, 46, RGBA(130, 142, 158, 42));
+    const Category *c = &s_cats[CAT_THEME];
+    const Item *it = &c->items[S.item[CAT_THEME]];
+    if (S.cat == CAT_THEME && S.focus == 1 && S.item[CAT_THEME] < c->count && it->type == IT_THEME)
+        return theme_get(it->action);
+    return theme_cur();
 }
 
-static void draw_toggle(float x, float y, int on, float a)
+static void draw_background(const Theme *t)
 {
-    gfx_round_rect(x, y, 26, 13, 6.5f, fade(on ? RGBA(150, 152, 160, 255) : RGBA(74, 76, 84, 255), a));
+    static const float neutral[3] = { 120, 120, 120 };
+    theme_backdrop(t, S.time, neutral, 1, 1);
+}
+
+static void draw_toggle(float x, float y, int on, u32 on_color, float a)
+{
+    gfx_round_rect(x, y, 26, 13, 6.5f, fade(on ? on_color : RGBA(74, 76, 84, 255), a));
     gfx_circle(on ? x + 19.5f : x + 6.5f, y + 6.5f, 5, fade(on ? LIGHT : RGBA(196, 196, 202, 255), a));
 }
 
@@ -542,13 +580,13 @@ static void draw_hints(float a)
     text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, back);
 }
 
-static void draw_item(const Item *it, int index, float y, int selected, float a)
+static void draw_item(const Item *it, int index, float y, int selected, const Theme *shown, float a)
 {
     float right = RIGHT_X + RIGHT_W - 8;
     char value[64] = "";
     switch (it->type) {
     case IT_TOGGLE:
-        draw_toggle(right - 26, y + 6.5f, *it->value != 0, a);
+        draw_toggle(right - 26, y + 6.5f, *it->value != 0, theme_toggle_on(shown), a);
         right -= 34;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
@@ -561,6 +599,19 @@ static void draw_item(const Item *it, int index, float y, int selected, float a)
     case IT_INFO:
         snprintf(value, sizeof(value), "%s", it->info);
         break;
+    case IT_THEME: {
+        /* liten förhandsvisning, och en bock för temat som används */
+        theme_swatch(theme_get(it->action), right - 40, y + 5, 40, 16, a);
+        right -= 48;
+        if (it->action == g_theme) {
+            float cx = right - 6, cy = y + 13;
+            float xy[6] = { cx - 5, cy, cx - 1.5f, cy + 3.5f, cx + 5, cy - 4 };
+            u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
+            gfx_stroke(xy, col, 3, 1.8f);
+            right -= 16;
+        }
+        break;
+    }
     case IT_ACTION:
         if (S.confirm_item == index)
             snprintf(value, sizeof(value), "%s", L(S_CONFIRM));
@@ -585,7 +636,8 @@ void settings_draw(void)
     const Category *c = &s_cats[S.cat];
 
     gfx_begin(RGBA(20, 20, 24, 255));
-    draw_background();
+    const Theme *shown = shown_theme();
+    draw_background(shown);
     text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
 
     /* kategorier */
@@ -626,7 +678,7 @@ void settings_draw(void)
         } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
             gfx_rect(RIGHT_X + 4, y + ROW_H - 0.5f, RIGHT_W - 8, 1, RGBA(255, 255, 255, (int)(26 * ra)));
         }
-        draw_item(&c->items[i], i, y, selected, ra);
+        draw_item(&c->items[i], i, y, selected, shown, ra);
     }
 
     draw_hints(a);

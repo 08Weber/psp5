@@ -1,7 +1,7 @@
 # psp5 – made by Mille Weber
 """Packar release-zipparna (en per ARK och PSP-sort) från dist/ och dist-ark4/.
 
-    py tools/make_release.py 1.4.0
+    py tools/make_release.py 1.5.0
 
 Ger release/psp5-v<version>-ARK5.zip, -ARK4.zip, -PSPGo-ARK5.zip och -PSPGo-ARK4.zip med
     PSP/GAME/PSP5/EBOOT.PBP     – psp5 som vanlig app
@@ -80,7 +80,7 @@ def make(version, ark, dist, go=False):
 
 
 if __name__ == '__main__':
-    v = sys.argv[1] if len(sys.argv) > 1 else '1.4.0'
+    v = sys.argv[1] if len(sys.argv) > 1 else '1.5.0'
     make(v, 'ARK-5', 'dist')
     make(v, 'ARK-4', 'dist-ark4')
     make(v, 'ARK-5', 'dist', go=True)

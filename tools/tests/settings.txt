@@ -4,6 +4,8 @@ press triangle
 wait 40
 shot 02-settings
 press down
+wait 6
+press down
 wait 15
 press cross
 wait 20

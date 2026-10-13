@@ -23,6 +23,7 @@
 #include "boot.h"
 #include "music.h"
 #include "umd.h"
+#include "theme.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -292,8 +293,8 @@ static void usb_mode(void)
 
         int state = sys_usb_state();
         gfx_begin(RGBA(20, 20, 24, 255));
-        gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, RGBA(48, 46, 50, 255), RGBA(22, 23, 29, 255));
-        gfx_glow(70, -60, 60, 60, 120, RGBA(215, 198, 186, 80));
+        static const float neutral[3] = { 120, 120, 120 };
+        theme_backdrop(theme_cur(), t, neutral, 1, 1); /* som inställningarna */
         text_draw(28, 34, 0.95f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_MODE));
         float pulse = 0.6f + 0.4f * sinf(t * 3);
         gfx_circle(SCREEN_W / 2, 120, 26, RGBA(255, 255, 255, state == 2 ? 40 : (int)(30 * pulse)));
