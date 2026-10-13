@@ -2,10 +2,12 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-/* psp5:s egna inställningar (ljud, språk) i <data_dir>/psp5.cfg:
+/* psp5:s egna inställningar (ljud, språk, tema) i <data_dir>/psp5.cfg:
  *   sound=1
  *   bootanim=1       (startskärmen)
- *   lang=auto        (auto, en, sv, de, fr, es, it, nl, pt, ru, ja) */
+ *   lang=auto        (auto, en, sv, de, fr, es, it, nl, pt, ru, ja)
+ *   theme=ps5        (se theme.c)
+ *   themeart=1       (spelens bilder bakom korten) */
 extern unsigned char g_boot_anim;
 
 void config_load(const char *data_dir);

@@ -17,6 +17,7 @@
 #include "lang.h"
 #include "music.h"
 #include "system.h"
+#include "theme.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -348,7 +349,7 @@ static int step_input(Ui *ui, const UiInput *in, float dt, int vertical)
 
 static void update_background(Ui *ui, float dt)
 {
-    int sel = ui_selected(ui);
+    int sel = g_theme_art ? ui_selected(ui) : -1; /* bilderna avstängda: bara temats yta */
     int idx;
     Texture *tex;
     if (loader_take_bg(&idx, &tex)) {
@@ -513,19 +514,17 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
 /* --- ritning --- */
 
-/* Mörk yta med ett mjukt ljus uppifrån – används när spelet saknar bild. */
-static void draw_spotlight(const float tone[3])
+/* Temats yta med ett mjukt ljus uppifrån – syns när spelet saknar bild (eller bilderna är avstängda). */
+static void draw_spotlight(const float tone[3], float time)
 {
-    gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H,
-                   RGBA((int)(tone[0] * 0.20f) + 20, (int)(tone[1] * 0.20f) + 20, (int)(tone[2] * 0.20f) + 26, 255),
-                   RGBA(12, 12, 16, 255));
-    gfx_glow(30, -110, 170, 110, 150, RGBA(215, 200, 190, 95));
-    gfx_glow(-40, 250, 360, 40, 70, RGBA(130, 145, 160, 45));
+    theme_backdrop(theme_cur(), time, tone, 0, 1);
 }
 
 static void draw_background(Ui *ui)
 {
-    draw_spotlight(ui->accent);
+    /* en bild som täcker hela skärmen (färdigtonad, eller den gamla helt under den nya) – då behövs ingen yta under */
+    if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old))
+        draw_spotlight(ui->accent, ui->time);
 
     const u32 tint = RGBA(205, 205, 210, 0);
     int fade = (int)(ui->bg_fade * 255);
@@ -588,16 +587,26 @@ static void draw_top_bar(Ui *ui)
     draw_battery(bx, 15.5f, scePowerIsBatteryExist() ? scePowerGetBatteryLifePercent() : -1, a);
     gfx_gear(bx - 18, 20.5f, 7.5f, with_alpha(LIGHT, 0.9f * a), RGBA(14, 14, 18, (int)(255 * a)));
 
-    /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) */
-    float room = bx - 34 - MARGIN, size = 0.8f, gap = 20;
-    for (;;) {
-        float w = 0;
-        for (int t = 0; t < TAB_COUNT; t++)
-            w += text_width(size, t == ui->tab, L(TAB_NAMES[t])) + gap;
-        if (w - gap <= room || size <= 0.56f)
-            break;
-        size -= 0.04f;
-        gap = 14;
+    /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
+    static float size = 0.8f, gap = 20, sized_room = -1;
+    static int sized_tab = -1;
+    static const char *sized_lang;
+    float room = bx - 34 - MARGIN;
+    if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
+        size = 0.8f;
+        gap = 20;
+        for (;;) {
+            float w = 0;
+            for (int t = 0; t < TAB_COUNT; t++)
+                w += text_width(size, t == ui->tab, L(TAB_NAMES[t])) + gap;
+            if (w - gap <= room || size <= 0.56f)
+                break;
+            size -= 0.04f;
+            gap = 14;
+        }
+        sized_room = room;
+        sized_tab = ui->tab;
+        sized_lang = L(TAB_NAMES[0]);
     }
     float x = MARGIN;
     for (int t = 0; t < TAB_COUNT; t++) {
@@ -664,7 +673,9 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
         int loading = !slot || slot->state == SLOT_EMPTY || slot->state == SLOT_LOADING;
         float b = loading ? 0.5f + 0.5f * sinf(ui->time * 4.0f + list_index) : 0;
         float pa = alpha * (1 - shown);
-        gfx_round_rect(x, y, w, h, r, RGBA(40 + (int)(10 * b), 41 + (int)(10 * b), 48 + (int)(12 * b), (int)(235 * pa)));
+        u32 cc = theme_cur()->card; /* temats färg, andas medan bilden laddas */
+        gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + (int)(10 * b), ((cc >> 8) & 0xFF) + (int)(10 * b),
+                                           ((cc >> 16) & 0xFF) + (int)(12 * b), (int)(235 * pa)));
         const char *t = ui->list->items[list_index].title;
         char initial[2] = { (t[0] >= 'a' && t[0] <= 'z') ? t[0] - 32 : t[0], 0 };
         if ((u8)initial[0] < 0x80 && initial[0])
@@ -792,8 +803,14 @@ static void draw_hints(Ui *ui)
 
 static float hints_width(void)
 {
-    float lw = text_width(0.42f, 1, "L") + 9, rw = text_width(0.42f, 1, "R") + 9;
-    return lw + 3 + rw + 6 + text_width(0.6f, 0, L(S_HINT_TAB)) + 16 + 13 + 6 + text_width(0.6f, 0, L(S_SETTINGS));
+    static float w;
+    static const char *for_lang; /* bredden ändras bara med språket */
+    if (for_lang != L(S_SETTINGS)) {
+        float lw = text_width(0.42f, 1, "L") + 9, rw = text_width(0.42f, 1, "R") + 9;
+        w = lw + 3 + rw + 6 + text_width(0.6f, 0, L(S_HINT_TAB)) + 16 + 13 + 6 + text_width(0.6f, 0, L(S_SETTINGS));
+        for_lang = L(S_SETTINGS);
+    }
+    return w;
 }
 
 /* Biblioteket: allt i ett rutnät, rubrik med antal och sortering, vald titel nere till vänster. */
@@ -942,7 +959,7 @@ static void draw_music(Ui *ui)
         float bw = pw - 28, bxx = px + 14, by = py + ph - 30;
         gfx_round_rect(bxx, by, bw, 3, 1.5f, RGBA(255, 255, 255, (int)(50 * a)));
         if (du > 0)
-            gfx_round_rect(bxx, by, fmaxf(3, bw * clampf(el / du, 0, 1)), 3, 1.5f, with_alpha(LIGHT, a));
+            gfx_round_rect(bxx, by, fmaxf(3, bw * clampf(el / du, 0, 1)), 3, 1.5f, with_alpha(theme_cur()->accent, a));
         char e[12], d[12];
         format_time(e, sizeof(e), el);
         format_time(d, sizeof(d), du);
@@ -957,7 +974,7 @@ static void draw_music(Ui *ui)
         text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MUSIC));
         for (int i = 0; i < 3; i++) { /* tre punkter som pulserar i tur och ordning */
             float p = 0.5f + 0.5f * sinf(ui->time * 6.0f - i * 0.9f);
-            gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, RGBA(240, 240, 244, (int)((90 + 165 * p) * a)));
+            gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)((90 + 165 * p) * a)));
         }
         return;
     }
@@ -1079,13 +1096,13 @@ void ui_draw_scanning(int done, const char *name, float time)
 {
     static const float neutral[3] = { 120, 120, 120 };
     gfx_begin(CLEAR_COLOR);
-    draw_spotlight(neutral);
+    draw_spotlight(neutral, time);
     text_draw(MARGIN, 120, 0.9f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_LOADING));
 
     /* tre punkter som pulserar i tur och ordning */
     for (int i = 0; i < 3; i++) {
         float p = 0.5f + 0.5f * sinf(time * 6.0f - i * 0.9f);
-        gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, RGBA(240, 240, 244, (int)(90 + 165 * p)));
+        gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)(90 + 165 * p)));
     }
     char line[96];
     snprintf(line, sizeof(line), "%d  ·  %.60s", done, name);

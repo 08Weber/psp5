@@ -110,18 +110,24 @@ static int fit(Image *img, int w, int h)
     return 1;
 }
 
+/* Medelfärgen direkt ur texturen (rader med stride), var tredje pixel som img_average –
+ * utan att först kopiera hela ikonen. */
 static u32 texture_average(const Texture *t)
 {
-    Image view = { t->w, t->h, NULL };
-    /* 8888-texturens rader har stride ≥ w; räkna på en tät kopia */
-    view.px = malloc(t->w * t->h * 4);
-    if (!view.px)
+    const u32 *px = t->data;
+    u32 sum[3] = { 0 }, n = 0;
+    int x = 0, y = 0;
+    for (int i = 0; i < t->w * t->h; i += 3, n++) {
+        u32 c = px[y * t->stride + x];
+        for (x += 3; x >= t->w; x -= t->w) /* samma pixlar som i en tät bild */
+            y++;
+        sum[0] += c & 0xFF;
+        sum[1] += (c >> 8) & 0xFF;
+        sum[2] += (c >> 16) & 0xFF;
+    }
+    if (!n)
         return RGBA(80, 80, 90, 255);
-    for (int y = 0; y < t->h; y++)
-        memcpy(view.px + y * t->w, (u32 *)t->data + y * t->stride, t->w * 4);
-    u32 c = img_average(&view);
-    img_free(&view);
-    return c;
+    return RGBA(sum[0] / n, sum[1] / n, sum[2] / n, 255);
 }
 
 Texture *art_load_icon(const Entry *e, u32 *accent)

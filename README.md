@@ -19,6 +19,8 @@ it's my own take on that style.
 | ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
 | ![Startup screen](docs/screenshots/boot.png) |                                                         |
 | ![Music](docs/screenshots/music.png) | ![Startup screen – golden dust](docs/screenshots/boot-dust.png) |
+| ![Themes](docs/screenshots/theme.png) | ![PS3 theme](docs/screenshots/theme-ps3.png) |
+| ![PS4 theme](docs/screenshots/theme-ps4.png) | ![PS1 theme](docs/screenshots/theme-ps1.png) |
 
 ## What it does
 
@@ -57,6 +59,12 @@ A few other things I cared about:
 - **It speaks your language.** psp5 follows the PSP's system language: English, German, French, Spanish,
   Italian, Dutch, Portuguese, Russian and Japanese. Swedish is there too – the PSP itself doesn't offer
   Swedish, so you pick it under *Settings → psp5 → Language*.
+- **It has themes.** *Settings → Theme* has the colours of the PS5 console covers (Midnight Black, Cosmic Red,
+  Nova Pink, Starlight Blue, Galactic Purple, Volcanic Red, Cobalt Blue, Sterling Silver and the Chroma
+  colours), and – like the PS5's own *Appearance* setting – the look of the PS1, PS2, PS3 and PS4: the grey
+  console with its button symbols, the dark towers and glowing orbs, the XMB wave and the blue PS4 waves.
+  Highlight a theme to preview it and press ✕ to use it. You can also turn the game art in the background off,
+  so the theme is always visible.
 - **It never touches flash0**, and you can always get back to the normal XMB.
 
 ## Installing

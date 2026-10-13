@@ -24,6 +24,9 @@ static Texture *s_soft; /* mjuk radiell gradient (skugga/glöd) */
 static Texture *s_ring; /* tunn cirkelring (markeringsram) */
 static intraFont *s_font, *s_bold, *s_jpn;
 static void *s_draw; /* bufferten som ritas just nu (relativ VRAM) */
+/* Senast bundna textur: många former i rad (rundade rutor, prickar) använder samma, och då
+ * behöver GU inte ställas om och texturcachen tömmas igen. intraFont binder sina egna. */
+static const Texture *s_bound;
 
 /* --- texturer --- */
 
@@ -61,6 +64,8 @@ void tex_free(Texture *t)
 {
     if (!t)
         return;
+    if (t == s_bound)
+        s_bound = NULL; /* en ny textur kan få samma adress */
     free(t->data);
     free(t);
 }
@@ -145,6 +150,7 @@ void gfx_term(void)
 void gfx_begin(u32 clear_color)
 {
     sceGuStart(GU_DIRECT, s_list);
+    s_bound = NULL;
     sceGuClearColor(clear_color);
     sceGuClear(GU_COLOR_BUFFER_BIT);
 }
@@ -161,6 +167,9 @@ void gfx_end(void)
 static void bind(const Texture *t)
 {
     sceGuEnable(GU_TEXTURE_2D);
+    if (t == s_bound)
+        return;
+    s_bound = t;
     sceGuTexMode(t->psm, 0, 0, 0);
     sceGuTexImage(0, t->tw, t->th, t->stride, t->data);
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
@@ -407,6 +416,7 @@ void text_draw(float x, float y, float size, int bold, u32 color, int align, con
         x -= align == ALIGN_CENTER ? w / 2 : w;
     }
     intraFontPrint(f, x, y, s);
+    s_bound = NULL; /* intraFont har bundit sin egen textur */
     /* intraFont slår på djuptestet efter sig – vi har ingen djupbuffert */
     sceGuDisable(GU_DEPTH_TEST);
 }

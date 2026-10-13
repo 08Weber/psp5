@@ -24,7 +24,6 @@ static volatile int s_bg_want = -1;
 static volatile int s_bg_done; /* 1 = s_bg_tex/s_bg_index väntar på att hämtas */
 static Texture *volatile s_bg_tex;
 static volatile int s_bg_index = -1;
-static int s_bg_last = -1;
 
 static int load_icon_near(int range)
 {
@@ -55,12 +54,13 @@ static int load_icon_near(int range)
 
 static int load_bg(void)
 {
+    if (s_bg_done) /* förra bilden har inte hämtats än – läs önskemålet först efter det */
+        return 0;
     int want = s_bg_want;
-    if (want < 0 || want == s_bg_last || s_bg_done || want >= s_list->count)
+    if (want < 0 || want >= s_list->count)
         return 0;
     s_bg_tex = art_load_bg(&s_list->items[want]);
     s_bg_index = want;
-    s_bg_last = want;
     s_bg_done = 1;
     return 1;
 }
@@ -84,7 +84,7 @@ void loader_start(const EntryList *list)
     s_view = NULL;
     s_quit = 0;
     s_focus = 0;
-    s_bg_want = s_bg_index = s_bg_last = -1;
+    s_bg_want = s_bg_index = -1;
     s_bg_done = 0;
     s_bg_tex = NULL;
     /* lägre prioritet (högre siffra) än huvudtråden så att animationerna går först */
@@ -162,6 +162,11 @@ int loader_take_bg(int *list_index, Texture **tex)
     *list_index = s_bg_index;
     *tex = s_bg_tex;
     s_bg_tex = NULL;
+    /* önskemålet är uppfyllt. Kastar UI:t bilden (markeringen hann flytta) frågar det igen
+     * när det vill ha den – tidigare blev en sådan bild aldrig laddad igen. Nollas före
+     * s_bg_done, så att tråden inte hinner läsa det gamla önskemålet en gång till. */
+    if (s_bg_want == s_bg_index)
+        s_bg_want = -1;
     s_bg_done = 0;
     return 1;
 }

@@ -98,6 +98,10 @@ static int find_in_dir(IsoReader *r, u32 dir_lba, u32 dir_size, const char *name
 
             const u8 *rec = sector + i;
             u8 id_len = rec[32];
+            if (rec_len < 34 || 33 + id_len > rec_len) { /* trasig post: läs inte utanför sektorn */
+                i += rec_len;
+                continue;
+            }
             const char *id = (const char *)rec + 33;
             int len = id_len;
             if (len >= 2 && id[len - 2] == ';')
