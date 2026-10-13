@@ -24,6 +24,7 @@
 #include "music.h"
 #include "umd.h"
 #include "theme.h"
+#include "osd.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -230,9 +231,9 @@ static void sleep_and_wake(Ui *ui)
 static void app_stop(EntryList *list, Ui *ui)
 {
     umd_stop();
+    loader_stop(); /* före music_term: laddaren läser musiklistan (omslagen) */
     music_term();
     sound_term();
-    loader_stop();
     ui_free(ui);
     font_term();
     gfx_term();
@@ -290,6 +291,7 @@ static void usb_mode(void)
         if (in.pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_CROSS))
             break;
         t += 1 / 60.0f;
+        osd_update(1 / 60.0f);
 
         int state = sys_usb_state();
         gfx_begin(RGBA(20, 20, 24, 255));
@@ -305,6 +307,7 @@ static void usb_mode(void)
                   L(S_USB_EJECT));
         gfx_button(SCREEN_W / 2 - 40, 246, 6.5f, BTN_CIRCLE, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
         text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
+        osd_draw();
         gfx_end();
     }
     sys_usb_stop();
@@ -379,6 +382,7 @@ int main(int argc, char *argv[])
     art_init(DATA_DIR);
     config_load(DATA_DIR); /* ljud och språk */
     sys_init(s_self);
+    osd_init(); /* volymindikatorn behöver ARK */
     testrun_init();
 
     if (failed >= 2 && sys_is_launcher() && sys_has_ark()) {
@@ -434,6 +438,7 @@ int main(int argc, char *argv[])
         last = now;
         if (dt > 0.05f)
             dt = 0.05f;
+        osd_update(dt);
         if (!s_start_ok) {
             up += dt;
             if (up >= START_OK_AFTER && !music_scanning())

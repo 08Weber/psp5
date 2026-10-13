@@ -38,4 +38,9 @@ void loader_request_bg(int list_index);
  * (kan vara NULL om posten saknar bild). */
 int loader_take_bg(int *list_index, Texture **tex);
 
+/* Be om omslaget till låt nummer `track` i musiklistan, och hämta det när det är klart
+ * (tar över ägarskapet, *tex kan vara NULL om låten saknar omslag). */
+void loader_request_cover(int track);
+int loader_take_cover(int *track, Texture **tex);
+
 #endif

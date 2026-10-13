@@ -7,6 +7,7 @@
 #include <string.h>
 #include "loader.h"
 #include "art.h"
+#include "music.h"
 
 #define NEAR_RANGE 5  /* laddas före bakgrunden (raden visar ~6 kort) */
 #define LOAD_RANGE 14 /* laddas i förväg (biblioteket visar ~17 kort) */
@@ -24,6 +25,12 @@ static volatile int s_bg_want = -1;
 static volatile int s_bg_done; /* 1 = s_bg_tex/s_bg_index väntar på att hämtas */
 static Texture *volatile s_bg_tex;
 static volatile int s_bg_index = -1;
+
+/* omslaget till låten som spelas (index i musiklistan) – samma mönster som bakgrunden */
+static volatile int s_cov_want = -1;
+static volatile int s_cov_done;
+static Texture *volatile s_cov_tex;
+static volatile int s_cov_index = -1;
 
 static int load_icon_near(int range)
 {
@@ -65,10 +72,24 @@ static int load_bg(void)
     return 1;
 }
 
+static int load_cover(void)
+{
+    if (s_cov_done)
+        return 0;
+    int want = s_cov_want;
+    const Track *t = want >= 0 ? music_track(want) : NULL;
+    if (!t)
+        return 0;
+    s_cov_tex = art_load_cover(t->path, t->album);
+    s_cov_index = want;
+    s_cov_done = 1;
+    return 1;
+}
+
 static int loader_thread(SceSize args, void *argp)
 {
     while (!s_quit) {
-        if (load_icon_near(NEAR_RANGE) || load_bg() || load_icon_near(LOAD_RANGE))
+        if (load_icon_near(NEAR_RANGE) || load_bg() || load_cover() || load_icon_near(LOAD_RANGE))
             continue;
         sceKernelDelayThread(8 * 1000);
     }
@@ -85,6 +106,9 @@ void loader_start(const EntryList *list)
     s_quit = 0;
     s_focus = 0;
     s_bg_want = s_bg_index = -1;
+    s_cov_want = s_cov_index = -1;
+    s_cov_done = 0;
+    s_cov_tex = NULL;
     s_bg_done = 0;
     s_bg_tex = NULL;
     /* lägre prioritet (högre siffra) än huvudtråden så att animationerna går först */
@@ -114,6 +138,10 @@ void loader_stop(void)
         tex_free(s_bg_tex);
     s_bg_tex = NULL;
     s_bg_done = 0;
+    if (s_cov_done)
+        tex_free(s_cov_tex);
+    s_cov_tex = NULL;
+    s_cov_done = 0;
 }
 
 void loader_set_view(const LoaderView *view)
@@ -168,5 +196,23 @@ int loader_take_bg(int *list_index, Texture **tex)
     if (s_bg_want == s_bg_index)
         s_bg_want = -1;
     s_bg_done = 0;
+    return 1;
+}
+
+void loader_request_cover(int track)
+{
+    s_cov_want = track;
+}
+
+int loader_take_cover(int *track, Texture **tex)
+{
+    if (!s_cov_done)
+        return 0;
+    *track = s_cov_index;
+    *tex = s_cov_tex;
+    s_cov_tex = NULL;
+    if (s_cov_want == s_cov_index) /* uppfyllt – se loader_take_bg */
+        s_cov_want = -1;
+    s_cov_done = 0;
     return 1;
 }

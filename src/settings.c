@@ -16,6 +16,7 @@
 #include "lang.h"
 #include "config.h"
 #include "theme.h"
+#include "osd.h"
 
 #define TITLE_Y     34.0f
 #define LEFT_X      32.0f
@@ -202,9 +203,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.5.0 (ARK-4)");
+    info(c, L(S_VERSION), "1.5.1 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.5.0 (ARK-5)");
+    info(c, L(S_VERSION), "1.5.1 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
@@ -689,6 +690,7 @@ void settings_draw(void)
         gfx_round_rect((SCREEN_W - w) / 2, 128, w, 26, 7, RGBA(44, 45, 52, (int)(245 * ta)));
         text_draw(SCREEN_W / 2, 145, 0.6f, 0, RGBA(240, 240, 245, (int)(255 * ta)), ALIGN_CENTER, S.toast);
     }
+    osd_draw();
     /* in-toning */
     if (a < 1)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));

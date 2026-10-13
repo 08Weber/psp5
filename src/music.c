@@ -44,7 +44,7 @@ static int s_scan_count, s_scan_cap;
 
 /* --- kommandon från gränssnittet (en skrivare, en läsare) --- */
 
-enum { CMD_PLAY, CMD_PAUSE, CMD_STOP, CMD_NEXT, CMD_PREV };
+enum { CMD_PLAY, CMD_PAUSE, CMD_STOP, CMD_NEXT, CMD_PREV, CMD_SEEK };
 #define QUEUE 16
 static volatile int s_q_cmd[QUEUE], s_q_arg[QUEUE];
 static volatile int s_q_head, s_q_tail; /* head skrivs bara av UI, tail bara av tråden */
@@ -74,6 +74,12 @@ static int s_rate, s_channels;
 static int s_spf;                      /* prover per bildruta (1152/576), 0 = okänt */
 static int s_src_rate, s_src_samples;  /* reserverad SRC-kanal, 0 = ingen */
 static int s_open_index = -1;          /* låten som avkodaren har öppen */
+/* för spolning: var strömmen börjar och slutar, första bildrutans huvud och Xing-tabellen */
+static u32 s_start, s_size, s_first_hdr;
+static unsigned char s_toc[100];
+static int s_has_toc;
+static float s_seek_base;              /* sekunder in i låten där avkodaren startade */
+static int s_seek_grace;               /* bildrutor efter ett hopp som får misslyckas */
 
 /* ---------------------------------------------------------------------- */
 /* ID3 */
@@ -241,6 +247,102 @@ static void read_tags(SceUID fd, u32 file_size, Item *it, unsigned char *buf)
                 it->trackno = v1[126];
         }
     }
+}
+
+/* Tar bort ID3:s "unsynchronisation" (FF 00 → FF). Returnerar ny längd. */
+static int unsync(unsigned char *b, int len)
+{
+    int w = 0;
+    for (int r = 0; r < len; r++) {
+        b[w++] = b[r];
+        if (b[r] == 0xFF && r + 1 < len && b[r + 1] == 0)
+            r++;
+    }
+    return w;
+}
+
+#define MAX_COVER_TAG (2 * 1024 * 1024) /* större taggar läses inte (minnet på PSP-1000) */
+
+void *music_cover_data(const char *path, u32 *size_out)
+{
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
+    if (fd < 0)
+        return NULL;
+    unsigned char h[10];
+    unsigned char *buf = NULL;
+    int len = 0;
+    if (sceIoRead(fd, h, 10) == 10 && !memcmp(h, "ID3", 3) && h[3] >= 2 && h[3] <= 4) {
+        u32 size = syncsafe(h + 6);
+        if (size > 0 && size <= MAX_COVER_TAG && (buf = malloc(size))) {
+            len = sceIoRead(fd, buf, size);
+            if (len != (int)size)
+                len = 0;
+        }
+    }
+    sceIoClose(fd);
+    if (len <= 0) {
+        free(buf);
+        return NULL;
+    }
+    int ver = h[3], flags = h[5];
+    if ((flags & 0x80) && ver < 4)
+        len = unsync(buf, len);
+    int pos = 0;
+    if ((flags & 0x40) && ver >= 3 && len >= 4) { /* utökad header */
+        u32 ext = ver == 3 ? be32(buf) : syncsafe(buf);
+        pos = ext < (u32)len - 4 ? (int)ext + (ver == 3 ? 4 : 0) : len;
+    }
+    int idlen = ver == 2 ? 3 : 4, hdr = ver == 2 ? 6 : 10;
+    int best = -1, best_len = 0, best_front = 0;
+    while (pos + hdr <= len && buf[pos]) {
+        unsigned char *fr = buf + pos;
+        u32 fsize = ver == 2 ? ((u32)fr[3] << 16 | fr[4] << 8 | fr[5]) : ver == 4 ? syncsafe(fr + 4) : be32(fr + 4);
+        if (fsize == 0 || fsize > (u32)(len - pos - hdr))
+            break;
+        if (!memcmp(fr, ver == 2 ? "PIC" : "APIC", idlen)) {
+            unsigned char *d = fr + hdr;
+            int dl = fsize;
+            if (ver == 4 && (fr[9] & 0x01) && dl > 4) { /* längdfält före datat */
+                d += 4;
+                dl -= 4;
+            }
+            if (ver == 4 && (fr[9] & 0x02))
+                dl = unsync(d, dl);
+            /* kodning, MIME (v2.2: tre tecken), bildtyp, beskrivning – sedan bilden */
+            int enc = d[0], p = 1;
+            if (ver == 2) {
+                p += 3;
+            } else {
+                while (p < dl && d[p])
+                    p++;
+                p++;
+            }
+            int type = p < dl ? d[p] : 0;
+            p++;
+            if (enc == 1 || enc == 2) { /* UTF-16: två nollbyte */
+                while (p + 1 < dl && (d[p] || d[p + 1]))
+                    p += 2;
+                p += 2;
+            } else {
+                while (p < dl && d[p])
+                    p++;
+                p++;
+            }
+            if (p < dl && (best < 0 || (type == 3 && !best_front))) { /* typ 3 = framsida */
+                best = (d - buf) + p;
+                best_len = dl - p;
+                best_front = type == 3;
+            }
+        }
+        pos += hdr + fsize;
+    }
+    if (best < 0) {
+        free(buf);
+        return NULL;
+    }
+    memmove(buf, buf + best, best_len);
+    *size_out = best_len;
+    return buf;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -451,32 +553,87 @@ static int feed(void)
     return sceMp3NotifyAddStreamData(s_handle, got) < 0 ? -1 : 0;
 }
 
-/* Läser första bildrutans huvud: prover per bildruta till s_spf, och längden från
- * Xing/Info- eller VBRI-huvudet (VBR-filer). Returnerar 0 om längden inte står där. */
+static const int MP3_RATES[4][3] = { { 11025, 12000, 8000 }, { 0, 0, 0 }, { 22050, 24000, 16000 }, { 44100, 48000, 32000 } };
+
+/* Bildrutans längd i byte ur huvudet (lager III), 0 = ogiltigt huvud */
+static int frame_len(u32 h)
+{
+    static const short kbps1[16] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0 };
+    static const short kbps2[16] = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0 };
+    int ver = (h >> 19) & 3, layer = (h >> 17) & 3, bi = (h >> 12) & 15, ri = (h >> 10) & 3;
+    if ((h & 0xFFE00000) != 0xFFE00000 || ver == 1 || layer != 1 || ri == 3)
+        return 0;
+    int kbps = ver == 3 ? kbps1[bi] : kbps2[bi], rate = MP3_RATES[ver][ri];
+    if (!kbps)
+        return 0;
+    return (ver == 3 ? 144 : 72) * kbps * 1000 / rate + ((h >> 9) & 1);
+}
+
+/* Läser första bildrutans huvud: prover per bildruta till s_spf, huvudet och Xing-tabellen
+ * (för spolning), och längden från Xing/Info- eller VBRI-huvudet (VBR-filer).
+ * Returnerar 0 om längden inte står där. */
 static float parse_first_frame(u32 start)
 {
-    static const int rates[4][3] = { { 11025, 12000, 8000 }, { 0, 0, 0 }, { 22050, 24000, 16000 }, { 44100, 48000, 32000 } };
     unsigned char b[192];
+    s_first_hdr = 0;
+    s_has_toc = 0;
     sceIoLseek32(s_fd, start, PSP_SEEK_SET);
     if (sceIoRead(s_fd, b, sizeof(b)) != sizeof(b))
         return 0;
     u32 h = be32(b);
-    if ((h & 0xFFE00000) != 0xFFE00000)
+    if (!frame_len(h))
         return 0;
-    int ver = (h >> 19) & 3, layer = (h >> 17) & 3, ri = (h >> 10) & 3, mono = ((h >> 6) & 3) == 3;
-    if (ver == 1 || layer != 1 || ri == 3)
-        return 0;
-    int rate = rates[ver][ri], spf = ver == 3 ? 1152 : 576;
+    s_first_hdr = h;
+    int ver = (h >> 19) & 3, ri = (h >> 10) & 3, mono = ((h >> 6) & 3) == 3;
+    int rate = MP3_RATES[ver][ri], spf = ver == 3 ? 1152 : 576;
     s_spf = spf;
     int off = ver == 3 ? (mono ? 21 : 36) : (mono ? 13 : 21);
     u32 frames = 0;
     if (!memcmp(b + off, "Xing", 4) || !memcmp(b + off, "Info", 4)) {
-        if (be32(b + off + 4) & 1)
-            frames = be32(b + off + 8);
+        u32 flags = be32(b + off + 4);
+        int p = off + 8;
+        if (flags & 1) {
+            frames = be32(b + p);
+            p += 4;
+        }
+        if (flags & 2)
+            p += 4; /* antal byte */
+        if ((flags & 4) && p + 100 <= (int)sizeof(b)) {
+            memcpy(s_toc, b + p, 100);
+            s_has_toc = 1;
+        }
     } else if (!memcmp(b + 36, "VBRI", 4)) {
         frames = be32(b + 36 + 14);
     }
     return frames && rate ? (float)frames * spf / rate : 0;
+}
+
+/* Startar avkodaren med strömmen från byte `offset` (början av en bildruta). */
+static int start_decoder(u32 offset)
+{
+    if (s_handle >= 0) {
+        sceMp3ReleaseMp3Handle(s_handle);
+        s_handle = -1;
+    }
+    SceMp3InitArg args;
+    memset(&args, 0, sizeof(args));
+    args.mp3StreamStart = offset;
+    args.mp3StreamEnd = s_size;
+    args.mp3Buf = s_mp3buf;
+    args.mp3BufSize = sizeof(s_mp3buf);
+    args.pcmBuf = s_pcmbuf;
+    args.pcmBufSize = sizeof(s_pcmbuf);
+    s_handle = sceMp3ReserveMp3Handle(&args);
+    if (s_handle < 0)
+        return -1;
+    s_eof = 0;
+    if (feed() < 0 || sceMp3Init(s_handle) < 0) {
+        sceMp3ReleaseMp3Handle(s_handle);
+        s_handle = -1;
+        return -1;
+    }
+    sceMp3SetLoopNum(s_handle, 0);
+    return 0;
 }
 
 static int open_track(int index)
@@ -487,30 +644,15 @@ static int open_track(int index)
     s_fd = sceIoOpen(s_items[index].t.path, PSP_O_RDONLY, 0777);
     if (s_fd < 0)
         return -1;
-    u32 size = sceIoLseek32(s_fd, 0, PSP_SEEK_END);
-    u32 start = id3v2_size(s_fd); /* strömmen börjar efter taggen */
-    if (start >= size)
-        start = 0;
-
-    SceMp3InitArg args;
-    memset(&args, 0, sizeof(args));
-    args.mp3StreamStart = start;
-    args.mp3StreamEnd = size;
-    args.mp3Buf = s_mp3buf;
-    args.mp3BufSize = sizeof(s_mp3buf);
-    args.pcmBuf = s_pcmbuf;
-    args.pcmBufSize = sizeof(s_pcmbuf);
-    s_handle = sceMp3ReserveMp3Handle(&args);
-    if (s_handle < 0) {
+    s_size = sceIoLseek32(s_fd, 0, PSP_SEEK_END);
+    s_start = id3v2_size(s_fd); /* strömmen börjar efter taggen */
+    if (s_start >= s_size)
+        s_start = 0;
+    s_open_index = index; /* feed() öppnar filen igen efter viloläge */
+    if (start_decoder(s_start) < 0) {
         close_track();
         return -1;
     }
-    s_eof = 0;
-    if (feed() < 0 || sceMp3Init(s_handle) < 0) {
-        close_track();
-        return -1;
-    }
-    sceMp3SetLoopNum(s_handle, 0);
     s_rate = sceMp3GetSamplingRate(s_handle);
     s_channels = sceMp3GetMp3ChannelNum(s_handle);
     if (s_rate <= 0 || s_channels < 1 || s_channels > 2) {
@@ -518,14 +660,69 @@ static int open_track(int index)
         return -1;
     }
     s_spf = 0;
-    float dur = parse_first_frame(start);
+    float dur = parse_first_frame(s_start);
     if (dur <= 0) {
         int kbps = sceMp3GetBitRate(s_handle);
-        dur = kbps > 0 ? (float)(size - start) * 8.0f / (kbps * 1000.0f) : 0;
+        dur = kbps > 0 ? (float)(s_size - s_start) * 8.0f / (kbps * 1000.0f) : 0;
     }
     s_duration = dur;
-    s_elapsed = 0;
-    s_open_index = index;
+    s_elapsed = s_seek_base = 0;
+    s_seek_grace = 0;
+    return 0;
+}
+
+/* Första giltiga bildrutan från byte `pos`: samma MPEG-version, lager och samplingsfrekvens
+ * som låtens första bildruta, och en likadan bildruta direkt efter. Annars `pos`. */
+static u32 find_frame(u32 pos)
+{
+    static unsigned char b[4096];
+    sceIoLseek32(s_fd, pos, PSP_SEEK_SET);
+    int n = sceIoRead(s_fd, b, sizeof(b));
+    const u32 same = 0x001E0C00; /* version, lager, samplingsfrekvens */
+    for (int i = 0; i + 4 <= n; i++) {
+        u32 h = be32(b + i);
+        int len = frame_len(h);
+        if (!len || (s_first_hdr && ((h ^ s_first_hdr) & same)))
+            continue;
+        if (i + len + 4 <= n) {
+            u32 next = be32(b + i + len);
+            if (!frame_len(next) || ((next ^ h) & same))
+                continue;
+        }
+        return pos + i;
+    }
+    return pos;
+}
+
+/* Hoppar till `sec` sekunder in i låten. 0 = klart, -1 = gick inte (låten är slut). */
+static int seek_to(float sec)
+{
+    if (s_handle < 0 || s_fd < 0 || s_duration <= 0)
+        return 0;
+    if (sec >= s_duration - 0.5f)
+        return -1;
+    if (sec < 0)
+        sec = 0;
+    u32 span = s_size - s_start, pos;
+    float f = sec / s_duration;
+    if (s_has_toc) { /* VBR: Xing-tabellen säger var varje procent av låten börjar */
+        float pct = f * 100;
+        int i = pct < 99 ? (int)pct : 99;
+        float a = s_toc[i], b = i < 99 ? s_toc[i + 1] : 256;
+        pos = s_start + (u32)((a + (b - a) * (pct - i)) / 256.0f * span);
+    } else {
+        pos = s_start + (u32)(f * span);
+    }
+    u32 frame = sec > 0 ? find_frame(pos) : s_start;
+    if (start_decoder(frame) < 0) { /* försök från början i stället */
+        if (start_decoder(s_start) < 0)
+            return -1;
+        frame = s_start;
+    }
+    s_seek_base = frame == s_start ? 0 : sec;
+    s_elapsed = s_seek_base;
+    /* bildrutorna efter ett hopp kan sakna data från bildrutan före (bitreservoaren) */
+    s_seek_grace = 4;
     return 0;
 }
 
@@ -538,6 +735,10 @@ static int play_frame(void)
     int bytes = sceMp3Decode(s_handle, &pcm);
     if (bytes == 0 || (u32)bytes == MP3_END)
         return 0;
+    if (bytes < 0 && s_seek_grace > 0) { /* strax efter ett hopp: hoppa över bildrutan */
+        s_seek_grace--;
+        return 1;
+    }
     if (bytes < 0)
         return -1;
     /* avkodaren kan lämna monofiler som stereo – avgör från bildrutans storlek */
@@ -577,7 +778,9 @@ static int play_frame(void)
     sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, out);
     int sum = sceMp3GetSumDecodedSample(s_handle);
     if (sum >= 0 && s_rate > 0)
-        s_elapsed = (float)sum / s_rate;
+        s_elapsed = s_seek_base + (float)sum / s_rate;
+    if (s_seek_grace > 0)
+        s_seek_grace--;
     return 1;
 }
 
@@ -635,6 +838,14 @@ static void handle_command(int cmd, int arg)
         if (s_current < 0)
             break;
         start_at(s_elapsed > 3.0f || s_current == 0 ? s_current : s_current - 1);
+        break;
+    case CMD_SEEK: /* arg = millisekunder; förbi slutet = nästa låt */
+        if (s_current >= 0 && seek_to(arg / 1000.0f) < 0) {
+            if (s_current + 1 < s_count)
+                start_at(s_current + 1);
+            else
+                stop_playback();
+        }
         break;
     }
 }
@@ -779,6 +990,7 @@ void music_toggle_pause(void) { push(CMD_PAUSE, 0); }
 void music_stop(void)         { push(CMD_STOP, 0); }
 void music_next(void)         { push(CMD_NEXT, 0); }
 void music_prev(void)         { push(CMD_PREV, 0); }
+void music_seek(float sec)    { push(CMD_SEEK, (int)(sec * 1000)); }
 
 int music_scanning(void)   { return s_scanning; }
 int music_generation(void) { return s_gen; }

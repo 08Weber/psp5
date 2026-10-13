@@ -2,7 +2,7 @@
 TARGET = psp5
 OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/launch.o \
        src/gfx.o src/image.o src/art.o src/loader.o src/ui.o \
-       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/ark4stub.o
+       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/osd.o src/ark4stub.o
 
 CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation $(EXTRA) $(ARKFLAGS)
 ASFLAGS = $(CFLAGS)
@@ -16,7 +16,7 @@ ARKFLAGS =
 ARKCTRL = -larkctrl
 endif
 
-LIBS = -lintrafont -lpng -lcisoread -llz4 -lz -lm \
+LIBS = -lintrafont -lpng -ljpeg -lcisoread -llz4 -lz -lm \
        -lpspmp3 -lpspgu -lpspumd -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio \
        -lpspsystemctrl_user $(ARKCTRL) -lpspkubridge
 
