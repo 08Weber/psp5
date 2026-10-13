@@ -15,6 +15,13 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.5.2
+
+- **Buggfix: att släppa ← / → efter spolning bytte låt.** PSP:ns avkodare kan inte börja mitt i bitreservoaren,
+  så hoppet misslyckades och låten räknades som slut. `find_frame` går nu vidare (högst 64 kB) till en bildruta
+  med `main_data_begin` = 0. Går hoppet ändå inte att spela börjar låten om i stället för att nästa låt startar,
+  och spolningen stannar en sekund före slutet.
+
 ## Version 1.5.1
 
 - **Volymindikator i PS5-stil** (`src/osd.c`): volymknapparna går direkt till systemet, så psp5 läser volymen

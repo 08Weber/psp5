@@ -80,6 +80,7 @@ static unsigned char s_toc[100];
 static int s_has_toc;
 static float s_seek_base;              /* sekunder in i låten där avkodaren startade */
 static int s_seek_grace;               /* bildrutor efter ett hopp som får misslyckas */
+static int s_seek_fresh;               /* 1 efter ett hopp tills en bildruta har spelats */
 
 /* ---------------------------------------------------------------------- */
 /* ID3 */
@@ -667,31 +668,63 @@ static int open_track(int index)
     }
     s_duration = dur;
     s_elapsed = s_seek_base = 0;
-    s_seek_grace = 0;
+    s_seek_grace = s_seek_fresh = 0;
     return 0;
 }
 
-/* Första giltiga bildrutan från byte `pos`: samma MPEG-version, lager och samplingsfrekvens
- * som låtens första bildruta, och en likadan bildruta direkt efter. Annars `pos`. */
-static u32 find_frame(u32 pos)
+/* main_data_begin == 0: bildrutan behöver inga data från bildrutorna före (bitreservoaren).
+ * PSP:ns avkodare kan bara börja om vid en sådan bildruta. */
+static int self_contained(const unsigned char *f)
 {
-    static unsigned char b[4096];
-    sceIoLseek32(s_fd, pos, PSP_SEEK_SET);
-    int n = sceIoRead(s_fd, b, sizeof(b));
+    const unsigned char *side = f + ((f[1] & 1) ? 4 : 6); /* efter huvudet (och CRC) */
+    return ((f[1] >> 3) & 3) == 3 ? !(side[0] | (side[1] & 0x80)) : !side[0];
+}
+
+/* Första giltiga bildrutan från byte `pos`: samma MPEG-version, lager och samplingsfrekvens
+ * som låtens första bildruta, och en likadan bildruta direkt efter. Därifrån går den bildruta
+ * för bildruta (högst 64 kB) till en som avkodaren kan börja vid; *skipped = antal bildrutor
+ * den gick förbi. Hittas ingen: första giltiga bildrutan, och finns ingen alls: `pos`. */
+static u32 find_frame(u32 pos, int *skipped)
+{
+    static unsigned char b[8192];
     const u32 same = 0x001E0C00; /* version, lager, samplingsfrekvens */
-    for (int i = 0; i + 4 <= n; i++) {
-        u32 h = be32(b + i);
-        int len = frame_len(h);
-        if (!len || (s_first_hdr && ((h ^ s_first_hdr) & same)))
-            continue;
-        if (i + len + 4 <= n) {
-            u32 next = be32(b + i + len);
-            if (!frame_len(next) || ((next ^ h) & same))
+    u32 first = pos;
+    int found = 0;
+    *skipped = 0;
+    for (int chunk = 0; chunk < 8; chunk++) {
+        sceIoLseek32(s_fd, pos, PSP_SEEK_SET);
+        int n = sceIoRead(s_fd, b, sizeof(b)), i = 0;
+        for (; !found && i + 4 <= n; i++) {
+            u32 h = be32(b + i);
+            int len = frame_len(h);
+            if (!len || (s_first_hdr && ((h ^ s_first_hdr) & same)))
                 continue;
+            if (i + len + 4 <= n) {
+                u32 next = be32(b + i + len);
+                if (!frame_len(next) || ((next ^ h) & same))
+                    continue;
+            }
+            first = pos + i;
+            found = 1;
+            break;
         }
-        return pos + i;
+        if (!found)
+            return pos;
+        while (i + 8 <= n) {
+            int len = frame_len(be32(b + i));
+            if (!len)
+                break; /* tappade takten */
+            if (self_contained(b + i))
+                return pos + i;
+            i += len;
+            ++*skipped;
+        }
+        if (i + 8 <= n || n < (int)sizeof(b))
+            break;
+        pos += i;
     }
-    return pos;
+    *skipped = 0;
+    return first;
 }
 
 /* Hoppar till `sec` sekunder in i låten. 0 = klart, -1 = gick inte (låten är slut). */
@@ -713,16 +746,18 @@ static int seek_to(float sec)
     } else {
         pos = s_start + (u32)(f * span);
     }
-    u32 frame = sec > 0 ? find_frame(pos) : s_start;
+    int skipped = 0;
+    u32 frame = sec > 0 ? find_frame(pos, &skipped) : s_start;
     if (start_decoder(frame) < 0) { /* försök från början i stället */
         if (start_decoder(s_start) < 0)
             return -1;
         frame = s_start;
     }
-    s_seek_base = frame == s_start ? 0 : sec;
+    s_seek_base = frame == s_start ? 0 : sec + (s_spf && s_rate > 0 ? (float)skipped * s_spf / s_rate : 0);
     s_elapsed = s_seek_base;
     /* bildrutorna efter ett hopp kan sakna data från bildrutan före (bitreservoaren) */
     s_seek_grace = 4;
+    s_seek_fresh = 1;
     return 0;
 }
 
@@ -781,6 +816,7 @@ static int play_frame(void)
         s_elapsed = s_seek_base + (float)sum / s_rate;
     if (s_seek_grace > 0)
         s_seek_grace--;
+    s_seek_fresh = 0;
     return 1;
 }
 
@@ -874,6 +910,14 @@ static int player_thread(SceSize args, void *argp)
         if (r > 0) {
             failures = 0;
             continue;
+        }
+        if (s_seek_fresh) { /* hoppet gick inte att spela: låten från början, inte nästa låt */
+            s_seek_fresh = 0;
+            if (start_decoder(s_start) == 0) {
+                s_elapsed = s_seek_base = 0;
+                s_seek_grace = 0;
+                continue;
+            }
         }
         /* slut eller fel: nästa låt (efter sista: stopp) */
         if (r < 0 && ++failures >= (s_count < 8 ? s_count : 8)) {
