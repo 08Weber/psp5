@@ -15,6 +15,12 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.5.3
+
+- **Kategorimappar:** en mapp i `PSP/GAME` utan `EBOOT.PBP` (t.ex. `GAME/PS1/<spel>` eller
+  `GAME/Emulators/TempGBA`) genomsöks en nivå ner, som arkMenu gör (`scan_game_dir`, `depth`). Förut syntes
+  PS1-spel och appar i sådana mappar inte alls.
+
 ## Version 1.5.2
 
 - **Flytta mellan Spel och Appar:** □ på ett kort i Spel eller Appar öppnar en liten alternativmeny (`draw_menu`)

@@ -177,30 +177,31 @@ static void scan_iso_dir(ScanState *s, const char *dir, int depth)
     sceIoDclose(d);
 }
 
-static void add_eboot(ScanState *s, const char *path, const char *folder)
+/* 0 = mappen har ingen EBOOT.PBP */
+static int add_eboot(ScanState *s, const char *path, const char *folder)
 {
     SceIoStat st;
     if (sceIoGetstat(path, &st) < 0)
-        return;
+        return 0;
     u32 size = (u32)st.st_size, time = pack_time(&st.sce_st_mtime);
     if (from_cache(s, path, size, time))
-        return;
+        return 1;
     report(s, folder);
 
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     if (fd < 0)
-        return;
+        return 1;
 
     PbpHeader h;
     if (sceIoRead(fd, &h, sizeof(h)) != sizeof(h) || h.magic != PBP_MAGIC) {
         sceIoClose(fd); /* t.ex. ren ELF (1.50) – hoppas över */
-        return;
+        return 1;
     }
 
     Entry *e = add_entry(s->list);
     if (!e) {
         sceIoClose(fd);
-        return;
+        return 1;
     }
     strncpy(e->path, path, sizeof(e->path) - 1);
     strncpy(e->title, folder, sizeof(e->title) - 1);
@@ -231,9 +232,12 @@ static void add_eboot(ScanState *s, const char *path, const char *folder)
     e->pic_size = h.snd0_offset - h.pic1_offset;
     e->pic_offset = e->pic_size ? h.pic1_offset : 0;
     sceIoClose(fd);
+    return 1;
 }
 
-static void scan_game_dir(ScanState *s, const char *dir, const char *self_path)
+/* depth 0 = PSP/GAME. En mapp utan EBOOT.PBP är en kategorimapp (t.ex. GAME/PS1/<spel>,
+ * GAME/Emulators/TempGBA) – som arkMenu letar vi då en nivå ner i den. */
+static void scan_game_dir(ScanState *s, const char *dir, const char *self_path, int depth)
 {
     SceUID d = sceIoDopen(dir);
     if (d < 0)
@@ -246,8 +250,11 @@ static void scan_game_dir(ScanState *s, const char *dir, const char *self_path)
         if (ent.d_name[0] != '.' && FIO_S_ISDIR(ent.d_stat.st_mode)) {
             snprintf(path, sizeof(path), "%s/%s/EBOOT.PBP", dir, ent.d_name);
             /* psp5 själv (som app) ska inte synas i listan */
-            if (strcasecmp(ent.d_name, "PSP5") != 0 && (!self_path || strcasecmp(path, self_path) != 0))
-                add_eboot(s, path, ent.d_name);
+            if (strcasecmp(ent.d_name, "PSP5") != 0 && (!self_path || strcasecmp(path, self_path) != 0) &&
+                !add_eboot(s, path, ent.d_name) && depth == 0) {
+                snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name);
+                scan_game_dir(s, path, self_path, 1);
+            }
         }
         memset(&ent, 0, sizeof(ent));
     }
@@ -305,9 +312,9 @@ void scan_all(EntryList *list, const char *self_path, const char *cache_file, Sc
     scan_iso_dir(&s, "ms0:/ISO", 0);
     if (ef0)
         scan_iso_dir(&s, "ef0:/ISO", 0);
-    scan_game_dir(&s, "ms0:/PSP/GAME", self_path);
+    scan_game_dir(&s, "ms0:/PSP/GAME", self_path, 0);
     if (ef0)
-        scan_game_dir(&s, "ef0:/PSP/GAME", self_path);
+        scan_game_dir(&s, "ef0:/PSP/GAME", self_path, 0);
     scan_free(&s.cached);
 
     if (list->count > 1)
