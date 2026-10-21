@@ -46,7 +46,7 @@ To get to the XMB from there: △ → *Power and USB* → *Exit to XMB*.
 
 | What | Folder |
 |---|---|
-| PSP games (`.iso`, `.cso`, `.zso`) | `ISO` |
+| PSP games (`.iso`, `.cso`, `.zso`, `.dax`) | `ISO` |
 | Homebrew, PSN and PS1 games | `PSP/GAME` |
 | Music (`.mp3`) | `MUSIC` (sub-folders are fine) |
 

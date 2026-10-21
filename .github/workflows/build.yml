@@ -17,9 +17,15 @@ jobs:
         run: |
           bash tools/build.sh
           bash tools/build.sh ark4
+          bash tools/build.sh test
       - name: Zips
         run: python3 tools/make_release.py
       - uses: actions/upload-artifact@v4
         with:
           name: release
           path: release/*.zip
+      # testbygget med skriptat testläge (src/testrun.c) – för tools/ppsspp-test.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test
+          path: dist-test/PSP/GAME/PSP5/EBOOT.PBP

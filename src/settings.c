@@ -79,7 +79,16 @@ static struct {
 /* valtexter byggs om när språket ändras */
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
-static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_SORT[2];
+static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_SORT[2], *OPT_BATTERY[3];
+
+/* Bakgrundsbilder att välja bland: bilderna i PICTURE (som XMB:s Foto), en nivå undermappar.
+ * Val 0 = ingen (temats bakgrund). Läses när inställningarna öppnas. */
+#define MAX_WALLS 48
+static char s_wall_path[MAX_WALLS][sizeof(g_wallpaper)];
+static char s_wall_name[MAX_WALLS][26];
+static const char *OPT_WALL[MAX_WALLS + 1];
+static int s_nwall;
+static unsigned char s_wall_sel;
 
 static void build_options(void)
 {
@@ -104,6 +113,66 @@ static void build_options(void)
         OPT_LANG[i] = lang_name(i);
     OPT_SORT[0] = L(S_SORT_NAME);
     OPT_SORT[1] = L(S_SORT_XMB);
+    OPT_BATTERY[0] = L(S_BAT_ICON);
+    OPT_BATTERY[1] = L(S_BAT_PERCENT);
+    OPT_BATTERY[2] = L(S_BAT_TIME);
+    OPT_WALL[0] = off;
+    for (int i = 0; i < s_nwall; i++)
+        OPT_WALL[i + 1] = s_wall_name[i];
+}
+
+static void add_wall(const char *path)
+{
+    if (s_nwall >= MAX_WALLS)
+        return;
+    snprintf(s_wall_path[s_nwall], sizeof(s_wall_path[0]), "%s", path);
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    if (strlen(name) < sizeof(s_wall_name[0]))
+        snprintf(s_wall_name[s_nwall], sizeof(s_wall_name[0]), "%s", name);
+    else /* för långt för raden: början och "..." */
+        snprintf(s_wall_name[s_nwall], sizeof(s_wall_name[0]), "%.*s...", (int)sizeof(s_wall_name[0]) - 4, name);
+    s_nwall++;
+}
+
+static void scan_walls(const char *dir, int depth)
+{
+    SceUID d = sceIoDopen(dir);
+    if (d < 0)
+        return;
+    SceIoDirent ent;
+    char path[sizeof(g_wallpaper)];
+    memset(&ent, 0, sizeof(ent));
+    while (sceIoDread(d, &ent) > 0 && s_nwall < MAX_WALLS) {
+        const char *dot = strrchr(ent.d_name, '.');
+        if (ent.d_name[0] != '.' && snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name) < (int)sizeof(path)) {
+            if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
+                if (depth == 0)
+                    scan_walls(path, 1);
+            } else if (dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") || !strcasecmp(dot, ".png"))) {
+                add_wall(path);
+            }
+        }
+        memset(&ent, 0, sizeof(ent));
+    }
+    sceIoDclose(d);
+}
+
+/* Bilderna i PICTURE och vilken som är vald nu */
+static void load_walls(void)
+{
+    s_nwall = 0;
+    if (!sys_ms_is_ef())
+        scan_walls("ms0:/PICTURE", 0);
+    scan_walls("ef0:/PICTURE", 0); /* PSP Go:s internminne */
+    s_wall_sel = 0;
+    for (int i = 0; i < s_nwall; i++)
+        if (!strcmp(s_wall_path[i], g_wallpaper))
+            s_wall_sel = i + 1;
+    if (!s_wall_sel && g_wallpaper[0] && s_nwall < MAX_WALLS) { /* vald bild utanför listan: behåll den */
+        add_wall(g_wallpaper);
+        s_wall_sel = s_nwall;
+    }
 }
 
 /* ARK:s runlevel i PLUGINS.TXT → läsbar text */
@@ -204,12 +273,18 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     choice(c, L(S_SORT), &g_sort_xmb, OPT_SORT, 2); /* t.ex. ordningen från Homebrew Sorter (issue #7) */
     c->items[c->count - 1].own = 1;
+    toggle(c, L(S_HIDE_DUPES), &g_hide_dupes);
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_BATTERY), &g_battery, OPT_BATTERY, 3);
+    c->items[c->count - 1].own = 1;
+    toggle(c, L(S_PREVIEWS), &g_previews); /* ICON1.PMF och SND0.AT3, som i XMB */
+    c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.5.4 (ARK-4)");
+    info(c, L(S_VERSION), "1.6.0 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.5.4 (ARK-5)");
+    info(c, L(S_VERSION), "1.6.0 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
@@ -217,6 +292,8 @@ static void build(int rebuild)
     c->name = L(S_CAT_THEME);
     c->desc = L(S_DESC_THEME);
     toggle(c, L(S_THEME_ART), &g_theme_art);
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_WALLPAPER), &s_wall_sel, OPT_WALL, s_nwall + 1); /* bild ur PICTURE i stället för temats yta */
     c->items[c->count - 1].own = 1;
     for (int i = 0; i < theme_count() && c->count < MAX_ITEMS; i++) {
         Item *it = add(c, theme_get(i)->name, IT_THEME);
@@ -308,6 +385,7 @@ void settings_open(void)
     snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
     arkcfg_load(path);
     plugins_load(sys_ark_dir());
+    load_walls();
     build(0);
     memset(&S, 0, sizeof(S));
     S.confirm_item = -1;
@@ -316,8 +394,10 @@ void settings_open(void)
 int settings_commit(void)
 {
     int changed = S.cfw_dirty || S.plugins_dirty;
-    if (S.own_dirty)
+    if (S.own_dirty) {
+        snprintf(g_wallpaper, sizeof(g_wallpaper), "%s", s_wall_sel ? s_wall_path[s_wall_sel - 1] : "");
         config_save(PSP5_DATA_DIR); /* ljud och språk gäller direkt, ingen omstart */
+    }
     if (S.cfw_dirty) {
         char path[200];
         snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());

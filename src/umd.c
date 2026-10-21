@@ -67,6 +67,8 @@ static int read_disc(Entry *e)
     /* art.c läser bilderna som hela filer på skivan */
     e->icon_size = file_size(UMD_ICON0);
     e->pic_size = file_size(UMD_PIC1);
+    e->vid_size = file_size(UMD_ROOT "PSP_GAME/ICON1.PMF");
+    e->snd_size = file_size(UMD_ROOT "PSP_GAME/SND0.AT3");
     return 1;
 }
 

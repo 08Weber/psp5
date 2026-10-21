@@ -5,7 +5,7 @@
 #include <pspkernel.h>
 #include <ciso.h>
 
-/* Läser okomprimerade ISO:er och CSO/ZSO via libcisoread. */
+/* Läser okomprimerade ISO:er och CSO/ZSO/DAX via libcisoread. */
 typedef struct {
     SceUID fd;
     int compressed;

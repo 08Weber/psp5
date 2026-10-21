@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "art.h"
 #include "image.h"
 #include "iso.h"
@@ -27,6 +28,30 @@ void art_init(const char *base_dir)
     snprintf(s_cover_dir, sizeof(s_cover_dir), "%s/covers", base_dir);
     sceIoMkdir(s_cache_dir, 0777);
     sceIoMkdir(s_cover_dir, 0777);
+
+    /* 1.6.0: fyrkantiga ikoner (minis) sträcks inte längre – ta bort cachade ikoner en gång */
+    char mark[220], path[256];
+    SceIoStat st;
+    snprintf(mark, sizeof(mark), "%s/icons2", s_cache_dir);
+    if (sceIoGetstat(mark, &st) >= 0)
+        return;
+    SceUID d = sceIoDopen(s_cache_dir);
+    if (d >= 0) {
+        SceIoDirent ent;
+        memset(&ent, 0, sizeof(ent));
+        while (sceIoDread(d, &ent) > 0) {
+            int n = strlen(ent.d_name);
+            if (n > 4 && !strcasecmp(ent.d_name + n - 4, ".ico")) {
+                snprintf(path, sizeof(path), "%s/%s", s_cache_dir, ent.d_name);
+                sceIoRemove(path);
+            }
+            memset(&ent, 0, sizeof(ent));
+        }
+        sceIoDclose(d);
+    }
+    SceUID fd = sceIoOpen(mark, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (fd >= 0)
+        sceIoClose(fd);
 }
 
 static u32 fnv1a(const char *s, u32 h)
@@ -51,10 +76,10 @@ static void cover_path(const Entry *e, const char *ext, char *out, int size)
     snprintf(out, size, "%s/%s.%s", s_cover_dir, key, ext);
 }
 
-/* Läser en inbäddad fil (ICON0/PIC1) ur ISO eller PBP – eller filen `umd_name` på UMD-skivan. */
-static void *read_embedded(const Entry *e, u32 offset, u32 size, const char *umd_name)
+/* Läser en inbäddad fil (ICON0/PIC1/ICON1/SND0) ur ISO eller PBP – eller filen `umd_name` på UMD-skivan. */
+void *art_read_part(const Entry *e, u32 offset, u32 size, const char *umd_name, u32 max_size)
 {
-    if (!size || size > MAX_PNG_SIZE)
+    if (!size || size > max_size)
         return NULL;
     void *buf = malloc(size);
     if (!buf)
@@ -92,7 +117,7 @@ static void *read_embedded(const Entry *e, u32 offset, u32 size, const char *umd
 
 static int decode_embedded(const Entry *e, u32 offset, u32 size, const char *umd_name, Image *out)
 {
-    void *png = read_embedded(e, offset, size, umd_name);
+    void *png = art_read_part(e, offset, size, umd_name, MAX_PNG_SIZE);
     if (!png)
         return 0;
     int ok = img_decode_png(png, size, out);
@@ -110,6 +135,41 @@ static int fit(Image *img, int w, int h)
         return 0;
     img_free(img);
     *img = scaled;
+    return 1;
+}
+
+/* Ikon till kortets format. En ikon som är mycket smalare än 144×80 (t.ex. PSP minis
+ * fyrkantiga ikoner) sträcks inte: den centreras på en suddig, mörkare kopia av sig själv. */
+static int fit_icon(Image *img)
+{
+    if (img->h <= 0 || img->w * 10 >= img->h * 15) /* bredare än 1,5:1 – vanlig ikon */
+        return fit(img, ICON_W, ICON_H);
+    int fw = img->w * ICON_H / img->h;
+    Image bg, fg;
+    if (fw < 1 || !img_resize(img, ICON_W, ICON_H, &bg))
+        return 0;
+    if (!img_resize(img, fw, ICON_H, &fg)) {
+        img_free(&bg);
+        return 0;
+    }
+    img_blur(&bg, 8);
+    for (int i = 0; i < ICON_W * ICON_H; i++) { /* 55 % ljus, helt ogenomskinlig */
+        u32 c = bg.px[i];
+        bg.px[i] = RGBA((c & 0xFF) * 55 / 100, ((c >> 8) & 0xFF) * 55 / 100, ((c >> 16) & 0xFF) * 55 / 100, 255);
+    }
+    int x0 = (ICON_W - fw) / 2;
+    for (int y = 0; y < ICON_H; y++) {
+        for (int x = 0; x < fw; x++) {
+            u32 f = fg.px[y * fw + x], *b = &bg.px[y * ICON_W + x0 + x];
+            u32 a = f >> 24, out = 0xFF000000;
+            for (int s = 0; s < 24; s += 8)
+                out |= ((((f >> s) & 0xFF) * a + ((*b >> s) & 0xFF) * (255 - a)) / 255) << s;
+            *b = out;
+        }
+    }
+    img_free(&fg);
+    img_free(img);
+    *img = bg;
     return 1;
 }
 
@@ -148,7 +208,7 @@ Texture *art_load_icon(const Entry *e, u32 *accent)
         Image img;
         if (!decode_embedded(e, e->icon_offset, e->icon_size, "ICON0.PNG", &img))
             return NULL;
-        if (fit(&img, ICON_W, ICON_H)) {
+        if (fit_icon(&img)) {
             img_round_corners(&img, ICON_RADIUS);
             t = img_to_texture(&img, GU_PSM_8888);
             if (t)
@@ -264,6 +324,58 @@ Texture *art_load_cover(const char *mp3_path, const char *album)
         t = img_to_texture(&img, GU_PSM_8888);
         if (t)
             ntx_save(path, t);
+    }
+    img_free(&img);
+    return t;
+}
+
+/* --- egen bakgrundsbild --- */
+
+#define MAX_WALLPAPER_FILE (8 * 1024 * 1024)
+
+Texture *art_load_wallpaper(const char *file)
+{
+    SceIoStat st;
+    if (!file[0] || sceIoGetstat(file, &st) < 0 || st.st_size <= 0 || st.st_size > MAX_WALLPAPER_FILE)
+        return NULL;
+    /* cachen följer filen: ny bild med samma namn ger en ny cachefil */
+    char path[256];
+    u32 h = fnv1a(file, 2166136261u) ^ (u32)st.st_size ^ (st.sce_st_mtime.second * 2654435761u) ^
+            (st.sce_st_mtime.minute << 8) ^ (st.sce_st_mtime.day << 16);
+    snprintf(path, sizeof(path), "%s/%08X.wal", s_cache_dir, (unsigned)h);
+    Texture *t = ntx_load(path);
+    if (t)
+        return t;
+
+    u32 size = (u32)st.st_size;
+    void *data = malloc(size);
+    SceUID fd = data ? sceIoOpen(file, PSP_O_RDONLY, 0) : -1;
+    int got = fd >= 0 ? sceIoRead(fd, data, size) : -1;
+    if (fd >= 0)
+        sceIoClose(fd);
+    Image img;
+    int ok = got == (int)size && img_decode_cover(data, size, &img, SCREEN_H);
+    free(data);
+    if (!ok)
+        return NULL;
+
+    /* beskär till skärmens format runt mitten och skala till skärmens storlek */
+    int cw = img.w, ch = img.w * SCREEN_H / SCREEN_W;
+    if (ch > img.h) {
+        ch = img.h;
+        cw = img.h * SCREEN_W / SCREEN_H;
+    }
+    Image crop = { cw, ch, malloc(cw * ch * 4) };
+    if (crop.px) {
+        int x0 = (img.w - cw) / 2, y0 = (img.h - ch) / 2;
+        for (int y = 0; y < ch; y++)
+            memcpy(crop.px + y * cw, img.px + (y + y0) * img.w + x0, cw * 4);
+        if (fit(&crop, SCREEN_W, SCREEN_H)) {
+            t = img_to_texture(&crop, GU_PSM_5650);
+            if (t)
+                ntx_save(path, t);
+        }
+        img_free(&crop);
     }
     img_free(&img);
     return t;

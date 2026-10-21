@@ -25,4 +25,12 @@ Texture *art_load_bg(const Entry *e);
  * m.fl. i albummappen. Sparas i cache/ per album. NULL om det inte finns något. */
 Texture *art_load_cover(const char *mp3_path, const char *album);
 
+/* Läser en fil ur spelet (offset/storlek i PBP eller ISO), eller PSP_GAME/<umd_name> på
+ * UMD-skivan. Nyallokerad buffert (free), NULL om den saknas eller är större än max_size. */
+void *art_read_part(const Entry *e, u32 offset, u32 size, const char *umd_name, u32 max_size);
+
+/* Egen bakgrundsbild (JPEG/PNG, t.ex. ms0:/PICTURE/bild.jpg): beskuren och skalad till
+ * skärmen (5650), sparad i cache/. NULL om filen saknas eller inte går att läsa. */
+Texture *art_load_wallpaper(const char *file);
+
 #endif

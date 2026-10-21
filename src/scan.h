@@ -5,7 +5,7 @@
 #include <psptypes.h>
 
 typedef enum {
-    ENTRY_ISO,      /* iso/cso/zso i ms0:/ISO */
+    ENTRY_ISO,      /* iso/cso/zso/dax i ms0:/ISO */
     ENTRY_HOMEBREW, /* EBOOT.PBP, kategori MG */
     ENTRY_PSN,      /* EBOOT.PBP, kategori EG */
     ENTRY_POPS,     /* EBOOT.PBP, kategori ME (PS1) */
@@ -21,6 +21,9 @@ typedef struct {
      * För UMD: offset 0 och filens storlek på skivan. */
     u32 icon_offset, icon_size;
     u32 pic_offset, pic_size;
+    /* förhandsvisningen (preview.c): ICON1.PMF och SND0.AT3, på samma sätt */
+    u32 vid_offset, vid_size;
+    u32 snd_offset, snd_size;
     /* för att känna igen oförändrade filer i listcachen */
     u32 file_size, file_time;
     /* ändringstiden för spelets mapp (EBOOT) eller fil (ISO): XMB sorterar på den, och
