@@ -35,6 +35,8 @@ frame around it, and its artwork fades in behind everything. Your PSP games (ISO
 **Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
 Is a homebrew game sitting under Apps? Press □ on it for its options and choose *Move to Games* (and back again), and psp5 remembers it.
 A UMD in the drive shows up first under Games, and it appears or disappears as soon as you put a disc in or take it out.
+Games and Apps are sorted by name; set *Sort* to *Like the XMB* under Settings → psp5 to get the XMB's order instead
+(including an order you set with Homebrew Sorter).
 Next to them is the **Library**: everything you have, games and apps together, in a grid that's easy to scan
 through. Press □ there to sort by name or by what you added most recently.
 

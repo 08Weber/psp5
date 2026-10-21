@@ -240,6 +240,8 @@ static const char *const T[S_COUNT][NL] = {
     [S_SORT_RECENT] = { "Recently added", "Senast tillagda", "Zuletzt hinzugefügt", "Ajoutés récemment",
                         "Añadidos recientemente", "Aggiunti di recente", "Onlangs toegevoegd",
                         "Adicionados recentemente", "Недавно добавленные", "最近追加した順" },
+    [S_SORT_XMB] = { "Like the XMB", "Som i XMB", "Wie im XMB", "Comme le XMB", "Como el XMB", "Come l'XMB",
+                     "Zoals de XMB", "Como o XMB", "Как в XMB", "XMBと同じ" },
     [S_BOOT_ANIM] = { "Startup animation", "Startanimation", "Startanimation", "Animation de démarrage",
                       "Animación de inicio", "Animazione di avvio", "Opstartanimatie", "Animação de arranque",
                       "Заставка при запуске", "起動アニメーション" },

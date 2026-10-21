@@ -19,8 +19,10 @@
 #define ISO_RUNLEVEL       0x123
 #define ISO_PBOOT_RUNLEVEL 0x124
 #define POPS_RUNLEVEL      0x144
-/* samma sak från PSP Go:s internminne (ef0:). Homebrew startas som från ms0: – arkMenu
- * använder 0x152 bara med sin inställning redirect_ms0. */
+/* samma sak från PSP Go:s internminne (ef0:). Homebrew får 0x152 som i arkMenu (dess
+ * redirect_ms0 är på som standard): ARK pekar då ms0: till ef0:, så att portar som läser
+ * sina datafiler från ms0: hittar dem (issue #11). */
+#define HOMEBREW_RUNLEVEL_GO  0x152
 #define ISO_RUNLEVEL_GO       0x125
 #define ISO_PBOOT_RUNLEVEL_GO 0x126
 #define POPS_RUNLEVEL_GO      0x155
@@ -131,7 +133,7 @@ static void launch_homebrew(void)
     param.key = "game";
     param.argp = s_path;
     param.args = strlen(s_path) + 1;
-    sctrlKernelLoadExecVSHWithApitype(HOMEBREW_RUNLEVEL, s_path, &param);
+    sctrlKernelLoadExecVSHWithApitype(on_ef0() ? HOMEBREW_RUNLEVEL_GO : HOMEBREW_RUNLEVEL, s_path, &param);
 }
 
 static void launch_psn(void)

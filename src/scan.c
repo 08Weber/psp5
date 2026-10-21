@@ -62,15 +62,18 @@ static u32 pack_time(const ScePspDateTime *t)
            (t->hour << 12) | (t->minute << 6) | t->second;
 }
 
-/* Finns filen oförändrad i cachen? Kopierar i så fall posten. */
-static int from_cache(ScanState *s, const char *path, u32 size, u32 time)
+/* Finns filen oförändrad i cachen? Kopierar i så fall posten. sort_time läses alltid
+ * på nytt: Homebrew Sorter ändrar mappens datum men inte filen. */
+static int from_cache(ScanState *s, const char *path, u32 size, u32 time, u32 sort_time)
 {
     for (int i = 0; i < s->cached.count; i++) {
         const Entry *c = &s->cached.items[i];
         if (c->file_size == size && c->file_time == time && strcmp(c->path, path) == 0) {
             Entry *e = add_entry(s->list);
-            if (e)
+            if (e) {
                 *e = *c;
+                e->sort_time = sort_time;
+            }
             return 1;
         }
     }
@@ -112,7 +115,7 @@ void entry_read_sfo(Entry *e, const u8 *sfo, u32 size)
 
 static void add_iso(ScanState *s, const char *path, const char *name, u32 size, u32 time)
 {
-    if (from_cache(s, path, size, time))
+    if (from_cache(s, path, size, time, time))
         return;
     report(s, name);
 
@@ -132,7 +135,7 @@ static void add_iso(ScanState *s, const char *path, const char *name, u32 size, 
     strncpy(e->path, path, sizeof(e->path) - 1);
     e->type = ENTRY_ISO;
     e->file_size = size;
-    e->file_time = time;
+    e->file_time = e->sort_time = time;
     strncpy(e->title, name, sizeof(e->title) - 1);
     char *dot = strrchr(e->title, '.');
     if (dot)
@@ -177,14 +180,14 @@ static void scan_iso_dir(ScanState *s, const char *dir, int depth)
     sceIoDclose(d);
 }
 
-/* 0 = mappen har ingen EBOOT.PBP */
-static int add_eboot(ScanState *s, const char *path, const char *folder)
+/* 0 = mappen har ingen EBOOT.PBP. folder_time = mappens ändringstid (XMB-ordningen). */
+static int add_eboot(ScanState *s, const char *path, const char *folder, u32 folder_time)
 {
     SceIoStat st;
     if (sceIoGetstat(path, &st) < 0)
         return 0;
     u32 size = (u32)st.st_size, time = pack_time(&st.sce_st_mtime);
-    if (from_cache(s, path, size, time))
+    if (from_cache(s, path, size, time, folder_time))
         return 1;
     report(s, folder);
 
@@ -208,6 +211,7 @@ static int add_eboot(ScanState *s, const char *path, const char *folder)
     e->type = ENTRY_HOMEBREW;
     e->file_size = size;
     e->file_time = time;
+    e->sort_time = folder_time;
 
     u32 sfo_size = h.icon0_offset - h.param_offset;
     if (sfo_size > 0 && sfo_size <= MAX_SFO_SIZE) {
@@ -251,7 +255,7 @@ static void scan_game_dir(ScanState *s, const char *dir, const char *self_path, 
             snprintf(path, sizeof(path), "%s/%s/EBOOT.PBP", dir, ent.d_name);
             /* psp5 själv (som app) ska inte synas i listan */
             if (strcasecmp(ent.d_name, "PSP5") != 0 && (!self_path || strcasecmp(path, self_path) != 0) &&
-                !add_eboot(s, path, ent.d_name) && depth == 0) {
+                !add_eboot(s, path, ent.d_name, pack_time(&ent.d_stat.sce_st_mtime)) && depth == 0) {
                 snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name);
                 scan_game_dir(s, path, self_path, 1);
             }
@@ -307,14 +311,16 @@ void scan_all(EntryList *list, const char *self_path, const char *cache_file, Sc
     if (cache_file)
         load_cache(&s.cached, cache_file);
 
-    /* minneskortet och PSP Go:s internminne, som arkMenu – ef0: finns bara på PSP Go */
-    int ef0 = !sys_ms_is_ef();
-    scan_iso_dir(&s, "ms0:/ISO", 0);
-    if (ef0)
-        scan_iso_dir(&s, "ef0:/ISO", 0);
-    scan_game_dir(&s, "ms0:/PSP/GAME", self_path, 0);
-    if (ef0)
-        scan_game_dir(&s, "ef0:/PSP/GAME", self_path, 0);
+    /* minneskortet och PSP Go:s internminne – ef0: finns bara på PSP Go. Startades psp5 från
+     * internminnet pekar ARK om ms0: dit, men bara under psp5:s session: spelen måste få
+     * sökvägen ef0:, annars startas de som från minneskortet och hittas inte (issue #6). */
+    int ms0 = !sys_ms_is_ef();
+    if (ms0)
+        scan_iso_dir(&s, "ms0:/ISO", 0);
+    scan_iso_dir(&s, "ef0:/ISO", 0);
+    if (ms0)
+        scan_game_dir(&s, "ms0:/PSP/GAME", self_path, 0);
+    scan_game_dir(&s, "ef0:/PSP/GAME", self_path, 0);
     scan_free(&s.cached);
 
     if (list->count > 1)

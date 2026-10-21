@@ -15,6 +15,20 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.5.4
+
+- **PSP Go: spel startar från internminnet** (#6, #8, #11): startades psp5 från internminnet pekar ARK om `ms0:`
+  dit, men bara under psp5:s session. Då skannas `ef0:` direkt, så att spelen startas med Go-lägena. Homebrew på
+  `ef0:` startas med 0x152 som i arkMenu (där `redirect_ms0` är på som standard).
+- **Launcherläget** slås på igen direkt när inställningarna öppnas (#8), inte först efter första spelstarten.
+- **USB-läget** stängs inte direkt längre: knappen som öppnade det ignoreras även när ○ bekräftar, och ett fel
+  från `sceUsbActivate` ignoreras som i arkMenu (#10).
+- **Snabbare bakgrund:** bilder ritas i remsor om 64 texlar i stället för en stor sprite (#9).
+- **Sortering som i XMB** (#7): Inställningar → psp5 → Sortera. Nyaste mappen först, alltså ordningen Homebrew
+  Sorter sätter (`sortxmb=1` i `psp5.cfg`).
+- **Öppningsljudet** spelas efter att inställningarna lästs in, inte under (#2).
+- **Toppraden:** kugghjulet är borta och laddningsblixten är större.
+
 ## Version 1.5.3
 
 - **Kategorimappar:** en mapp i `PSP/GAME` utan `EBOOT.PBP` (t.ex. `GAME/PS1/<spel>` eller
@@ -165,7 +179,8 @@ Av/på under Inställningar → psp5 → Systemljud (sparas i `ms0:/PSP5/psp5.cf
 
 ## Inställningar (△)
 Ser ut som PS5:s inställningar och läser/skriver samma filer som arkMenu:
-- **psp5:** autoboot, systemljud, startanimation, språk, rensa bildcache, version
+- **psp5:** autoboot, systemljud, startanimation, språk, sortering av Spel och Appar (namn / som i XMB –
+  följer t.ex. Homebrew Sorter), rensa bildcache, version
 - **Prestanda:** CPU i spel / XMB, extra minne, minneskortscache, ISO-cache
 - **System:** USB-laddning, WPA2, logotyper, dölj bilder/MAC/DLC, lampor, UMD, analogspak, regioner m.m.
 - **Plugins:** slå av/på rader i `ARK_01234/PLUGINS.TXT` och `SEPLUGINS/PLUGINS.TXT`

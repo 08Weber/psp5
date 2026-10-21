@@ -23,6 +23,9 @@ typedef struct {
     u32 pic_offset, pic_size;
     /* för att känna igen oförändrade filer i listcachen */
     u32 file_size, file_time;
+    /* ändringstiden för spelets mapp (EBOOT) eller fil (ISO): XMB sorterar på den, och
+     * Homebrew Sorter sätter den för att ändra ordningen (nyast först) */
+    u32 sort_time;
 } Entry;
 
 typedef struct {

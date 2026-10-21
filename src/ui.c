@@ -13,6 +13,7 @@
 #include <string.h>
 #include <strings.h>
 #include "ui.h"
+#include "config.h"
 #include "sound.h"
 #include "lang.h"
 #include "music.h"
@@ -170,6 +171,17 @@ static int cmp_recent(const void *a, const void *b)
     return cmp_name(a, b);
 }
 
+/* Spel och Appar "som XMB": nyaste mappen först – ordningen Homebrew Sorter sätter (issue #7) */
+static int cmp_xmb(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
+        return x->type == ENTRY_UMD ? -1 : 1;
+    if (x->sort_time != y->sort_time)
+        return x->sort_time > y->sort_time ? -1 : 1;
+    return *(const int *)a - *(const int *)b; /* listan är redan A–Ö */
+}
+
 static void sort_library(Ui *ui)
 {
     LoaderView *v = &ui->views[TAB_LIBRARY];
@@ -193,6 +205,10 @@ static void build_views(Ui *ui)
         if (lib->idx)
             lib->idx[lib->count++] = i;
     }
+    s_sort_list = ui->list;
+    for (int t = TAB_GAMES; g_sort_xmb && t <= TAB_APPS; t++)
+        if (ui->views[t].idx)
+            qsort(ui->views[t].idx, ui->views[t].count, sizeof(int), cmp_xmb);
     sort_library(ui);
 }
 
@@ -566,10 +582,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         }
         in = &none;
     }
-    if ((in->pressed & PSP_CTRL_TRIANGLE) && ui->intro >= 1) {
-        sound_play(SND_OPEN);
-        return UI_SETTINGS;
-    }
+    if ((in->pressed & PSP_CTRL_TRIANGLE) && ui->intro >= 1)
+        return UI_SETTINGS; /* ljudet spelas när inställningarna har lästs in (main.c) */
     if (in->pressed & PSP_CTRL_LTRIGGER)
         switch_tab(ui, ui->tab - 1);
     if (in->pressed & PSP_CTRL_RTRIGGER)
@@ -702,9 +716,11 @@ static void draw_battery(float x, float y, int percent, int charging, float time
         gfx_round_rect(x + 2.6f, y + 2.6f, w + 0.4f, 4.8f, 1, with_alpha(c, a));
     }
     if (charging) {
-        float cx = x - 6, cy = y + 5;
-        float bolt[12] = { cx + 1.6f, cy - 5.2f, cx - 2.6f, cy + 0.9f, cx - 0.2f, cy + 0.9f,
-                           cx - 1.6f, cy + 5.2f, cx + 2.6f, cy - 0.9f, cx + 0.2f, cy - 0.9f };
+        /* 1,4× större än förut: i den gamla storleken blev blixten bara några taggiga pixlar */
+        const float s = 1.4f;
+        float cx = x - 7, cy = y + 5;
+        float bolt[12] = { cx + 1.6f * s, cy - 5.2f * s, cx - 2.6f * s, cy + 0.9f * s, cx - 0.2f * s, cy + 0.9f * s,
+                           cx - 1.6f * s, cy + 5.2f * s, cx + 2.6f * s, cy - 0.9f * s, cx + 0.2f * s, cy - 0.9f * s };
         gfx_fan(cx, cy, bolt, 6, with_alpha(LIGHT, 0.9f * a));
     }
 }
@@ -747,13 +763,12 @@ static void draw_top_bar(Ui *ui)
     int charging = testrun_charging() >= 0 ? testrun_charging() : battery && scePowerIsBatteryCharging() > 0;
     int level = testrun_battery() >= 0 ? testrun_battery() : battery ? scePowerGetBatteryLifePercent() : -1;
     draw_battery(bx, 15.5f, level, charging, ui->time, a);
-    gfx_gear(bx - 18, 20.5f, 7.5f, with_alpha(LIGHT, 0.9f * a), RGBA(14, 14, 18, (int)(255 * a)));
 
     /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
     static float size = 0.8f, gap = 20, sized_room = -1;
     static int sized_tab = -1;
     static const char *sized_lang;
-    float room = bx - 34 - MARGIN;
+    float room = bx - 18 - MARGIN; /* plats för laddningsblixten till vänster om batteriet */
     if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
         size = 0.8f;
         gap = 20;
@@ -781,7 +796,7 @@ static void draw_top_bar(Ui *ui)
     /* musik som spelas syns som en liten not med titeln i de andra flikarna */
     int cur = music_current();
     if (ui->tab != TAB_MUSIC && cur >= 0 && music_state() != MUSIC_STOPPED) {
-        float right = bx - 30, left = x + 4;
+        float right = bx - 16, left = x + 4;
         if (right - left > 40) {
             static char line[100];
             static int line_for = -2, line_gen = -1;
