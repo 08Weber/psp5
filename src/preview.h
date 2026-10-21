@@ -17,5 +17,8 @@ void preview_pause(int paused);
 Texture *preview_frame(int list_index);
 /* Stoppar allt och frigör moduler och minne – inför spelstart, USB-läge m.m. */
 void preview_stop(void);
+/* Felsökning: en rad till <data>/preview.log (stängs direkt, finns kvar efter en frysning).
+ * shortcut: bara för testbyggen på riktig PSP, tas bort före släpp. */
+void preview_trace(const char *fmt, ...);
 
 #endif
