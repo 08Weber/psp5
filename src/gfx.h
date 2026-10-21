@@ -45,8 +45,6 @@ void gfx_ring(float x, float y, float w, float h, float r, u32 color);
 void gfx_frame(float x, float y, float w, float h, float t, u32 color);
 /* Fylld polygon runt (cx, cy): n punkter i xy[2*n] */
 void gfx_fan(float cx, float cy, const float *xy, int n, u32 color);
-/* Kugghjul med radien r */
-void gfx_gear(float cx, float cy, float r, u32 color, u32 hole);
 
 /* Additiv blandning (ljus som lyser upp det som redan ritats) på/av */
 void gfx_blend_add(int on);

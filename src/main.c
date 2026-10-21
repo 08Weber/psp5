@@ -284,7 +284,7 @@ static void usb_mode(void)
         font_term();
         return;
     }
-    u32 old = PSP_CTRL_CROSS; /* ignorera knappen som startade läget */
+    u32 old = ~0u; /* ignorera knappen som startade läget (✕ eller ○), issue #10 */
     float t = 0;
     while (s_running) {
         UiInput in;
@@ -324,7 +324,7 @@ static void files_mode(void)
     font_init(lang_needs_cjk());
     sound_init();
     files_open();
-    u32 old = PSP_CTRL_CROSS; /* ignorera knappen som öppnade den */
+    u32 old = ~0u; /* ignorera knappen som öppnade den (✕ eller ○) */
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
         UiInput in;
@@ -447,6 +447,7 @@ int main(int argc, char *argv[])
 
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
+    unsigned char sort_xmb = 0; /* sorteringen när inställningarna öppnades */
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
     u64 last = sceKernelGetSystemTimeWide();
@@ -485,6 +486,8 @@ int main(int argc, char *argv[])
                 in_settings = 0;
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
+                if (g_sort_xmb != sort_xmb)
+                    ui_relist(&ui, 0, 0); /* sortera om Spel och Appar */
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
@@ -508,7 +511,14 @@ int main(int argc, char *argv[])
             umd_refresh(&list, &ui);
         int action = ui_update(&ui, &in, dt);
         if (action == UI_SETTINGS) {
+            /* menyn fungerar: slå på ett pausat launcherläge innan inställningarna läser
+             * det, annars visas "Boot psp5" som av tills första spelstarten (issue #8) */
+            start_confirmed();
+            sort_xmb = g_sort_xmb;
             settings_open();
+            /* efter inläsningen (typsnitt från flash0, ARK:s filer): tung läsning medan ljudet
+             * spelade gav ett skrapande ljud i ~0,1 s (issue #2) */
+            sound_play(SND_OPEN);
             in_settings = 1;
             continue;
         }

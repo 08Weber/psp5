@@ -227,14 +227,21 @@ void gfx_line(float x0, float y0, float x1, float y1, u32 color)
 
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
 {
-    if (!t)
+    if (!t || t->w < 2)
         return;
-    TVert *v = sceGuGetMemory(2 * sizeof(TVert));
-    /* en halv texel in så att filtreringen aldrig läser utanför bilden */
-    v[0] = (TVert){ 0.5f, 0.5f, tint, x, y, 0 };
-    v[1] = (TVert){ t->w - 0.5f, t->h - 0.5f, tint, x + w, y + h, 0 };
+    /* Lodräta remsor om 64 texlar: en enda stor sprite (t.ex. bakgrunden över hela skärmen)
+     * räcker inte texturcachen till och sänker bildfrekvensen (issue #9).
+     * En halv texel in så att filtreringen aldrig läser utanför bilden. */
+    int n = (t->w + 63) / 64;
+    float scale = w / (t->w - 1); /* skärmpixlar per texel */
+    TVert *v = sceGuGetMemory(2 * n * sizeof(TVert));
+    for (int k = 0; k < n; k++) {
+        float u0 = k ? k * 64 : 0.5f, u1 = k < n - 1 ? (k + 1) * 64 : t->w - 0.5f;
+        v[k * 2] = (TVert){ u0, 0.5f, tint, x + (u0 - 0.5f) * scale, y, 0 };
+        v[k * 2 + 1] = (TVert){ u1, t->h - 0.5f, tint, x + (u1 - 0.5f) * scale, y + h, 0 };
+    }
     bind(t);
-    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2, 0, v);
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
 }
 
 /* 9-slice av en form-textur: hörnen får radien r, mitten sträcks ut. */
@@ -297,21 +304,6 @@ void gfx_fan(float cx, float cy, const float *xy, int n, u32 color)
         v[i + 1] = (CVert){ color, xy[(i % n) * 2], xy[(i % n) * 2 + 1], 0 };
     sceGuDisable(GU_TEXTURE_2D);
     sceGuDrawArray(GU_TRIANGLE_FAN, CVERT_FMT, n + 2, 0, v);
-}
-
-void gfx_gear(float cx, float cy, float r, u32 color, u32 hole)
-{
-    enum { TEETH = 8, PTS = TEETH * 4 };
-    float xy[PTS * 2];
-    for (int i = 0; i < PTS; i++) {
-        /* varje kugge: två punkter ute, två inne */
-        float a = (i + 0.5f) * 2.0f * 3.14159265f / PTS;
-        float rr = (i % 4 == 1 || i % 4 == 2) ? r : r * 0.74f;
-        xy[i * 2] = cx + cosf(a) * rr;
-        xy[i * 2 + 1] = cy + sinf(a) * rr;
-    }
-    gfx_fan(cx, cy, xy, PTS, color);
-    gfx_circle(cx, cy, r * 0.34f, hole);
 }
 
 void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)

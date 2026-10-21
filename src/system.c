@@ -242,7 +242,9 @@ int sys_usb_start(void)
     sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0);
     sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0);
     sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0);
-    s_usb_on = sceUsbActivate(0x1c8) >= 0;
+    /* som arkMenu: resultatet ignoreras – ett fel här stängde USB-läget direkt (issue #10) */
+    sceUsbActivate(0x1c8);
+    s_usb_on = 1;
     return s_usb_on;
 }
 

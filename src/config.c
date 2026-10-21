@@ -8,6 +8,7 @@
 #include "theme.h"
 
 unsigned char g_boot_anim = 1;
+unsigned char g_sort_xmb;
 
 void config_load(const char *data_dir)
 {
@@ -29,6 +30,8 @@ void config_load(const char *data_dir)
             g_theme = theme_from_code(p + 6);
         if ((p = strstr(buf, "themeart=")))
             g_theme_art = p[9] != '0';
+        if ((p = strstr(buf, "sortxmb=")))
+            g_sort_xmb = p[8] != '0';
     }
     lang_apply();
 }
@@ -37,8 +40,9 @@ void config_save(const char *data_dir)
 {
     char path[200], buf[128];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
-    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\n", g_sound_on ? 1 : 0,
-                     g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code, g_theme_art ? 1 : 0);
+    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nsortxmb=%d\n", g_sound_on ? 1 : 0,
+                     g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code, g_theme_art ? 1 : 0,
+                     g_sort_xmb ? 1 : 0);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {
         sceIoWrite(fd, buf, n);

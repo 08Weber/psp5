@@ -79,7 +79,7 @@ static struct {
 /* valtexter byggs om när språket ändras */
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
-static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT];
+static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_SORT[2];
 
 static void build_options(void)
 {
@@ -102,6 +102,8 @@ static void build_options(void)
     memcpy(OPT_VSHREG, vsh, sizeof(vsh));
     for (int i = 0; i < LANG_COUNT; i++)
         OPT_LANG[i] = lang_name(i);
+    OPT_SORT[0] = L(S_SORT_NAME);
+    OPT_SORT[1] = L(S_SORT_XMB);
 }
 
 /* ARK:s runlevel i PLUGINS.TXT → läsbar text */
@@ -200,12 +202,14 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
     c->items[c->count - 1].own = 1;
+    choice(c, L(S_SORT), &g_sort_xmb, OPT_SORT, 2); /* t.ex. ordningen från Homebrew Sorter (issue #7) */
+    c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.5.3 (ARK-4)");
+    info(c, L(S_VERSION), "1.5.4 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.5.3 (ARK-5)");
+    info(c, L(S_VERSION), "1.5.4 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
