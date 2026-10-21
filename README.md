@@ -69,10 +69,18 @@ A few other things I cared about:
   colours), and – like the PS5's own *Appearance* setting – the look of the PS1, PS2, PS3 and PS4: the grey
   console with its button symbols, the dark towers and glowing orbs, the XMB wave and the blue PS4 waves.
   Highlight a theme to preview it and press ✕ to use it. You can also turn the game art in the background off,
-  so the theme is always visible.
+  so the theme is always visible – or pick a **wallpaper** of your own: any JPEG or PNG in `PICTURE` (the
+  XMB's Photo folder) under *Settings → Theme → Wallpaper*.
+- **It can preview games like the XMB.** Turn on *Settings → psp5 → Game previews*, and when you rest on a
+  game its short video (ICON1.PMF) plays inside the tile and its music (SND0.AT3) plays in the background –
+  for games that have them. It's off by default.
+- **It keeps the list tidy.** The same game twice (same game ID and title, for example as both ISO and CSO)
+  shows up once; turn *Hide duplicates* off in the psp5 settings to see every copy. Square PSP minis icons
+  are centred instead of stretched.
 - **It shows the volume.** Press the volume buttons anywhere in psp5 and a PS5-style bar slides in at the top,
   with the level and a crossed-out speaker when the sound is off. While the PSP charges, the battery icon fills up
-  in a loop next to a little lightning bolt.
+  in a loop next to a little lightning bolt. *Settings → psp5 → Battery* can also show the percentage or the
+  time left next to it.
 - **It has a file manager**, like ARK's own launcher: *Settings → Power and USB → File manager*. Browse the
   Memory Stick (and the internal storage on a PSP Go), mark files with □, and copy, move, rename or delete them
   or make a new folder from the △ menu. Copying shows a progress bar and can be cancelled with ○, and deleting

@@ -15,6 +15,27 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 1.6.0
+
+Önskemål från Reddit. Det som inte alla vill ha är av som standard.
+
+- **Förhandsvisning som i XMB** (`src/preview.c`, Inställningar → psp5 → Spelförhandsvisning, av som standard):
+  står man stilla på ett kort i Spel eller Appar i 0,9 s spelas spelets ICON1.PMF i kortet (`sceMpeg`, 8888,
+  alfa sätts till fullt) och SND0.AT3 (`sceAtrac`, egen ljudkanal). Styrtråd + en tråd för video och en för ljud;
+  musikspelaren går före. Pausas i inställningarna och vid viloläge, stoppas före spelstart. Offset och storlek
+  för ICON1/SND0 sparas i `Entry` vid skanningen (PBP-huvudet, ISO:ns `PSP_GAME/`, UMD-skivan).
+- **Dubbletter döljs** (`is_dupe` i `ui.c`, `hidedupes=1`): samma spel-ID och titel visas en gång. UMD-skivan räknas inte.
+- **DAX** skannas i `ISO/` (libcisoread läser formatet, ARK startar det).
+- **Minis:** ikoner smalare än 1,5:1 sträcks inte – de centreras på en suddig, mörkare kopia (`fit_icon`).
+  Cachade ikoner tas bort en gång (`cache/icons2`).
+- **Batteri:** procent eller tid kvar bredvid batteriet (`battery=1/2`).
+- **Egen bakgrundsbild** (`wallpaper=`): en bild ur `PICTURE` (en nivå undermappar) ersätter temats yta när spelet
+  saknar egen bild. Beskärs till skärmen och sparas i cachen (`.wal`).
+- **Klockan på PSP-1000/ARK-4** efter att batteriet tagits ur: om `sceRtcGetCurrentClockLocalTime` ger fel räknas
+  tiden med systemets tidszon och sommartid, i sista hand den råa klockan (`read_clock`).
+- **Toppraden** dimmas inte längre i Bibliotek och Musik (hinnan ritas före toppraden).
+- `tools/ppsspp-test.ps1` tar `-Exe` och `-Memstick` för en portabel PPSSPP, och CI laddar upp testbygget.
+
 ## Version 1.5.4
 
 - **PSP Go: spel startar från internminnet** (#6, #8, #11): startades psp5 från internminnet pekar ARK om `ms0:`
@@ -180,7 +201,9 @@ Av/på under Inställningar → psp5 → Systemljud (sparas i `ms0:/PSP5/psp5.cf
 ## Inställningar (△)
 Ser ut som PS5:s inställningar och läser/skriver samma filer som arkMenu:
 - **psp5:** autoboot, systemljud, startanimation, språk, sortering av Spel och Appar (namn / som i XMB –
-  följer t.ex. Homebrew Sorter), rensa bildcache, version
+  följer t.ex. Homebrew Sorter), dölj dubbletter, batteri (ikon / procent / tid kvar), spelförhandsvisning,
+  rensa bildcache, version
+- **Tema:** spelens bilder i bakgrunden, egen bakgrundsbild ur `PICTURE`, PS5-färgerna och PS1–PS4
 - **Prestanda:** CPU i spel / XMB, extra minne, minneskortscache, ISO-cache
 - **System:** USB-laddning, WPA2, logotyper, dölj bilder/MAC/DLC, lampor, UMD, analogspak, regioner m.m.
 - **Plugins:** slå av/på rader i `ARK_01234/PLUGINS.TXT` och `SEPLUGINS/PLUGINS.TXT`
