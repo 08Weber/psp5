@@ -282,9 +282,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.6.0 (ARK-4)");
+    info(c, L(S_VERSION), "1.6.0 beta (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.6.0 (ARK-5)");
+    info(c, L(S_VERSION), "1.6.0 beta (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
