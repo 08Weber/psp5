@@ -109,6 +109,7 @@ static SceInt32 ring_cb(ScePVoid data, SceInt32 packets, ScePVoid param)
     if ((u32)packets > left)
         packets = left;
     memcpy(data, s_vid + s_vid_pos, packets * PACKET);
+    sceKernelDcacheWritebackRange(data, packets * PACKET); /* ringbufferten läses förbi cachen */
     s_vid_pos += packets * PACKET;
     return packets;
 }
@@ -166,13 +167,13 @@ static int play_video_once(int w, int h)
                     void *dst = s_tex[next]->data;
                     SceInt32 got = 0;
                     if (sceMpegAvcDecode(&mpeg, &au, BUF_W, &dst, &got) >= 0 && got) {
-                        /* avkodaren lämnar alfa 0 (genomskinligt) – gör bilden ogenomskinlig */
-                        u32 *px = s_tex[next]->data;
-                        sceKernelDcacheInvalidateRange(px, BUF_W * h * 4);
+                        /* Avkodaren kan lämna alfa 0 (genomskinligt) – gör bilden ogenomskinlig.
+                         * Via den ocachade adressen: avkodaren skriver direkt i minnet, och
+                         * cacheoperationer på delar av rader förstörde intilliggande minne. */
+                        volatile u32 *px = (volatile u32 *)((u32)s_tex[next]->data | 0x40000000);
                         for (int y = 0; y < h; y++)
                             for (int x = 0; x < w; x++)
                                 px[y * BUF_W + x] |= 0xFF000000;
-                        sceKernelDcacheWritebackInvalidateRange(px, BUF_W * h * 4);
                         s_shown = next;
                         next = (next + 1) % FRAMES;
                     }
@@ -191,18 +192,38 @@ static int play_video_once(int w, int h)
     return ok;
 }
 
+/* En bild som avkodaren skriver i: 64-byte-justerad och hela cacherader (avkodaren skriver
+ * förbi cachen), tömd ur cachen en gång här – sedan rörs den bara via den ocachade adressen.
+ * Visas som textur med w×h av raderna om BUF_W bildpunkter. Frigörs med tex_free. */
+static Texture *frame_create(int w, int h)
+{
+    Texture *t = calloc(1, sizeof(Texture));
+    u32 size = (BUF_W * (h + 1) * 4 + 63) & ~63; /* en extra rad för bilinjär filtrering */
+    if (!t || !(t->data = memalign(64, size))) {
+        free(t);
+        return NULL;
+    }
+    memset(t->data, 0, size);
+    sceKernelDcacheWritebackInvalidateRange(t->data, size);
+    t->w = w; /* bara den del som videon fyller visas */
+    t->h = h;
+    t->tw = BUF_W;
+    for (t->th = 1; t->th < h; t->th <<= 1)
+        ;
+    t->stride = BUF_W;
+    t->psm = GU_PSM_8888;
+    return t;
+}
+
 static int video_thread(SceSize args, void *argp)
 {
     /* storleken står i PSMF-huvudet (i 16-tal); ICON1.PMF är normalt 144×80 */
     int w = s_vid[142] * 16, h = s_vid[143] * 16;
     if (w <= 0 || w > BUF_W || h <= 0 || h > MAX_VID_H)
         return 0;
-    for (int i = 0; i < FRAMES; i++) {
-        s_tex[i] = tex_create(BUF_W, h, GU_PSM_8888);
-        if (!s_tex[i])
+    for (int i = 0; i < FRAMES; i++)
+        if (!(s_tex[i] = frame_create(w, h)))
             return 0;
-        s_tex[i]->w = w; /* bara den del som videon fyller visas */
-    }
     while (!s_stop && play_video_once(w, h)) /* om och om igen, som i XMB */
         ;
     return 0;
@@ -235,16 +256,30 @@ static void stop_players(void)
     s_stop = 0;
 }
 
+/* Läser en fil ur spelet till 64-byte-justerat minne, utskrivet ur cachen: avkodarna
+ * (mediaprocessorn) läser direkt ur minnet, förbi processorns cache. */
+static u8 *read_media(const Entry *e, u32 offset, u32 size, const char *umd_name)
+{
+    u8 *raw = art_read_part(e, offset, size, umd_name, MAX_MEDIA);
+    u8 *buf = raw ? memalign(64, (size + 63) & ~63) : NULL;
+    if (buf) {
+        memcpy(buf, raw, size);
+        sceKernelDcacheWritebackRange(buf, size);
+    }
+    free(raw);
+    return buf;
+}
+
 static void start_players(const Entry *e, int index)
 {
     if (s_mpeg_ok)
-        s_vid = art_read_part(e, e->vid_offset, e->vid_size, "ICON1.PMF", MAX_MEDIA);
+        s_vid = read_media(e, e->vid_offset, e->vid_size, "ICON1.PMF");
     s_vid_size = s_vid ? e->vid_size : 0;
     if (s_vid && (s_vid_size < PACKET || memcmp(s_vid, "PSMF", 4))) {
         free(s_vid);
         s_vid = NULL;
     }
-    s_snd = art_read_part(e, e->snd_offset, e->snd_size, "SND0.AT3", MAX_MEDIA);
+    s_snd = read_media(e, e->snd_offset, e->snd_size, "SND0.AT3");
     s_snd_size = s_snd ? e->snd_size : 0;
     s_frame_for = index;
     if (s_vid) {
