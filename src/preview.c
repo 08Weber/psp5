@@ -166,7 +166,13 @@ static int play_video_once(int w, int h)
                     void *dst = s_tex[next]->data;
                     SceInt32 got = 0;
                     if (sceMpegAvcDecode(&mpeg, &au, BUF_W, &dst, &got) >= 0 && got) {
-                        sceKernelDcacheWritebackInvalidateRange(s_tex[next]->data, BUF_W * h * 4);
+                        /* avkodaren lämnar alfa 0 (genomskinligt) – gör bilden ogenomskinlig */
+                        u32 *px = s_tex[next]->data;
+                        sceKernelDcacheInvalidateRange(px, BUF_W * h * 4);
+                        for (int y = 0; y < h; y++)
+                            for (int x = 0; x < w; x++)
+                                px[y * BUF_W + x] |= 0xFF000000;
+                        sceKernelDcacheWritebackInvalidateRange(px, BUF_W * h * 4);
                         s_shown = next;
                         next = (next + 1) % FRAMES;
                     }

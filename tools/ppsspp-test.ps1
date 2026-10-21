@@ -2,15 +2,18 @@
 # Kör testbygget (dist-test) i PPSSPP med ett testskript – utan att skicka tangenter till skrivbordet.
 #   powershell -ExecutionPolicy Bypass -File tools\ppsspp-test.ps1 -Script tools\tests\settings.txt -Out <mapp>
 # -StartMark N låtsas att N starter i rad inte blev klara (startskyddet, tools\tests\safe.txt använder 1).
+# -Exe och -Memstick: en portabel PPSSPP (minneskortet ligger då i dess mapp memstick).
 # psp5 skriver ms0:/PSP5/shots/NAMN.req när en skärmdump ska tas; vi fotograferar då
 # PPSSPP-fönstret med PrintWindow (fungerar även när det ligger bakom andra fönster)
 # och tar bort filen, så fortsätter skriptet.
-param([Parameter(Mandatory)][string]$Script, [Parameter(Mandatory)][string]$Out, [int]$Timeout = 120, [int]$StartMark = 0)
+param([Parameter(Mandatory)][string]$Script, [Parameter(Mandatory)][string]$Out, [int]$Timeout = 120, [int]$StartMark = 0,
+      [string]$Exe = (Join-Path $env:ProgramFiles 'PPSSPP\PPSSPPWindows64.exe'),
+      [string]$Memstick = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PPSSPP'))
 
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
-$memstick = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PPSSPP'
-$ppsspp = Join-Path $env:ProgramFiles 'PPSSPP\PPSSPPWindows64.exe'
+$memstick = $Memstick
+$ppsspp = $Exe
 $shots = Join-Path $memstick 'PSP5\shots'
 
 Add-Type -AssemblyName System.Drawing
