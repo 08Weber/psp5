@@ -831,6 +831,16 @@ static void draw_top_bar(Ui *ui)
     char info[12] = "";
     if (g_battery && level >= 0) {
         int mins = g_battery == 2 && !charging ? scePowerGetBatteryLifeTime() : -1;
+        if (g_battery == 2) { /* felsökning: vad PSP:n faktiskt rapporterar (bara när något ändras) */
+            static int last = -12345, last_chg = -1, last_online = -1;
+            int raw = scePowerGetBatteryLifeTime(), online = scePowerIsPowerOnline();
+            if (raw != last || charging != last_chg || online != last_online)
+                preview_trace("batteri: tid kvar %d min (%08X), laddar %d, nätström %d, %d%%", raw, raw, charging,
+                              online, level);
+            last = raw;
+            last_chg = charging;
+            last_online = online;
+        }
         if (mins > 0)
             snprintf(info, sizeof(info), "%d:%02d", mins / 60, mins % 60);
         else
