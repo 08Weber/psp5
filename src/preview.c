@@ -237,8 +237,11 @@ static int play_video_once(int w, int h)
             trace("video: avslutar");
             if (es)
                 sceMpegFreeAvcEsBuf(&mpeg, es);
+            /* Firmware tar en pekare till handtaget som alla andra sceMpeg-anrop – PSPSDK:s
+             * header säger handtaget självt, och det fick en riktig PSP att frysa (pspautotests
+             * gör så här). */
             if (vs)
-                sceMpegUnRegistStream(mpeg, vs);
+                sceMpegUnRegistStream(&mpeg, vs);
         }
         sceMpegDelete(&mpeg);
     }
