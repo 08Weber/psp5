@@ -7,13 +7,16 @@
 #include <pspctrl.h>
 #include <psppower.h>
 #include <psprtc.h>
+#include <psputility.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include "ui.h"
+#include "art.h"
 #include "config.h"
+#include "preview.h"
 #include "sound.h"
 #include "lang.h"
 #include "music.h"
@@ -54,6 +57,7 @@
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
 #define LAUNCH_LEN 0.45f
+#define PREVIEW_DELAY 0.9f /* stå still så här länge innan spelets video och musik startar */
 #define SEEK_HOLD  0.35f /* så länge ← / → hålls innan musiken spolar */
 
 #define CLEAR_COLOR RGBA(10, 10, 14, 255)
@@ -151,6 +155,9 @@ int ui_selected(const Ui *ui)
     return v->count ? v->idx[ui->sel[ui->tab]] : -1;
 }
 
+static Texture *s_wall;   /* egen bakgrundsbild (Inställningar → Tema), NULL = temats */
+static char s_wall_for[sizeof(g_wallpaper)] = "\1"; /* filen s_wall laddades från, "\1" = ingen */
+
 /* biblioteket sorteras efter namn eller efter när filen lades till – UMD-skivan alltid först */
 static const EntryList *s_sort_list;
 static int cmp_name(const void *a, const void *b)
@@ -191,6 +198,21 @@ static void sort_library(Ui *ui)
     qsort(v->idx, v->count, sizeof(int), ui->lib_sort ? cmp_recent : cmp_name);
 }
 
+/* Samma spel en gång till (samma spel-ID och titel, t.ex. både ISO och CSO, eller i två
+ * mappar)? Listan är sorterad på titel, så kopiorna ligger intill varandra. UMD-skivan
+ * räknas inte – den ska synas även om spelet också finns som ISO. */
+static int is_dupe(const EntryList *l, int i)
+{
+    const Entry *e = &l->items[i];
+    if (!g_hide_dupes || e->type == ENTRY_UMD || !e->game_id[0])
+        return 0;
+    for (int j = i - 1; j >= 0 && !strcasecmp(l->items[j].title, e->title); j--)
+        if (l->items[j].type != ENTRY_UMD && !strcmp(l->items[j].title, e->title) &&
+            !strcmp(l->items[j].game_id, e->game_id))
+            return 1;
+    return 0;
+}
+
 static void build_views(Ui *ui)
 {
     for (int t = 0; t < TAB_COUNT; t++) {
@@ -198,6 +220,8 @@ static void build_views(Ui *ui)
         ui->views[t].count = 0;
     }
     for (int i = 0; i < ui->list->count; i++) {
+        if (is_dupe(ui->list, i))
+            continue;
         LoaderView *v = &ui->views[is_app(&ui->list->items[i]) ? TAB_APPS : TAB_GAMES];
         if (v->idx)
             v->idx[v->count++] = i;
@@ -382,6 +406,9 @@ void ui_free(Ui *ui)
     ui->bg_old = ui->bg_cur = NULL;
     tex_free(ui->cover);
     ui->cover = NULL;
+    tex_free(s_wall);
+    s_wall = NULL;
+    strcpy(s_wall_for, "\1");
     for (int t = 0; t < TAB_COUNT; t++) {
         free(ui->views[t].idx);
         ui->views[t].idx = NULL;
@@ -564,6 +591,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->toast_time -= dt;
 
     if (ui->launch >= 0) {
+        preview_want(NULL, -1); /* spelets musik ska inte spela över startljudet */
         ui->launch += dt / LAUNCH_LEN;
         return ui->launch >= 1 ? UI_LAUNCH : UI_NONE;
     }
@@ -654,6 +682,17 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     update_background(ui, dt);
     update_cover(ui, dt);
 
+    /* spelets video och musik, som i XMB: efter en stund på samma kort i Spel eller Appar */
+    int pv = -1;
+    if (g_previews && (ui->tab == TAB_GAMES || ui->tab == TAB_APPS) && !ui->menu_open && ui->intro >= 1 &&
+        ui->still >= PREVIEW_DELAY)
+        pv = ui_selected(ui);
+    preview_want(pv >= 0 ? &ui->list->items[pv] : NULL, pv);
+    if (pv >= 0 && preview_frame(pv))
+        ui->preview_anim = clampf(ui->preview_anim + dt * 4, 0, 1);
+    else
+        ui->preview_anim = 0;
+
     IconSlot *slot = loader_icon(ui_selected(ui));
     float target[3] = { 120, 120, 120 };
     if (slot && slot->state == SLOT_READY)
@@ -674,7 +713,15 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 /* Temats yta med ett mjukt ljus uppifrån – syns när spelet saknar bild (eller bilderna är avstängda). */
 static void draw_spotlight(const float tone[3], float time)
 {
-    theme_backdrop(theme_cur(), time, tone, 0, 1);
+    if (strcmp(s_wall_for, g_wallpaper)) { /* bytt i inställningarna – laddas sällan, från cachen */
+        tex_free(s_wall);
+        s_wall = art_load_wallpaper(g_wallpaper);
+        snprintf(s_wall_for, sizeof(s_wall_for), "%s", g_wallpaper);
+    }
+    if (s_wall)
+        gfx_tex(s_wall, 0, 0, SCREEN_W, SCREEN_H, RGBA(190, 190, 195, 255)); /* lite mörkare för texten */
+    else
+        theme_backdrop(theme_cur(), time, tone, 0, 1);
 }
 
 static void draw_background(Ui *ui)
@@ -698,7 +745,8 @@ static void draw_background(Ui *ui)
 
 /* Laddas batteriet sveper fyllningen från nivån upp till fullt om och om igen,
  * och en liten blixt syns till vänster om batteriet. */
-static void draw_battery(float x, float y, int percent, int charging, float time, float a)
+/* bolt_gap: extra plats mellan blixten och batteriet (för procent/tid kvar) */
+static void draw_battery(float x, float y, int percent, int charging, float time, float a, float bolt_gap)
 {
     gfx_round_rect(x, y, 20, 10, 2.5f, with_alpha(LIGHT, 0.85f * a));
     gfx_round_rect(x + 1.3f, y + 1.3f, 17.4f, 7.4f, 1.8f, with_alpha(DARK, a));
@@ -718,7 +766,7 @@ static void draw_battery(float x, float y, int percent, int charging, float time
     if (charging) {
         /* 1,4× större än förut: i den gamla storleken blev blixten bara några taggiga pixlar */
         const float s = 1.4f;
-        float cx = x - 7, cy = y + 5;
+        float cx = x - 7 - bolt_gap, cy = y + 5;
         float bolt[12] = { cx + 1.6f * s, cy - 5.2f * s, cx - 2.6f * s, cy + 0.9f * s, cx - 0.2f * s, cy + 0.9f * s,
                            cx - 1.6f * s, cy + 5.2f * s, cx + 2.6f * s, cy - 0.9f * s, cx + 0.2f * s, cy - 0.9f * s };
         gfx_fan(cx, cy, bolt, 6, with_alpha(LIGHT, 0.9f * a));
@@ -748,13 +796,29 @@ static void format_time(char *out, int size, float sec)
     snprintf(out, size, "%d:%02d", t / 60, t % 60);
 }
 
+/* Lokal tid. På en PSP-1000 med ARK-4 kan sceRtcGetCurrentClockLocalTime ge fel efter att
+ * batteriet tagits ur, fast XMB visar rätt tid – räkna då själv med systemets tidszon
+ * och sommartid, och i sista hand den råa klockan. */
+static int read_clock(ScePspDateTime *now)
+{
+    if (sceRtcGetCurrentClockLocalTime(now) >= 0)
+        return 1;
+    int tz = 0, dst = 0;
+    sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_TIMEZONE, &tz); /* minuter från UTC */
+    sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_DAYLIGHTSAVINGS, &dst);
+    if (sceRtcGetCurrentClock(now, tz + (dst ? 60 : 0)) >= 0)
+        return 1;
+    u64 tick;
+    return sceRtcGetCurrentTick(&tick) >= 0 && sceRtcSetTick(now, &tick) >= 0;
+}
+
 static void draw_top_bar(Ui *ui)
 {
     float a = ui->intro;
 
     ScePspDateTime now;
     char clock[8] = "";
-    if (sceRtcGetCurrentClockLocalTime(&now) >= 0)
+    if (read_clock(&now))
         snprintf(clock, sizeof(clock), "%02d:%02d", now.hour, now.minute);
     text_draw(SCREEN_W - MARGIN, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock);
     float cw = text_width(0.8f, 0, clock);
@@ -762,13 +826,26 @@ static void draw_top_bar(Ui *ui)
     int battery = scePowerIsBatteryExist();
     int charging = testrun_charging() >= 0 ? testrun_charging() : battery && scePowerIsBatteryCharging() > 0;
     int level = testrun_battery() >= 0 ? testrun_battery() : battery ? scePowerGetBatteryLifePercent() : -1;
-    draw_battery(bx, 15.5f, level, charging, ui->time, a);
+    /* procent eller tid kvar till vänster om batteriet (Inställningar → psp5 → Batteri).
+     * Tid kvar finns bara när batteriet laddas ur – annars visas procent. */
+    char info[12] = "";
+    if (g_battery && level >= 0) {
+        int mins = g_battery == 2 && !charging ? scePowerGetBatteryLifeTime() : -1;
+        if (mins > 0)
+            snprintf(info, sizeof(info), "%d:%02d", mins / 60, mins % 60);
+        else
+            snprintf(info, sizeof(info), "%d%%", level);
+    }
+    float iw = info[0] ? text_width(0.6f, 0, info) + 5 : 0;
+    if (info[0])
+        text_draw(bx - 5, 24.5f, 0.6f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, info);
+    draw_battery(bx, 15.5f, level, charging, ui->time, a, iw);
 
     /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
     static float size = 0.8f, gap = 20, sized_room = -1;
     static int sized_tab = -1;
     static const char *sized_lang;
-    float room = bx - 18 - MARGIN; /* plats för laddningsblixten till vänster om batteriet */
+    float room = bx - 18 - iw - MARGIN; /* plats för laddningsblixten och procenten till vänster om batteriet */
     if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
         size = 0.8f;
         gap = 20;
@@ -796,7 +873,7 @@ static void draw_top_bar(Ui *ui)
     /* musik som spelas syns som en liten not med titeln i de andra flikarna */
     int cur = music_current();
     if (ui->tab != TAB_MUSIC && cur >= 0 && music_state() != MUSIC_STOPPED) {
-        float right = bx - 16, left = x + 4;
+        float right = bx - 16 - iw, left = x + 4;
         if (right - left > 40) {
             static char line[100];
             static int line_for = -2, line_gen = -1;
@@ -863,6 +940,10 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
         int tint = (int)lerpf(200, 255, focus);
         gfx_tex(slot->tex, x, y, w, h, RGBA(tint, tint, tint, (int)(255 * alpha * shown)));
     }
+    /* spelets video (ICON1.PMF) över ikonen på valt kort */
+    Texture *video = focus > 0.5f && ui->preview_anim > 0 ? preview_frame(list_index) : NULL;
+    if (video)
+        gfx_tex(video, x, y, w, h, RGBA(255, 255, 255, (int)(255 * alpha * smooth(ui->preview_anim))));
 
     /* valt kort: tunn ljus ram med ett litet glapp */
     if (focus > 0.01f)
@@ -1040,9 +1121,6 @@ static void draw_library(Ui *ui)
     float ui_a = a * (1 - smooth(launch * 2));
     float slide = (1 - smooth(ui->tab_anim)) * 10;
 
-    /* mörkare yta än i raden – valt spels bild skymtar bara svagt */
-    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 165));
-
     /* rubrik: antal till vänster, sortering till höger */
     char head[96];
     snprintf(head, sizeof(head), "%s", L(S_LIB_ALL));
@@ -1154,7 +1232,6 @@ static void draw_music(Ui *ui)
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
     int n = music_count(), cur = music_current(), state = music_state();
-    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 150));
 
     /* --- spelas nu --- */
     float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
@@ -1309,6 +1386,12 @@ void ui_draw(Ui *ui)
 {
     gfx_begin(CLEAR_COLOR);
     draw_background(ui);
+    /* Bibliotek och Musik: mörkare yta än i raden – valt spels bild skymtar bara svagt.
+     * Före toppraden, så att den är lika ljus i alla flikar. */
+    if (ui->tab == TAB_LIBRARY && view(ui)->count)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 165));
+    else if (ui->tab == TAB_MUSIC)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 150));
     draw_top_bar(ui);
     if (ui->tab == TAB_MUSIC) {
         draw_music(ui);

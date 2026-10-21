@@ -152,6 +152,14 @@ static void add_iso(ScanState *s, const char *path, const char *name, u32 size, 
         e->pic_offset = f.offset;
         e->pic_size = f.size;
     }
+    if (iso_find(&r, "PSP_GAME/ICON1.PMF", &f)) {
+        e->vid_offset = f.offset;
+        e->vid_size = f.size;
+    }
+    if (iso_find(&r, "PSP_GAME/SND0.AT3", &f)) {
+        e->snd_offset = f.offset;
+        e->snd_size = f.size;
+    }
     iso_close(&r);
 }
 
@@ -171,7 +179,7 @@ static void scan_iso_dir(ScanState *s, const char *dir, int depth)
                 if (depth < MAX_ISO_DEPTH)
                     scan_iso_dir(s, path, depth + 1);
             } else if (has_ext(ent.d_name, "iso") || has_ext(ent.d_name, "cso") ||
-                       has_ext(ent.d_name, "zso")) {
+                       has_ext(ent.d_name, "zso") || has_ext(ent.d_name, "dax")) { /* libcisoread och ARK läser DAX */
                 add_iso(s, path, ent.d_name, (u32)ent.d_stat.st_size, pack_time(&ent.d_stat.sce_st_mtime));
             }
         }
@@ -235,6 +243,10 @@ static int add_eboot(ScanState *s, const char *path, const char *folder, u32 fol
     e->icon_offset = e->icon_size ? h.icon0_offset : 0;
     e->pic_size = h.snd0_offset - h.pic1_offset;
     e->pic_offset = e->pic_size ? h.pic1_offset : 0;
+    e->vid_size = h.pic0_offset - h.icon1_offset;
+    e->vid_offset = e->vid_size ? h.icon1_offset : 0;
+    e->snd_size = h.psp_offset - h.snd0_offset;
+    e->snd_offset = e->snd_size ? h.snd0_offset : 0;
     sceIoClose(fd);
     return 1;
 }

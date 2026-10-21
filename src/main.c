@@ -26,6 +26,7 @@
 #include "theme.h"
 #include "osd.h"
 #include "files.h"
+#include "preview.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -192,12 +193,13 @@ static void app_start(EntryList *list, Ui *ui, int boot)
  * sedan startskärmen. Musiken pausas under tiden. */
 #define WAKE_TIMEOUT 4.0f /* sekunder vaken utan "vaknat klart" – visa startskärmen ändå */
 
-static void sleep_and_wake(Ui *ui)
+static void sleep_and_wake(Ui *ui, int in_settings)
 {
     int music = music_state() == MUSIC_PLAYING;
     if (music)
         music_toggle_pause();
     sound_prepare_boot(); /* startljudet frigjordes efter förra startskärmen */
+    preview_pause(1);
 
     /* Svart i båda bildbuffertarna, sedan vilar psp5 utan att rita: grafikkretsen ska
      * inte arbeta medan PSP:n somnar och vaknar. Har vi inte sett PSP:n somna (t.ex.
@@ -226,6 +228,7 @@ static void sleep_and_wake(Ui *ui)
     if (music)
         music_toggle_pause();
     ui_replay_intro(ui);
+    preview_pause(in_settings); /* i inställningarna förblir den pausad */
 }
 
 /* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
@@ -233,6 +236,7 @@ static void app_stop(EntryList *list, Ui *ui)
 {
     umd_stop();
     loader_stop(); /* före music_term: laddaren läser musiklistan (omslagen) */
+    preview_stop(); /* före music_term: förhandsvisningen använder samma ljudmoduler */
     music_term();
     sound_term();
     ui_free(ui);
@@ -447,7 +451,7 @@ int main(int argc, char *argv[])
 
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
-    unsigned char sort_xmb = 0; /* sorteringen när inställningarna öppnades */
+    unsigned char sort_xmb = 0, hide_dupes = 0; /* hur flikarna byggdes när inställningarna öppnades */
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
     u64 last = sceKernelGetSystemTimeWide();
@@ -458,7 +462,7 @@ int main(int argc, char *argv[])
             s_resumed = 1;
         if (s_sleeping || s_resumed) {
             if (g_boot_anim && ui.launch < 0 && !s_safe) {
-                sleep_and_wake(&ui);
+                sleep_and_wake(&ui, in_settings);
                 old = ~0u; /* knappen som hoppade över startskärmen räknas inte */
                 last = sceKernelGetSystemTimeWide();
             } else {
@@ -484,15 +488,17 @@ int main(int argc, char *argv[])
             int action = settings_update(&in, dt);
             if (action == SA_CLOSE) {
                 in_settings = 0;
+                preview_pause(0);
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
-                if (g_sort_xmb != sort_xmb)
+                if (g_sort_xmb != sort_xmb || g_hide_dupes != hide_dupes)
                     ui_relist(&ui, 0, 0); /* sortera om Spel och Appar */
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
                     in_settings = 0;
+                    preview_pause(0);
                 }
                 old = in.held;
                 continue;
@@ -515,6 +521,8 @@ int main(int argc, char *argv[])
              * det, annars visas "Boot psp5" som av tills första spelstarten (issue #8) */
             start_confirmed();
             sort_xmb = g_sort_xmb;
+            hide_dupes = g_hide_dupes;
+            preview_pause(1); /* spelets musik ska inte spela bakom inställningarna */
             settings_open();
             /* efter inläsningen (typsnitt från flash0, ARK:s filer): tung läsning medan ljudet
              * spelade gav ett skrapande ljud i ~0,1 s (issue #2) */

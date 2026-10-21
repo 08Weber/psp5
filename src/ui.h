@@ -67,6 +67,9 @@ typedef struct {
     int cover_for;       /* låtens index, -1 = inget */
     float cover_fade;
 
+    /* spelets video i valt kort (preview.c): tonas in när första bilden finns */
+    float preview_anim;
+
     /* □ i Spel/Appar: en liten alternativmeny för valt kort */
     int menu_open;
     float menu_anim;     /* 0→1 in-/uttoning */

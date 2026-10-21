@@ -31,7 +31,7 @@ when you come back from a game. Any button skips it, and you can turn it off in 
 logo is psp5's own and everything is drawn and synthesized in code – no borrowed logos or sounds.
 
 Then you get your games in a row along the top. The selected one is large with a thin light
-frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO and ZSO) live under
+frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO, ZSO and DAX) live under
 **Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
 Is a homebrew game sitting under Apps? Press □ on it for its options and choose *Move to Games* (and back again), and psp5 remembers it.
 A UMD in the drive shows up first under Games, and it appears or disappears as soon as you put a disc in or take it out.
