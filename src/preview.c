@@ -9,11 +9,14 @@
 #include <pspmpeg.h>
 #include <pspatrac3.h>
 #include <malloc.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "preview.h"
 #include "art.h"
 #include "music.h"
+#include "system.h"
 
 #define ALREADY_LOADED  0x80020139
 #define ALREADY_LOADED2 0x80111102 /* samma sak, från sceUtilityLoadModule */
@@ -25,6 +28,32 @@
 #define FRAMES     3      /* bilder i rotation: en visas, en kan läsas av GE, en avkodas */
 #define VOLUME     0x5800 /* lite lägre än full volym */
 #define MAX_SAMPLES 2048  /* ATRAC3plus ger 2048 per block, ATRAC3 1024 */
+/* Avkodarna (sceMpegAvcDecode, sceAtracDecodeData) körs i trådens egen stack på en riktig
+ * PSP (i PPSSPP gör de inte det) – ge dem gott om plats. */
+#define STACK      0x10000
+
+/* Felsökning på riktig PSP: varje steg skrivs till <data>/preview.log och filen stängs direkt,
+ * så att raden finns kvar även om PSP:n fryser. shortcut: tas bort när förhandsvisningen
+ * fungerar på hårdvaran. */
+static void trace(const char *fmt, ...)
+{
+    char path[48], line[160];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(line, sizeof(line) - 1, fmt, ap);
+    va_end(ap);
+    if (n < 0)
+        return;
+    if (n > (int)sizeof(line) - 2)
+        n = sizeof(line) - 2;
+    line[n++] = '\n';
+    snprintf(path, sizeof(path), "%s/preview.log", g_data_dir);
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
+    if (fd >= 0) {
+        sceIoWrite(fd, line, n);
+        sceIoClose(fd);
+    }
+}
 
 static SceUID s_thread = -1, s_lock = -1;
 static volatile int s_quit, s_paused;
@@ -70,21 +99,29 @@ static void unload_modules(void)
 static int audio_thread(SceSize args, void *argp)
 {
     static short __attribute__((aligned(64))) out[2][MAX_SAMPLES * 2];
+    trace("audio: start %u byte", s_snd_size);
     int id = sceAtracSetDataAndGetID(s_snd, s_snd_size);
+    trace("audio: SetDataAndGetID = %08X", id);
     if (id < 0)
         return 0;
     sceAtracSetLoopNum(id, -1); /* filer med loop-punkt spelas om och om igen, som i XMB */
     int max = 0;
     int ch = sceAtracGetMaxSample(id, &max) >= 0 && max > 0 && max <= MAX_SAMPLES
              ? sceAudioChReserve(PSP_AUDIO_NEXT_CHANNEL, max, PSP_AUDIO_FORMAT_STEREO) : -1;
+    trace("audio: max %d, kanal %d", max, ch);
     int b = 0, vol = 0;
+    int blocks = 0;
     while (ch >= 0 && !s_stop) {
         if (music_state() == MUSIC_PLAYING) { /* musikspelaren går före */
             sceKernelDelayThread(50 * 1000);
             continue;
         }
         int n = 0, end = 0, remain = 0;
-        if (sceAtracDecodeData(id, (u16 *)out[b], &n, &end, &remain) < 0)
+        int r = sceAtracDecodeData(id, (u16 *)out[b], &n, &end, &remain);
+        if (blocks < 3 || r < 0)
+            trace("audio: block %d: Decode = %08X, %d samples, slut %d", blocks, r, n, end);
+        blocks++;
+        if (r < 0)
             break;
         if (n < max)
             memset(out[b] + n * 2, 0, (max - n) * 4);
@@ -97,7 +134,9 @@ static int audio_thread(SceSize args, void *argp)
     if (ch >= 0) /* kanalen går inte att släppa medan sista bufferten spelas */
         for (int i = 0; i < 100 && sceAudioChRelease(ch) < 0; i++)
             sceKernelDelayThread(2000);
+    trace("audio: slutar efter %d block", blocks);
     sceAtracReleaseAtracID(id);
+    trace("audio: klar");
     return 0;
 }
 
@@ -121,32 +160,42 @@ static int play_video_once(int w, int h)
     SceMpeg mpeg;
     int ok = 0, rb_size = sceMpegRingbufferQueryMemSize(RB_PACKETS), m_size = sceMpegQueryMemSize(0);
     void *rb_data = rb_size > 0 ? memalign(64, rb_size) : NULL, *m_data = m_size > 0 ? memalign(64, m_size) : NULL;
+    trace("video: ringbuffer %d byte, mpeg %d byte", rb_size, m_size);
     if (!rb_data || !m_data || sceMpegRingbufferConstruct(&rb, RB_PACKETS, rb_data, rb_size, ring_cb, NULL) < 0) {
+        trace("video: ringbuffer gick inte");
         free(rb_data);
         free(m_data);
         return 0;
     }
-    if (sceMpegCreate(&mpeg, m_data, m_size, &rb, BUF_W, 0, 0) >= 0) {
+    int cr = sceMpegCreate(&mpeg, m_data, m_size, &rb, BUF_W, 0, 0);
+    trace("video: Create = %08X", cr);
+    if (cr >= 0) {
         SceMpegAvcMode mode = { -1, SCE_MPEG_AVC_FORMAT_8888 };
         SceInt32 offset = 0, size = 0;
-        sceMpegAvcDecodeMode(&mpeg, &mode);
-        if (sceMpegQueryStreamOffset(&mpeg, s_vid, &offset) >= 0 && sceMpegQueryStreamSize(s_vid, &size) >= 0 &&
-            offset > 0 && (u32)offset < s_vid_size) {
+        trace("video: DecodeMode = %08X", sceMpegAvcDecodeMode(&mpeg, &mode));
+        int qo = sceMpegQueryStreamOffset(&mpeg, s_vid, &offset), qs = sceMpegQueryStreamSize(s_vid, &size);
+        trace("video: Offset = %08X (%d), Size = %08X (%d)", qo, offset, qs, size);
+        if (qo >= 0 && qs >= 0 && offset > 0 && (u32)offset < s_vid_size) {
             s_vid_pos = offset;
             s_vid_end = (u32)(offset + size) <= s_vid_size ? (u32)(offset + size) : s_vid_size;
             SceMpegStream *vs = sceMpegRegistStream(&mpeg, 0, 0);
             void *es = vs ? sceMpegMallocAvcEsBuf(&mpeg) : NULL;
             SceMpegAu au;
-            if (es && sceMpegInitAu(&mpeg, es, &au) >= 0) {
+            int ia = es ? sceMpegInitAu(&mpeg, es, &au) : -1;
+            trace("video: stream %p, es %p, InitAu = %08X", vs, es, ia);
+            if (es && ia >= 0) {
                 ok = 1;
-                int next = 0, fails = 0, first = 1;
+                int next = 0, fails = 0, first = 1, frames = 0;
                 u32 last_pts = 0;
                 u64 due = sceKernelGetSystemTimeWide();
                 while (!s_stop) {
                     int avail = sceMpegRingbufferAvailableSize(&rb);
                     if (avail > 0)
                         sceMpegRingbufferPut(&rb, avail, avail);
-                    if (sceMpegGetAvcAu(&mpeg, vs, &au, NULL) < 0) {
+                    int ga = sceMpegGetAvcAu(&mpeg, vs, &au, NULL);
+                    if (frames < 3)
+                        trace("video: GetAvcAu = %08X (fyllt %d)", ga, avail);
+                    if (ga < 0) {
                         if (s_vid_pos >= s_vid_end && ++fails > 2)
                             break; /* slut */
                         sceKernelDelayThread(5000);
@@ -166,7 +215,13 @@ static int play_video_once(int w, int h)
                         sceKernelDelayThread(due - now);
                     void *dst = s_tex[next]->data;
                     SceInt32 got = 0;
-                    if (sceMpegAvcDecode(&mpeg, &au, BUF_W, &dst, &got) >= 0 && got) {
+                    if (frames < 3)
+                        trace("video: Decode till %p ...", dst);
+                    int dr = sceMpegAvcDecode(&mpeg, &au, BUF_W, &dst, &got);
+                    if (frames < 3)
+                        trace("video: ... Decode = %08X, bild %d", dr, got);
+                    frames++;
+                    if (dr >= 0 && got) {
                         /* Avkodaren kan lämna alfa 0 (genomskinligt) – gör bilden ogenomskinlig.
                          * Via den ocachade adressen: avkodaren skriver direkt i minnet, och
                          * cacheoperationer på delar av rader förstörde intilliggande minne. */
@@ -179,6 +234,7 @@ static int play_video_once(int w, int h)
                     }
                 }
             }
+            trace("video: avslutar");
             if (es)
                 sceMpegFreeAvcEsBuf(&mpeg, es);
             if (vs)
@@ -189,6 +245,7 @@ static int play_video_once(int w, int h)
     sceMpegRingbufferDestruct(&rb);
     free(rb_data);
     free(m_data);
+    trace("video: varv klart, ok %d", ok);
     return ok;
 }
 
@@ -219,11 +276,13 @@ static int video_thread(SceSize args, void *argp)
 {
     /* storleken står i PSMF-huvudet (i 16-tal); ICON1.PMF är normalt 144×80 */
     int w = s_vid[142] * 16, h = s_vid[143] * 16;
+    trace("video: start %u byte, %dx%d", s_vid_size, w, h);
     if (w <= 0 || w > BUF_W || h <= 0 || h > MAX_VID_H)
         return 0;
     for (int i = 0; i < FRAMES; i++)
         if (!(s_tex[i] = frame_create(w, h)))
             return 0;
+    trace("video: bildbuffertar %p %p %p", s_tex[0]->data, s_tex[1]->data, s_tex[2]->data);
     while (!s_stop && play_video_once(w, h)) /* om och om igen, som i XMB */
         ;
     return 0;
@@ -283,14 +342,14 @@ static void start_players(const Entry *e, int index)
     s_snd_size = s_snd ? e->snd_size : 0;
     s_frame_for = index;
     if (s_vid) {
-        s_video = sceKernelCreateThread("psp5_pvideo", video_thread, 0x28, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+        s_video = sceKernelCreateThread("psp5_pvideo", video_thread, 0x28, STACK, PSP_THREAD_ATTR_USER, NULL);
         if (s_video >= 0 && sceKernelStartThread(s_video, 0, NULL) < 0) {
             sceKernelDeleteThread(s_video);
             s_video = -1;
         }
     }
     if (s_snd) { /* över bildladdaren, under gränssnittsljuden */
-        s_audio = sceKernelCreateThread("psp5_paudio", audio_thread, 0x16, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+        s_audio = sceKernelCreateThread("psp5_paudio", audio_thread, 0x16, STACK, PSP_THREAD_ATTR_USER, NULL);
         if (s_audio >= 0 && sceKernelStartThread(s_audio, 0, NULL) < 0) {
             sceKernelDeleteThread(s_audio);
             s_audio = -1;
@@ -301,10 +360,21 @@ static void start_players(const Entry *e, int index)
 static int control_thread(SceSize args, void *argp)
 {
     /* AVCODEC först; MPEGBASE behövs bara för videon */
-    if (!load_module(PSP_MODULE_AV_AVCODEC, 0) || !load_module(PSP_MODULE_AV_ATRAC3PLUS, 1))
+    char path[48];
+    snprintf(path, sizeof(path), "%s/preview.log", g_data_dir);
+    sceIoRemove(path);
+    trace("förhandsvisning startar (bygge " __DATE__ " " __TIME__ ")");
+    int ok_av = load_module(PSP_MODULE_AV_AVCODEC, 0), ok_at = ok_av && load_module(PSP_MODULE_AV_ATRAC3PLUS, 1);
+    trace("moduler: AVCODEC %d, ATRAC3PLUS %d", ok_av, ok_at);
+    if (!ok_at)
         return 0;
-    if (load_module(PSP_MODULE_AV_MPEGBASE, 2))
-        s_mpeg_ok = sceMpegInit() >= 0;
+    if (load_module(PSP_MODULE_AV_MPEGBASE, 2)) {
+        int r = sceMpegInit();
+        trace("moduler: MPEGBASE ok, sceMpegInit = %08X", r);
+        s_mpeg_ok = r >= 0;
+    } else {
+        trace("moduler: MPEGBASE gick inte");
+    }
     int gen = -1;
     while (!s_quit) {
         if (gen != s_gen) {
@@ -315,9 +385,14 @@ static int control_thread(SceSize args, void *argp)
             if (index >= 0)
                 e = s_req;
             sceKernelSignalSema(s_lock, 1);
+            trace("byte till %d: stoppar", index);
             stop_players();
-            if (index >= 0)
+            trace("stoppat");
+            if (index >= 0) {
+                trace("startar \"%s\" (video %u, ljud %u byte)", e.title, e.vid_size, e.snd_size);
                 start_players(&e, index);
+                trace("startat: video %d, ljud %d", s_video >= 0, s_audio >= 0);
+            }
         }
         sceKernelDelayThread(20 * 1000);
     }
@@ -340,7 +415,7 @@ void preview_want(const Entry *e, int list_index)
             return;
         s_quit = 0;
         s_lock = sceKernelCreateSema("psp5_preview", 0, 1, 1, NULL);
-        s_thread = s_lock >= 0 ? sceKernelCreateThread("psp5_preview", control_thread, 0x30, 0x4000,
+        s_thread = s_lock >= 0 ? sceKernelCreateThread("psp5_preview", control_thread, 0x30, STACK,
                                                         PSP_THREAD_ATTR_USER, NULL) : -1;
         if (s_thread >= 0 && sceKernelStartThread(s_thread, 0, NULL) < 0) {
             sceKernelDeleteThread(s_thread);
