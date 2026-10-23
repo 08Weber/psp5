@@ -1910,10 +1910,16 @@ static void cc_colors(u32 *top, u32 *bottom)
 /* "Spelas nu" ovanför panelen, som musikkortet i PS5:s Control Center */
 static void draw_cc_music(Ui *ui, float x, float y, float a, u32 bg)
 {
+    /* bara medan musik spelar – pausas den tonas kortet ut */
+    static float shown, last;
+    float dt = clampf(ui->time - last, 0, 0.05f);
+    last = ui->time;
+    shown = clampf(shown + (music_state() == MUSIC_PLAYING ? 6 : -6) * dt, 0, 1);
     int cur = music_current();
-    const Track *t = cur >= 0 && music_state() != MUSIC_STOPPED ? music_track(cur) : NULL;
-    if (!t)
+    const Track *t = cur >= 0 ? music_track(cur) : NULL;
+    if (!t || shown <= 0)
         return;
+    a *= smooth(shown);
     const float w = 206, h = 46, as = 34;
     static char title[80], artist[64];
     static int text_for = -2, text_gen = -1;
