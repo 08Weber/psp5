@@ -404,6 +404,8 @@ static const char *const T[S_COUNT][NL] = {
     [S_SHUFFLE_OFF] = { "Shuffle off", "Blanda av", "Zufallswiedergabe aus", "Lecture aléatoire désactivée",
                         "Aleatorio desactivado", "Riproduzione casuale disattivata", "Shuffle uit",
                         "Aleatório desligado", "Перемешивание выключено", "シャッフル オフ" },
+    [S_SHUFFLE] = { "Shuffle", "Blanda", "Zufall", "Aléatoire", "Aleatorio", "Casuale", "Shuffle", "Aleatório",
+                    "Перемешать", "シャッフル" },
     [S_SCREEN_OFF] = { "Turn off screen", "Släck skärmen", "Bildschirm ausschalten", "Éteindre l'écran",
                        "Apagar la pantalla", "Spegni lo schermo", "Scherm uitzetten", "Desligar o ecrã",
                        "Выключать экран", "画面をオフ" },
