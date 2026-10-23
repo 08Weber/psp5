@@ -34,9 +34,9 @@ IconSlot *loader_icon(int list_index);
 
 /* Be om bakgrund för posten (index i spellistan, -1 = ingen). */
 void loader_request_bg(int list_index);
-/* Hämtar en färdigladdad bakgrund. Returnerar 1 och tar över ägarskapet av *tex
+/* Hämtar en färdigladdad bakgrund och logga (PIC0). Returnerar 1 och tar över ägarskapet av *tex och *logo
  * (kan vara NULL om posten saknar bild). */
-int loader_take_bg(int *list_index, Texture **tex);
+int loader_take_bg(int *list_index, Texture **tex, Texture **logo);
 
 /* Be om omslaget till låt nummer `track` i musiklistan, och hämta det när det är klart
  * (tar över ägarskapet, *tex kan vara NULL om låten saknar omslag). */

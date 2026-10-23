@@ -15,6 +15,7 @@
 #include <strings.h>
 #include "music.h"
 #include "system.h"
+#include "config.h"
 
 #define MAX_TRACKS   1000
 #define MAX_DEPTH    3
@@ -815,6 +816,25 @@ static void stop_playback(void)
     s_elapsed = s_duration = 0;
 }
 
+/* shortcut: blandat minns bara en låt bakåt – räcker för ◀ direkt efter ett byte */
+static int s_prev_played = -1;
+
+/* Nästa låt: i ordning (efter sista: stopp) eller, blandat, en slumpad annan låt. */
+static void advance(void)
+{
+    int next = s_current + 1 < s_count ? s_current + 1 : -1;
+    if (g_shuffle && s_count > 1)
+        do
+            next = rand() % s_count;
+        while (next == s_current);
+    if (next < 0) {
+        stop_playback();
+        return;
+    }
+    s_prev_played = s_current;
+    start_at(next);
+}
+
 static void handle_command(int cmd, int arg)
 {
     switch (cmd) {
@@ -831,23 +851,23 @@ static void handle_command(int cmd, int arg)
         stop_playback();
         break;
     case CMD_NEXT:
-        if (s_current >= 0 && s_current + 1 < s_count)
-            start_at(s_current + 1);
-        else if (s_current >= 0)
-            stop_playback();
+        if (s_current >= 0)
+            advance();
         break;
     case CMD_PREV:
         if (s_current < 0)
             break;
+        if (g_shuffle && s_elapsed <= 3.0f && s_prev_played >= 0 && s_prev_played < s_count) {
+            int prev = s_prev_played;
+            s_prev_played = -1;
+            start_at(prev);
+            break;
+        }
         start_at(s_elapsed > 3.0f || s_current == 0 ? s_current : s_current - 1);
         break;
     case CMD_SEEK: /* arg = millisekunder; förbi slutet = nästa låt */
-        if (s_current >= 0 && seek_to(arg / 1000.0f) < 0) {
-            if (s_current + 1 < s_count)
-                start_at(s_current + 1);
-            else
-                stop_playback();
-        }
+        if (s_current >= 0 && seek_to(arg / 1000.0f) < 0)
+            advance();
         break;
     }
 }
@@ -882,10 +902,7 @@ static int player_thread(SceSize args, void *argp)
             stop_playback();
             continue;
         }
-        if (s_current + 1 < s_count)
-            start_at(s_current + 1);
-        else
-            stop_playback();
+        advance();
     }
     close_track();
     src_release();
@@ -911,6 +928,8 @@ void music_init(void)
 {
     if (s_thread >= 0)
         return;
+    srand(sceKernelGetSystemTimeLow()); /* blandad uppspelning */
+    s_prev_played = -1;
     /* utan angiven SDK-version godtar sceMp3 bara 44,1 kHz (48 kHz m.fl. avvisas) */
     if (sceKernelGetCompiledSdkVersion() == 0)
         sceKernelSetCompiledSdkVersion(0x06060010);

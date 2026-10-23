@@ -24,6 +24,7 @@ static const LoaderView *volatile s_view;
 static volatile int s_bg_want = -1;
 static volatile int s_bg_done; /* 1 = s_bg_tex/s_bg_index väntar på att hämtas */
 static Texture *volatile s_bg_tex;
+static Texture *volatile s_bg_logo; /* PIC0, laddas tillsammans med bakgrunden */
 static volatile int s_bg_index = -1;
 
 /* omslaget till låten som spelas (index i musiklistan) – samma mönster som bakgrunden */
@@ -67,6 +68,7 @@ static int load_bg(void)
     if (want < 0 || want >= s_list->count)
         return 0;
     s_bg_tex = art_load_bg(&s_list->items[want]);
+    s_bg_logo = art_load_logo(&s_list->items[want]);
     s_bg_index = want;
     s_bg_done = 1;
     return 1;
@@ -110,7 +112,7 @@ void loader_start(const EntryList *list)
     s_cov_done = 0;
     s_cov_tex = NULL;
     s_bg_done = 0;
-    s_bg_tex = NULL;
+    s_bg_tex = s_bg_logo = NULL;
     /* lägre prioritet (högre siffra) än huvudtråden så att animationerna går först */
     s_thread = sceKernelCreateThread("psp5_loader", loader_thread, 0x30, 0x10000, PSP_THREAD_ATTR_USER, NULL);
     if (s_thread >= 0)
@@ -134,9 +136,11 @@ void loader_stop(void)
     free(s_keep);
     s_keep = NULL;
     s_view = NULL;
-    if (s_bg_done)
+    if (s_bg_done) {
         tex_free(s_bg_tex);
-    s_bg_tex = NULL;
+        tex_free(s_bg_logo);
+    }
+    s_bg_tex = s_bg_logo = NULL;
     s_bg_done = 0;
     if (s_cov_done)
         tex_free(s_cov_tex);
@@ -183,13 +187,14 @@ void loader_request_bg(int list_index)
     s_bg_want = list_index;
 }
 
-int loader_take_bg(int *list_index, Texture **tex)
+int loader_take_bg(int *list_index, Texture **tex, Texture **logo)
 {
     if (!s_bg_done)
         return 0;
     *list_index = s_bg_index;
     *tex = s_bg_tex;
-    s_bg_tex = NULL;
+    *logo = s_bg_logo;
+    s_bg_tex = s_bg_logo = NULL;
     /* önskemålet är uppfyllt. Kastar UI:t bilden (markeringen hann flytta) frågar det igen
      * när det vill ha den – tidigare blev en sådan bild aldrig laddad igen. Nollas före
      * s_bg_done, så att tråden inte hinner läsa det gamla önskemålet en gång till. */

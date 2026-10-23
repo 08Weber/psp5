@@ -80,6 +80,7 @@ static struct {
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
 static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_SORT[2], *OPT_BATTERY[3];
+static const char *OPT_SCREEN_OFF[5], *OPT_AUTO_SLEEP[5]; /* minuter: se config.h */
 
 /* Bakgrundsbilder att välja bland: bilderna i PICTURE (som XMB:s Foto), en nivå undermappar.
  * Val 0 = ingen (temats bakgrund). Läses när inställningarna öppnas. */
@@ -116,6 +117,12 @@ static void build_options(void)
     OPT_BATTERY[0] = L(S_BAT_ICON);
     OPT_BATTERY[1] = L(S_BAT_PERCENT);
     OPT_BATTERY[2] = L(S_BAT_TIME);
+    static const char *const screen_off[] = { "", "1 min", "3 min", "5 min", "10 min" };
+    static const char *const auto_sleep[] = { "", "5 min", "10 min", "15 min", "30 min" };
+    for (int i = 0; i < 5; i++) {
+        OPT_SCREEN_OFF[i] = i ? screen_off[i] : off;
+        OPT_AUTO_SLEEP[i] = i ? auto_sleep[i] : off;
+    }
     OPT_WALL[0] = off;
     for (int i = 0; i < s_nwall; i++)
         OPT_WALL[i + 1] = s_wall_name[i];
@@ -282,9 +289,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.6.0 beta (ARK-4)");
+    info(c, L(S_VERSION), "1.6.1 beta (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.6.0 beta (ARK-5)");
+    info(c, L(S_VERSION), "1.6.1 beta (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
@@ -371,6 +378,10 @@ static void build(int rebuild)
     c->name = L(S_CAT_POWER);
     action(c, L(S_USB_MODE), SA_USB, 0);
     action(c, L(S_FILES), SA_FILES, 0);
+    choice(c, L(S_SCREEN_OFF), &g_screen_off, OPT_SCREEN_OFF, 5);
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_AUTO_SLEEP), &g_auto_sleep, OPT_AUTO_SLEEP, 5); /* inte medan musik spelar */
+    c->items[c->count - 1].own = 1;
     action(c, L(S_TO_XMB), SA_XMB, 0);
     action(c, L(S_SLEEP), SA_SUSPEND, 1);
     action(c, L(S_RESTART), SA_RESTART, 1);

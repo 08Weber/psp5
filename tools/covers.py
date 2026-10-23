@@ -38,7 +38,7 @@ except ImportError:
 
 # måste stämma med src/art.h och src/image.c
 ICON_W, ICON_H = 144, 80
-BG_W, BG_H = 320, 182
+BG_W, BG_H = 480, 272  # skarp bakgrund i skärmens storlek (suddiga ICON0 blir också det – ingen skillnad i utseende)
 ICON_RADIUS = 7.0
 NTX_MAGIC = 0x3158544E  # "NTX1"
 PSM_5650, PSM_8888 = 0, 3

@@ -66,8 +66,10 @@ static int power_callback(int unknown, int flags, void *common)
 {
     if (flags & PSP_POWER_CB_RESUME_COMPLETE)
         s_resumed = 1;
-    else if (flags & PSP_POWER_CB_SUSPENDING)
+    else if (flags & PSP_POWER_CB_SUSPENDING) {
+        sys_home_release(); /* som gpSP: HOME-dialogen på under viloläget, menyn stänger av den igen */
         s_sleeping = 1;
+    }
     return 0;
 }
 
@@ -234,6 +236,7 @@ static void sleep_and_wake(Ui *ui, int in_settings)
 /* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
 static void app_stop(EntryList *list, Ui *ui)
 {
+    sys_home_release(); /* spelet, XMB och USB-läget ska ha systemets HOME-dialog */
     umd_stop();
     loader_stop(); /* före music_term: laddaren läser musiklistan (omslagen) */
     preview_stop(); /* före music_term: förhandsvisningen använder samma ljudmoduler */
@@ -266,10 +269,13 @@ static void umd_refresh(EntryList *list, Ui *ui)
         font_ensure_cjk();
 }
 
-static void read_pad(UiInput *in, u32 *old)
+/* home = 1: HOME läses i kärnläge och går till psp5 (Control Center) i stället för systemet */
+static void read_pad(UiInput *in, u32 *old, int home)
 {
     SceCtrlData pad;
     sceCtrlPeekBufferPositive(&pad, 1);
+    /* i användarläge betyder HOME-biten bara att systemets dialog syns */
+    pad.Buttons = (pad.Buttons & ~PSP_CTRL_HOME) | (home ? sys_home_buttons() : 0);
     pad.Buttons = testrun_buttons(pad.Buttons); /* bara i testbyggen */
     in->pressed = pad.Buttons & ~*old;
     in->held = pad.Buttons;
@@ -292,7 +298,7 @@ static void usb_mode(void)
     float t = 0;
     while (s_running) {
         UiInput in;
-        read_pad(&in, &old);
+        read_pad(&in, &old, 0);
         if (in.pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_CROSS))
             break;
         t += 1 / 60.0f;
@@ -332,7 +338,7 @@ static void files_mode(void)
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
         UiInput in;
-        read_pad(&in, &old);
+        read_pad(&in, &old, 0);
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
         last = now;
@@ -421,6 +427,7 @@ int main(int argc, char *argv[])
     config_load(DATA_DIR); /* ljud och språk */
     sys_init(s_self);
     osd_init(); /* volymindikatorn behöver ARK */
+    sys_home_init(); /* HOME öppnar Control Center (behöver ARK) */
     testrun_init();
 
     if (failed >= 2 && sys_is_launcher() && sys_has_ark()) {
@@ -454,6 +461,8 @@ int main(int argc, char *argv[])
     unsigned char sort_xmb = 0, hide_dupes = 0; /* hur flikarna byggdes när inställningarna öppnades */
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
+    float idle = 0; /* sekunder utan knapptryck – för skärm av och viloläge */
+    int dark = 0;   /* skärmen är släckt: 1 = av (ARK), 2 = bara svart bild */
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
         if (testrun_take_sleep())
@@ -470,7 +479,7 @@ int main(int argc, char *argv[])
             }
         }
         UiInput in;
-        read_pad(&in, &old);
+        read_pad(&in, &old, !in_settings);
 
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
@@ -482,6 +491,37 @@ int main(int argc, char *argv[])
             up += dt;
             if (up >= START_OK_AFTER && !music_scanning())
                 start_confirmed(); /* menyn och musiklistan fungerar */
+        }
+
+        /* skärm av och viloläge efter en stund utan knapptryck (Inställningar → Ström och USB).
+         * Musiken spelar vidare med släckt skärm, och medan den spelar somnar PSP:n inte. */
+        static const short SCREEN_OFF_S[] = { 0, 60, 180, 300, 600 }, SLEEP_S[] = { 0, 300, 600, 900, 1800 };
+        int active = in.held || in.lx < 60 || in.lx > 196 || in.ly < 60 || in.ly > 196;
+        idle = active ? 0 : idle + dt;
+        if (dark && active) { /* knappen som tände skärmen gör inget annat */
+            if (dark == 1)
+                sys_display(1);
+            dark = 0;
+            continue;
+        }
+        if (!dark && g_screen_off && idle >= SCREEN_OFF_S[g_screen_off])
+            dark = sys_display(0) ? 1 : 2;
+        if (g_auto_sleep && idle >= SLEEP_S[g_auto_sleep] && music_state() != MUSIC_PLAYING) {
+            if (dark == 1)
+                sys_display(1);
+            dark = 0;
+            idle = 0;
+            sys_suspend(); /* när PSP:n vaknar visas startskärmen som vanligt */
+            continue;
+        }
+        if (dark) {
+            if (dark == 2) { /* utan ARK: en svart bild i stället */
+                gfx_begin(RGBA(0, 0, 0, 255));
+                gfx_end();
+            } else {
+                sceKernelDelayThread(16000);
+            }
+            continue;
         }
 
         if (in_settings) {
@@ -504,7 +544,7 @@ int main(int argc, char *argv[])
                 continue;
             }
             /* bilder och bakgrund fortsätter laddas i bakgrunden */
-            UiInput none = { 0 };
+            UiInput none = { 0, 0, 128, 128 }; /* spaken i mitten – lx = 0 rullade raden åt vänster */
             ui_update(&ui, &none, dt);
             if (in_settings)
                 settings_draw();
@@ -528,6 +568,12 @@ int main(int argc, char *argv[])
              * spelade gav ett skrapande ljud i ~0,1 s (issue #2) */
             sound_play(SND_OPEN);
             in_settings = 1;
+            continue;
+        }
+        if (action == UI_ACTION) { /* Control Center: viloläge, USB, filer, XMB, omstart, stäng av */
+            if (run_action(ui.cc_action, &list, &ui))
+                app_start(&list, &ui, 0);
+            old = in.held;
             continue;
         }
         if (action == UI_LAUNCH && ui_selected(&ui) >= 0) {

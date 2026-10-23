@@ -29,6 +29,11 @@ typedef struct {
     /* ändringstiden för spelets mapp (EBOOT) eller fil (ISO): XMB sorterar på den, och
      * Homebrew Sorter sätter den för att ändra ordningen (nyast först) */
     u32 sort_time;
+    /* PIC0.PNG (spelets logga/titelbild ovanpå PIC1), på samma sätt som ICON0 */
+    u32 pic0_offset, pic0_size;
+    /* kategorimappen spelet ligger i (ISO/<kategori>/, PSP/GAME/<kategori>/), "" = ingen.
+     * Prefixet g_ eller s_ lägger kategorin under Spel respektive Appar. */
+    char category[40];
 } Entry;
 
 typedef struct {

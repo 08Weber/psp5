@@ -6,7 +6,7 @@
 #include "scan.h"
 #include "loader.h"
 
-enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS };
+enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */ };
 enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_COUNT };
 
 typedef struct {
@@ -74,11 +74,32 @@ typedef struct {
     int menu_open;
     float menu_anim;     /* 0→1 in-/uttoning */
 
+    /* spelets logga (PIC0) – laddas och tonas in med bakgrunden */
+    Texture *logo_cur;
+
+    /* kategorier (mappar i ISO/ och PSP/GAME/): filter per flik, 0 = alla */
+    int cat[TAB_COUNT];
+    int cat_open;        /* SELECT: kategoriväljaren */
+    float cat_anim;
+    int cat_sel;         /* rad i väljaren */
+    float cat_scroll, cat_still;
+    Texture *cat_bg;     /* kategorimappens bg.png */
+    int cat_bg_for;      /* raden bilden gäller, -1 = ingen */
+    float cat_bg_fade;
+
+    /* Control Center (HOME, som PS-knappen på PS5) */
+    int cc_open;
+    float cc_anim;
+    int cc_sel;
+    int cc_confirm;      /* valt alternativ väntar på ett andra tryck */
+    int cc_action;       /* SA_* som main.c ska utföra efter UI_ACTION */
+
     char toast[96];
     float toast_time;
 } Ui;
 
 void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch);
+/* Sparar flik, kategori och markering (<data>/last.txt), så att psp5 öppnar där man var. */
 void ui_free(Ui *ui);
 /* Spellistan har ändrats först (UMD-skivan togs ut och/eller sattes i).
  * Bygger om flikarna och behåller markeringen. Laddaren ska redan vara omstartad. */

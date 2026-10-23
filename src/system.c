@@ -2,6 +2,7 @@
 /* Systemfunktioner som arkMenu har: USB, ström, XMB och återställningsmeny.
  * Fungerar på både ARK-4 och ARK-5 – versionen känns av vid start. */
 #include <pspkernel.h>
+#include <pspctrl.h>
 #include <pspusb.h>
 #include <pspusbstor.h>
 #include <psploadexec_kernel.h>
@@ -264,4 +265,113 @@ int sys_usb_state(void)
     if (!s_usb_on)
         return 0;
     return (sceUsbGetState() & PSP_USB_CONNECTION_ESTABLISHED) ? 2 : 1;
+}
+
+/* --- HOME som Control Center, och skärmen av/på ---
+ * Som ARK:s egen meny (arkMenu): kärnfunktionerna hittas med sctrlHENFindFunction (ARK
+ * översätter de gamla NID:erna till 6.60/6.61) och anropas i kärnläge med kuKernelCall.
+ * I användarläge döljer systemet HOME-knappen. */
+#define NID_CTRL_PEEK      0x3A622550 /* sceCtrlPeekBufferPositive */
+#define NID_HOME_POPUP     0x5595A71A /* sceImposeSetHomePopup */
+#define NID_DISP_ENABLE    0x432D133F /* sceDisplayEnable */
+#define NID_DISP_DISABLE   0x681EE6A7 /* sceDisplayDisable */
+#define NID_DISP_SET_LIGHT 0x9E3C6DC6 /* sceDisplaySetBrightness(nivå, 0) */
+#define NID_DISP_GET_LIGHT 0x31C4BAA8 /* sceDisplayGetBrightness(&nivå, &okänt) */
+#define HOME_BIT           0x10000    /* PSP_CTRL_HOME */
+#define WATCHDOG_US        3000000    /* menyn har stått still så länge: släpp HOME till systemet */
+
+static void *s_peek, *s_popup, *s_disp_on, *s_disp_off, *s_light_set, *s_light_get;
+static volatile int s_popup_off;  /* 1 = systemets HOME-dialog är avstängd */
+static volatile u32 s_heartbeat;  /* sceKernelGetSystemTimeLow() när menyn senast läste knapparna */
+static int s_light = -1;          /* ljusstyrkan innan skärmen släcktes */
+
+static int kcall(void *f, u32 a1, u32 a2)
+{
+    KernelCallArg a;
+    memset(&a, 0, sizeof(a));
+    a.arg1 = a1;
+    a.arg2 = a2;
+    return kuKernelCall(f, &a) < 0 ? -1 : (int)a.ret1;
+}
+
+static void set_popup(int on)
+{
+    if (s_popup && kcall(s_popup, on, 0) >= 0)
+        s_popup_off = !on;
+}
+
+/* Hänger sig psp5 med dialogen avstängd skulle HOME inte gå att använda – vakthunden slår på
+ * den igen när menyn inte har läst knapparna på en stund (även under långa inläsningar). */
+static int home_watchdog(SceSize args, void *argp)
+{
+    for (;;) {
+        sceKernelDelayThread(500000);
+        if (s_popup_off && sceKernelGetSystemTimeLow() - s_heartbeat > WATCHDOG_US)
+            set_popup(1);
+    }
+    return 0;
+}
+
+int sys_home_init(void)
+{
+    if (!s_has_ark || s_peek)
+        return s_peek != NULL;
+    s_peek = (void *)sctrlHENFindFunction("sceController_Service", "sceCtrl_driver", NID_CTRL_PEEK);
+    s_popup = (void *)sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_HOME_POPUP);
+    s_disp_on = (void *)sctrlHENFindFunction("sceDisplay_Service", "sceDisplay_driver", NID_DISP_ENABLE);
+    s_disp_off = (void *)sctrlHENFindFunction("sceDisplay_Service", "sceDisplay_driver", NID_DISP_DISABLE);
+    s_light_set = (void *)sctrlHENFindFunction("sceDisplay_Service", "sceDisplay_driver", NID_DISP_SET_LIGHT);
+    s_light_get = (void *)sctrlHENFindFunction("sceDisplay_Service", "sceDisplay_driver", NID_DISP_GET_LIGHT);
+    if (!s_peek || !s_popup) {
+        s_peek = s_popup = NULL;
+        return 0;
+    }
+    s_heartbeat = sceKernelGetSystemTimeLow();
+    int th = sceKernelCreateThread("psp5_home", home_watchdog, 0x10, 0x1000, PSP_THREAD_ATTR_USER, NULL);
+    if (th >= 0)
+        sceKernelStartThread(th, 0, NULL);
+    return 1;
+}
+
+u32 sys_home_buttons(void)
+{
+    if (!s_peek)
+        return 0;
+    s_heartbeat = sceKernelGetSystemTimeLow();
+    SceCtrlData pad;
+    memset(&pad, 0, sizeof(pad));
+    if (kcall(s_peek, (u32)&pad, 1) < 0)
+        return 0;
+    if (!s_popup_off) {
+        /* ta inte över mitt i ett tryck – då skulle både systemets dialog och vår meny öppnas */
+        if (!(pad.Buttons & HOME_BIT))
+            set_popup(0);
+        return 0;
+    }
+    return pad.Buttons & HOME_BIT;
+}
+
+void sys_home_release(void)
+{
+    if (s_popup_off)
+        set_popup(1);
+}
+
+int sys_display(int on)
+{
+    if (!s_disp_on || !s_disp_off)
+        return 0;
+    if (on) {
+        if (s_light_set && s_light >= 0)
+            kcall(s_light_set, s_light, 0);
+        kcall(s_disp_on, 0, 0);
+    } else {
+        int level = -1, unk = 0;
+        if (s_light_get && kcall(s_light_get, (u32)&level, (u32)&unk) >= 0 && level >= 0)
+            s_light = level;
+        if (s_light_set)
+            kcall(s_light_set, 0, 0);
+        kcall(s_disp_off, 0, 0);
+    }
+    return 1;
 }

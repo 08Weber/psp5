@@ -12,11 +12,14 @@ unsigned char g_sort_xmb;
 unsigned char g_hide_dupes = 1;
 unsigned char g_battery;
 unsigned char g_previews;
+unsigned char g_shuffle;
+unsigned char g_screen_off;
+unsigned char g_auto_sleep;
 char g_wallpaper[192];
 
 void config_load(const char *data_dir)
 {
-    char path[200], buf[512] = "";
+    char path[200], buf[640] = "";
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     if (fd >= 0) {
@@ -42,6 +45,12 @@ void config_load(const char *data_dir)
             g_battery = p[8] - '0';
         if ((p = strstr(buf, "previews=")))
             g_previews = p[9] != '0';
+        if ((p = strstr(buf, "shuffle=")))
+            g_shuffle = p[8] != '0';
+        if ((p = strstr(buf, "screenoff=")) && p[10] >= '0' && p[10] <= '4')
+            g_screen_off = p[10] - '0';
+        if ((p = strstr(buf, "autosleep=")) && p[10] >= '0' && p[10] <= '4')
+            g_auto_sleep = p[10] - '0';
         if ((p = strstr(buf, "wallpaper="))) {
             p += 10;
             int len = strcspn(p, "\r\n");
@@ -53,13 +62,14 @@ void config_load(const char *data_dir)
 
 void config_save(const char *data_dir)
 {
-    char path[200], buf[512];
+    char path[200], buf[640];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
     int n = snprintf(buf, sizeof(buf),
                      "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nsortxmb=%d\nhidedupes=%d\nbattery=%d\n"
-                     "previews=%d\nwallpaper=%s\n",
+                     "previews=%d\nshuffle=%d\nscreenoff=%d\nautosleep=%d\nwallpaper=%s\n",
                      g_sound_on ? 1 : 0, g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code,
                      g_theme_art ? 1 : 0, g_sort_xmb ? 1 : 0, g_hide_dupes ? 1 : 0, g_battery, g_previews ? 1 : 0,
+                     g_shuffle ? 1 : 0, g_screen_off, g_auto_sleep,
                      g_wallpaper);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {

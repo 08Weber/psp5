@@ -12,7 +12,13 @@
  *   hidedupes=1      (samma spel-ID och titel två gånger: visa bara det första)
  *   battery=0        (bredvid batteriet: 0 = inget, 1 = procent, 2 = tid kvar)
  *   previews=0       (spelets video ICON1.PMF och musik SND0.AT3 på valt kort, som i XMB)
+ *   shuffle=0        (musiken spelar låtarna i slumpad ordning)
+ *   screenoff=0      (skärmen släcks efter 0 = aldrig, 1/2/3/4 = 1/3/5/10 min utan knapptryck)
+ *   autosleep=0      (viloläge efter 0 = aldrig, 1/2/3/4 = 5/10/15/30 min – inte medan musik spelar)
  *   wallpaper=       (egen bakgrundsbild, t.ex. ms0:/PICTURE/bild.jpg – tom = temats) */
+extern unsigned char g_shuffle;
+extern unsigned char g_screen_off;
+extern unsigned char g_auto_sleep;
 extern unsigned char g_boot_anim;
 extern unsigned char g_sort_xmb;
 extern unsigned char g_hide_dupes;
