@@ -111,14 +111,14 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | ← → or the analog stick | move between games (hold to go faster) |
 | ↑ ↓ | move between rows in the Library |
 | L / R | switch between Games, Apps, Library and Music |
-| □ | options (move to Games / Apps) · sort the Library (name / recently added) · pause/resume in Music |
+| □ | options (move to Games / Apps) · sort the Library (name / recently added) · shuffle in Music |
 | ✕ in Music | play the selected track (or pause it) |
 | ← → in Music | previous / next track · hold to seek |
 | ✕ or START | start the selected game |
 | △ | settings |
 | any button | skip the startup screen |
 | ○ | back |
-| SELECT | categories (folders in ISO and PSP/GAME) · shuffle in Music |
+| SELECT | categories (folders in ISO and PSP/GAME) |
 | HOME | Control Center: sleep, USB, files, settings, XMB, restart, power off |
 
 If something ever goes wrong, hold **SELECT** while the PSP boots – ARK then skips its settings and you land

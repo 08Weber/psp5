@@ -680,7 +680,7 @@ static void update_cover(Ui *ui, float dt)
         ui->cover_fade = clampf(ui->cover_fade + dt * 4, 0, 1);
 }
 
-/* Musikfliken: ↑↓ väljer, ✕ spelar (eller pausar vald låt), □ paus, ← → föregående/nästa låt */
+/* Musikfliken: ↑↓ väljer, ✕ spelar eller pausar, □ blanda, ← → föregående/nästa låt */
 static void update_music(Ui *ui, const UiInput *in, float dt)
 {
     int n = music_count();
@@ -732,9 +732,7 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
         ui->seek_dir = 0;
         ui->seeking = 0;
     }
-    if ((in->pressed & PSP_CTRL_SQUARE) && playing)
-        music_toggle_pause();
-    if (in->pressed & PSP_CTRL_SELECT) { /* blanda – gäller från nästa låt */
+    if (in->pressed & PSP_CTRL_SQUARE) { /* blanda – gäller från nästa låt */
         g_shuffle ^= 1;
         config_save(g_data_dir);
         ui_toast(ui, L(g_shuffle ? S_SHUFFLE_ON : S_SHUFFLE_OFF));
@@ -1634,6 +1632,19 @@ static const char *on_root(const char *s)
     return buf;
 }
 
+/* Blanda-symbolen: två korsade pilar, ca 18×12 px runt (cx, cy) */
+static void draw_shuffle(float cx, float cy, u32 c)
+{
+    u32 cc[2] = { c, c };
+    float l1[4] = { cx - 9, cy + 5, cx + 5, cy - 5 }, l2[4] = { cx - 9, cy - 5, cx + 5, cy + 5 };
+    gfx_stroke(l1, cc, 2, 2);
+    gfx_stroke(l2, cc, 2, 2);
+    float up[6] = { cx + 9, cy - 5, cx + 4, cy - 8.5f, cx + 4, cy - 1.5f };
+    float dn[6] = { cx + 9, cy + 5, cx + 4, cy + 1.5f, cx + 4, cy + 8.5f };
+    gfx_fan(cx + 5.7f, cy - 5, up, 3, c);
+    gfx_fan(cx + 5.7f, cy + 5, dn, 3, c);
+}
+
 static void draw_music(Ui *ui)
 {
     float a = ui->intro * smooth(ui->tab_anim);
@@ -1644,17 +1655,8 @@ static void draw_music(Ui *ui)
     float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
     gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
     text_draw(px + 12, py + 17, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_NOW_PLAYING));
-    /* blanda (SELECT): två korsade pilar uppe till höger, ljusa när det är på */
-    {
-        float sx = px + pw - 22, sy = py + 13;
-        u32 sc = with_alpha(LIGHT, (g_shuffle ? 0.95f : 0.3f) * a);
-        gfx_line(sx - 6, sy + 4, sx + 5, sy - 4, sc);
-        gfx_line(sx - 6, sy - 4, sx + 5, sy + 4, sc);
-        float up[6] = { sx + 7, sy - 4, sx + 3, sy - 6.5f, sx + 3, sy - 1.5f };
-        float dn[6] = { sx + 7, sy + 4, sx + 3, sy + 1.5f, sx + 3, sy + 6.5f };
-        gfx_fan(sx + 4.3f, sy - 4, up, 3, sc);
-        gfx_fan(sx + 4.3f, sy + 4, dn, 3, sc);
-    }
+    /* blanda (□): uppe till höger, i temats färg när det är på, svag när det är av */
+    draw_shuffle(px + pw - 20, py + 13, g_shuffle ? with_alpha(theme_cur()->accent, a) : with_alpha(LIGHT, 0.3f * a));
     const Track *t = cur >= 0 ? music_track(cur) : NULL;
     /* omslaget, eller en ruta med färgton från låtens nummer och en egenritad not */
     float as = 64, ax = px + (pw - as) / 2, ay = py + 28;
@@ -1760,16 +1762,18 @@ static void draw_music(Ui *ui)
     }
     gfx_clip_reset();
 
-    /* knapptips nere till vänster: ✕ Spela  □ Paus  ◀ ▶ Spår */
+    /* knapptips nere till vänster: ✕ Spela/Paus  □ Blanda  ◀ ▶ Spår */
     float x = MARGIN, y = 246;
+    const char *play = L(ui->music_sel == cur && state == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
     gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_PLAY));
-    x += text_width(0.56f, 0, L(S_PLAY)) + 12;
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, play);
+    x += text_width(0.56f, 0, play) + 12;
     gfx_button(x + 6.5f, y, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_PAUSE));
-    x += text_width(0.56f, 0, L(S_PAUSE)) + 12;
+    text_draw(x, y + 4.5f, 0.56f, 0, g_shuffle ? with_alpha(theme_cur()->accent, a) : with_alpha(TEXT_MAIN, a),
+              ALIGN_LEFT, L(S_SHUFFLE));
+    x += text_width(0.56f, 0, L(S_SHUFFLE)) + 12;
     float l[6] = { x, y, x + 6, y - 4.5f, x + 6, y + 4.5f };
     gfx_fan(x + 3, y, l, 3, with_alpha(LIGHT, 0.9f * a));
     float r[6] = { x + 15, y, x + 9, y - 4.5f, x + 9, y + 4.5f };

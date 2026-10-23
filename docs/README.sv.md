@@ -226,7 +226,7 @@ Okända rader och kommentarer behålls.
 | L / R | byt flik (Spel / Appar) |
 | ✕ eller START (○ med japansk knappinställning) | starta |
 | △ | inställningar |
-| SELECT | kategorier (mappar i ISO och PSP/GAME) · blanda i Musik |
+| SELECT | kategorier (mappar i ISO och PSP/GAME) |
 | HOME | Control Center: viloläge, USB, filer, inställningar, XMB, starta om, stäng av |
 
 ## Vad som visas
