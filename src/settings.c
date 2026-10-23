@@ -79,7 +79,7 @@ static struct {
 /* valtexter byggs om när språket ändras */
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
-static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_SORT[2], *OPT_BATTERY[3];
+static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_SORT[SORT_COUNT], *OPT_BATTERY[3];
 static const char *OPT_SCREEN_OFF[5], *OPT_AUTO_SLEEP[5]; /* minuter: se config.h */
 
 /* Bakgrundsbilder att välja bland: bilderna i PICTURE (som XMB:s Foto), en nivå undermappar.
@@ -114,6 +114,8 @@ static void build_options(void)
         OPT_LANG[i] = lang_name(i);
     OPT_SORT[0] = L(S_SORT_NAME);
     OPT_SORT[1] = L(S_SORT_XMB);
+    OPT_SORT[2] = L(S_SORT_PLAYED);
+    OPT_SORT[3] = L(S_SORT_CUSTOM);
     OPT_BATTERY[0] = L(S_BAT_ICON);
     OPT_BATTERY[1] = L(S_BAT_PERCENT);
     OPT_BATTERY[2] = L(S_BAT_TIME);
@@ -278,7 +280,7 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
     c->items[c->count - 1].own = 1;
-    choice(c, L(S_SORT), &g_sort_xmb, OPT_SORT, 2); /* t.ex. ordningen från Homebrew Sorter (issue #7) */
+    choice(c, L(S_SORT), &g_sort, OPT_SORT, SORT_COUNT); /* "som XMB": ordningen från Homebrew Sorter (issue #7) */
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_HIDE_DUPES), &g_hide_dupes);
     c->items[c->count - 1].own = 1;

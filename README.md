@@ -35,8 +35,9 @@ frame around it, and its artwork fades in behind everything. Your PSP games (ISO
 **Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
 Is a homebrew game sitting under Apps? Press □ on it for its options and choose *Move to Games* (and back again), and psp5 remembers it.
 A UMD in the drive shows up first under Games, and it appears or disappears as soon as you put a disc in or take it out.
-Games and Apps are sorted by name; set *Sort* to *Like the XMB* under Settings → psp5 to get the XMB's order instead
-(including an order you set with Homebrew Sorter).
+Games and Apps are sorted by name. Press □ on a game to change the order: *Sort* switches between name, *Like the
+XMB* (including an order you set with Homebrew Sorter), *Recently played* and *Custom*. *Move* lifts the game so you
+can move it left or right with ← → (✕ when you are done), and *Pin to front* keeps a game first in the row.
 Next to them is the **Library**: everything you have, games and apps together, in a grid that's easy to scan
 through. Press □ there to sort by name or by what you added most recently.
 
@@ -111,7 +112,7 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | ← → or the analog stick | move between games (hold to go faster) |
 | ↑ ↓ | move between rows in the Library |
 | L / R | switch between Games, Apps, Library and Music |
-| □ | options (move to Games / Apps) · sort the Library (name / recently added) · shuffle in Music |
+| □ | options: pin, move, sort, move to Games / Apps · sort the Library (name / recently added) · shuffle in Music |
 | ✕ in Music | play the selected track (or pause it) |
 | ← → in Music | previous / next track · hold to seek |
 | ✕ or START | start the selected game |

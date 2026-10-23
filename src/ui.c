@@ -152,6 +152,174 @@ static int is_app(const Entry *e)
     return app != (moved_find(e) != NULL);
 }
 
+/* --- senast spelat, egen ordning och fästa spel ---
+ * <data>/played.txt (senast spelat först), order.txt (egen ordning) och pins.txt: en nyckel
+ * (entry_cover_key) per rad. I minnet ligger de i s_meta, parallellt med spellistan. */
+
+typedef struct {
+    u32 played; /* högre = spelat senare, 0 = aldrig */
+    int rank;   /* plats i egen ordning (1 = först), 0 = ingen – hamnar sist */
+    u8 pinned;
+} Meta;
+
+static Meta *s_meta;
+static int s_meta_n;
+static u32 s_played_max;
+#define MAX_PLAYED 200 /* så många rader sparas i played.txt */
+
+static Meta *meta(int i)
+{
+    static Meta none;
+    return s_meta && i >= 0 && i < s_meta_n ? &s_meta[i] : &none;
+}
+
+static u32 key_hash(const char *s)
+{
+    u32 h = 2166136261u;
+    while (*s)
+        h = (h ^ (u8)*s++) * 16777619u;
+    return h;
+}
+
+typedef struct { u32 h; int i; } KeyRef;
+static int cmp_ref(const void *a, const void *b)
+{
+    u32 x = ((const KeyRef *)a)->h, y = ((const KeyRef *)b)->h;
+    return x < y ? -1 : x > y;
+}
+
+/* Läser <data>/<name> och anropar fn(listindex, rad, antal rader) för varje post med radens
+ * nyckel. Nycklarna slås upp via en sorterad hashtabell – listan kan ha tusen spel. */
+static void keyfile_apply(const EntryList *l, const char *name, void (*fn)(int i, int line, int lines))
+{
+    char path[64], key[80];
+    snprintf(path, sizeof(path), "%s/%s", g_data_dir, name);
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return;
+    int size = sceIoLseek32(fd, 0, PSP_SEEK_END);
+    sceIoLseek32(fd, 0, PSP_SEEK_SET);
+    char *buf = size > 0 && size < 256 * 1024 ? malloc(size + 1) : NULL;
+    int n = buf ? sceIoRead(fd, buf, size) : -1;
+    sceIoClose(fd);
+    KeyRef *refs = n > 0 && l->count ? malloc(l->count * sizeof(KeyRef)) : NULL;
+    if (!refs) {
+        free(buf);
+        return;
+    }
+    buf[n] = 0;
+    for (int i = 0; i < l->count; i++) {
+        entry_cover_key(&l->items[i], key, sizeof(key));
+        refs[i] = (KeyRef){ key_hash(key), i };
+    }
+    qsort(refs, l->count, sizeof(KeyRef), cmp_ref);
+    int lines = 0;
+    for (char *p = buf; *p; p++)
+        lines += *p == '\n';
+    int line = 0;
+    for (char *p = buf; *p; line++) {
+        char *end = strchr(p, '\n');
+        if (end)
+            *end = 0;
+        int len = strlen(p);
+        if (len && p[len - 1] == '\r')
+            p[len - 1] = 0;
+        u32 h = key_hash(p);
+        int lo = 0, hi = l->count;
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (refs[mid].h < h)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        for (; *p && lo < l->count && refs[lo].h == h; lo++) {
+            entry_cover_key(&l->items[refs[lo].i], key, sizeof(key));
+            if (!strcmp(key, p))
+                fn(refs[lo].i, line, lines);
+        }
+        if (!end)
+            break;
+        p = end + 1;
+    }
+    free(refs);
+    free(buf);
+}
+
+static void set_played(int i, int line, int lines)
+{
+    s_meta[i].played = lines - line;
+    if (s_meta[i].played > s_played_max)
+        s_played_max = s_meta[i].played;
+}
+static void set_rank(int i, int line, int lines) { s_meta[i].rank = line + 1; }
+static void set_pinned(int i, int line, int lines) { s_meta[i].pinned = 1; }
+
+static void meta_load(const EntryList *l)
+{
+    free(s_meta);
+    s_meta_n = l->count;
+    s_meta = calloc(l->count ? l->count : 1, sizeof(Meta));
+    s_played_max = 0;
+    if (!s_meta)
+        return;
+    keyfile_apply(l, "played.txt", set_played);
+    keyfile_apply(l, "order.txt", set_rank);
+    keyfile_apply(l, "pins.txt", set_pinned);
+}
+
+/* Skriver nycklarna för listindexen idx[0..n) till <data>/<name>, en per rad */
+static void keyfile_write(const EntryList *l, const char *name, const int *idx, int n)
+{
+    char path[64], key[80];
+    snprintf(path, sizeof(path), "%s/%s", g_data_dir, name);
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (fd < 0)
+        return;
+    for (int k = 0; k < n; k++) {
+        entry_cover_key(&l->items[idx[k]], key, sizeof(key));
+        strcat(key, "\n");
+        sceIoWrite(fd, key, strlen(key));
+    }
+    sceIoClose(fd);
+}
+
+static int cmp_played_desc(const void *a, const void *b)
+{
+    u32 x = s_meta[*(const int *)a].played, y = s_meta[*(const int *)b].played;
+    return x > y ? -1 : x < y;
+}
+static int cmp_rank(const void *a, const void *b)
+{
+    int x = s_meta[*(const int *)a].rank, y = s_meta[*(const int *)b].rank;
+    return x != y ? x - y : *(const int *)a - *(const int *)b;
+}
+
+/* Sparar played.txt, order.txt eller pins.txt ur s_meta. UMD-skivan sparas aldrig. */
+enum { META_PLAYED, META_ORDER, META_PINS };
+static void meta_save(const EntryList *l, int which)
+{
+    int *idx = s_meta ? malloc((l->count ? l->count : 1) * sizeof(int)) : NULL;
+    if (!idx)
+        return;
+    int n = 0;
+    for (int i = 0; i < l->count; i++) {
+        const Meta *m = &s_meta[i];
+        if (l->items[i].type != ENTRY_UMD &&
+            (which == META_PLAYED ? m->played > 0 : which == META_ORDER ? m->rank > 0 : m->pinned))
+            idx[n++] = i;
+    }
+    if (which == META_PLAYED) {
+        qsort(idx, n, sizeof(int), cmp_played_desc);
+        if (n > MAX_PLAYED)
+            n = MAX_PLAYED;
+    } else if (which == META_ORDER) {
+        qsort(idx, n, sizeof(int), cmp_rank);
+    }
+    keyfile_write(l, which == META_PLAYED ? "played.txt" : which == META_ORDER ? "order.txt" : "pins.txt", idx, n);
+    free(idx);
+}
+
 /* --- kategorier --- */
 
 #define MAX_CATS 64
@@ -240,15 +408,24 @@ static int cmp_recent(const void *a, const void *b)
     return cmp_name(a, b);
 }
 
-/* Spel och Appar "som XMB": nyaste mappen först – ordningen Homebrew Sorter sätter (issue #7) */
-static int cmp_xmb(const void *a, const void *b)
+/* Spel och Appar: UMD-skivan, sedan fästa spel, sedan g_sort – "som XMB" är nyaste mappen
+ * först, ordningen Homebrew Sorter sätter (issue #7). Lika: listans ordning (A–Ö). */
+static int cmp_row(const void *a, const void *b)
 {
-    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int ia = *(const int *)a, ib = *(const int *)b;
+    const Entry *x = &s_sort_list->items[ia], *y = &s_sort_list->items[ib];
+    const Meta *mx = meta(ia), *my = meta(ib);
     if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
         return x->type == ENTRY_UMD ? -1 : 1;
-    if (x->sort_time != y->sort_time)
+    if (mx->pinned != my->pinned)
+        return mx->pinned ? -1 : 1;
+    if (g_sort == SORT_XMB && x->sort_time != y->sort_time)
         return x->sort_time > y->sort_time ? -1 : 1;
-    return *(const int *)a - *(const int *)b; /* listan är redan A–Ö */
+    if (g_sort == SORT_PLAYED && mx->played != my->played)
+        return mx->played > my->played ? -1 : 1;
+    if (g_sort == SORT_CUSTOM && mx->rank != my->rank) /* utan plats (nya spel) sist */
+        return (u32)(mx->rank - 1) < (u32)(my->rank - 1) ? -1 : 1;
+    return ia - ib;
 }
 
 static void sort_library(Ui *ui)
@@ -307,9 +484,9 @@ static void build_views(Ui *ui)
             lib->idx[lib->count++] = i;
     }
     s_sort_list = ui->list;
-    for (int t = TAB_GAMES; g_sort_xmb && t <= TAB_APPS; t++)
+    for (int t = TAB_GAMES; t <= TAB_APPS; t++)
         if (ui->views[t].idx)
-            qsort(ui->views[t].idx, ui->views[t].count, sizeof(int), cmp_xmb);
+            qsort(ui->views[t].idx, ui->views[t].count, sizeof(int), cmp_row);
     sort_library(ui);
 }
 
@@ -469,6 +646,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->cat_bg_for = -1;
     moved_load();
     collect_cats(list); /* last_load letar kategorierna med namn */
+    meta_load(list);    /* fästa spel, senast spelat och egen ordning – före sorteringen */
     char keys[TAB_MUSIC][80] = { "" };
     int had_last = last_load(ui, keys);
     build_views(ui);
@@ -501,6 +679,19 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
 {
     int chosen[TAB_COUNT];
     int old_sel = ui->sel[ui->tab];
+    if ((removed_front || added_front) && s_meta) { /* s_meta följer listans index */
+        Meta *m = calloc(ui->list->count ? ui->list->count : 1, sizeof(Meta));
+        for (int i = added_front; m && i < ui->list->count; i++) {
+            int old = i - added_front + removed_front;
+            if (old >= 0 && old < s_meta_n)
+                m[i] = s_meta[old];
+        }
+        if (m) {
+            free(s_meta);
+            s_meta = m;
+            s_meta_n = ui->list->count;
+        }
+    }
     for (int t = 0; t < TAB_COUNT; t++) {
         LoaderView *v = &ui->views[t];
         chosen[t] = -1;
@@ -550,10 +741,129 @@ static void move_selected(Ui *ui)
     sound_play(SND_TOGGLE);
 }
 
+/* □-menyn för valt kort i Spel/Appar */
+enum { MI_PIN, MI_ARRANGE, MI_SORT, MI_TAB, MI_COUNT };
+
+static const char *menu_label(const Ui *ui, int item, char *buf, int size)
+{
+    static const StrId sorts[SORT_COUNT] = { S_SORT_NAME, S_SORT_XMB, S_SORT_PLAYED, S_SORT_CUSTOM };
+    switch (item) {
+    case MI_PIN:     return L(meta(ui_selected(ui))->pinned ? S_UNPIN : S_PIN);
+    case MI_ARRANGE: return L(S_F_MOVE);
+    case MI_SORT:    snprintf(buf, size, "%s: %s", L(S_SORT), L(sorts[g_sort % SORT_COUNT])); return buf;
+    }
+    return L(ui->tab == TAB_APPS ? S_MOVE_TO_GAMES : S_MOVE_TO_APPS);
+}
+
+/* Bygger om flikarna; raden glider från där den stod till kortets nya plats */
+static void resort(Ui *ui)
+{
+    float pos = ui->pos;
+    ui_relist(ui, 0, 0);
+    ui->pos = pos;
+}
+
+/* Flytta: ger alla kort en egen, unik plats i den ordning de syns nu, och byter till egen ordning */
+static void start_arrange(Ui *ui)
+{
+    const LoaderView *v = view(ui);
+    if (g_sort != SORT_CUSTOM) {
+        /* raden som den ser ut nu blir början på den egna ordningen; tidigare platser efter den */
+        for (int i = 0; i < s_meta_n; i++)
+            if (s_meta[i].rank > 0)
+                s_meta[i].rank += v->count;
+        for (int p = 0; p < v->count; p++)
+            meta(v->idx[p])->rank = p + 1;
+        g_sort = SORT_CUSTOM;
+        config_save(g_data_dir);
+        char buf[64];
+        ui_toast(ui, menu_label(ui, MI_SORT, buf, sizeof(buf)));
+    }
+    /* täta platser 1, 2, 3 … – kort utan plats (nya spel) får nästa lediga i listans ordning */
+    int *idx = malloc((s_meta_n ? s_meta_n : 1) * sizeof(int));
+    if (!idx)
+        return;
+    int n = 0, next = 1;
+    for (int i = 0; i < s_meta_n; i++)
+        if (s_meta[i].rank > 0)
+            idx[n++] = i;
+    qsort(idx, n, sizeof(int), cmp_rank);
+    for (int k = 0; k < n; k++)
+        s_meta[idx[k]].rank = next++;
+    for (int i = 0; i < s_meta_n; i++)
+        if (!s_meta[i].rank)
+            s_meta[i].rank = next++;
+    free(idx);
+    resort(ui);
+    ui->moving = 1;
+}
+
+static void stop_arrange(Ui *ui)
+{
+    if (!ui->moving)
+        return;
+    ui->moving = 0;
+    meta_save(ui->list, META_ORDER);
+}
+
+/* ← →: byter plats med grannen i raden (bara bland fästa eller bland ofästa) */
+static void arrange_step(Ui *ui, int dir)
+{
+    LoaderView *v = &ui->views[ui->tab];
+    int *sel = &ui->sel[ui->tab], nb = *sel + dir;
+    if (nb < 0 || nb >= v->count)
+        return;
+    int a = v->idx[*sel], b = v->idx[nb];
+    if (meta(a)->pinned != meta(b)->pinned || ui->list->items[b].type == ENTRY_UMD) {
+        sound_play(SND_ERROR);
+        return;
+    }
+    int r = meta(a)->rank;
+    meta(a)->rank = meta(b)->rank;
+    meta(b)->rank = r;
+    v->idx[*sel] = b;
+    v->idx[nb] = a;
+    *sel = nb;
+    ui->still = 0;
+    sound_play(SND_MOVE);
+}
+
+static void menu_choose(Ui *ui)
+{
+    int i = ui_selected(ui);
+    switch (ui->menu_sel) {
+    case MI_PIN:
+        meta(i)->pinned ^= 1;
+        meta_save(ui->list, META_PINS);
+        ui->menu_open = 0;
+        resort(ui);
+        sound_play(SND_TOGGLE);
+        break;
+    case MI_ARRANGE:
+        ui->menu_open = 0;
+        start_arrange(ui);
+        sound_play(SND_SELECT);
+        break;
+    case MI_SORT: /* menyn står kvar – nästa tryck nästa sortering */
+        g_sort = (g_sort + 1) % SORT_COUNT;
+        config_save(g_data_dir);
+        resort(ui);
+        ui->menu_open = 1; /* ui_relist stänger menyn */
+        sound_play(SND_TOGGLE);
+        break;
+    default:
+        ui->menu_open = 0;
+        move_selected(ui);
+        break;
+    }
+}
+
 void ui_free(Ui *ui)
 {
-    if (ui->list)
+    if (ui->list) {
+        stop_arrange(ui); /* en påbörjad flytt sparas */
         last_save(ui);
+    }
     tex_free(ui->bg_old);
     tex_free(ui->bg_cur);
     ui->bg_old = ui->bg_cur = NULL;
@@ -573,6 +883,9 @@ void ui_free(Ui *ui)
         ui->views[t].count = 0;
     }
     ui->list = NULL; /* last.txt sparas bara en gång */
+    free(s_meta);
+    s_meta = NULL;
+    s_meta_n = 0;
 }
 
 void ui_replay_intro(Ui *ui)
@@ -863,6 +1176,7 @@ void ui_open_cc(Ui *ui)
     ui->cc_pos = ui->cc_sel; /* markeringen står där den stod sist, utan att glida dit */
     ui->cc_label = 0;
     ui->menu_open = ui->cat_open = 0;
+    stop_arrange(ui); /* en påbörjad flytt sparas som den står */
     sound_play(SND_OPEN);
 }
 
@@ -958,12 +1272,27 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if (ui->menu_open) {
         u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
         u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE;
-        if (in->pressed & ok) {
-            ui->menu_open = 0;
-            move_selected(ui);
-        } else if (in->pressed & back) {
+        int move = step_input(ui, in, dt, 1);
+        if ((move == 2 || move == -2) && ui->menu_sel + move / 2 >= 0 && ui->menu_sel + move / 2 < MI_COUNT) {
+            ui->menu_sel += move / 2;
+            sound_play(SND_MOVE);
+        }
+        if (in->pressed & ok)
+            menu_choose(ui);
+        else if (in->pressed & back) {
             ui->menu_open = 0;
             sound_play(SND_BACK);
+        }
+        in = &none;
+    }
+    /* Flytta: ← → flyttar kortet, ✕ / ○ / □ klart */
+    if (ui->moving) {
+        int move = step_input(ui, in, dt, 0);
+        if (move)
+            arrange_step(ui, move);
+        if (in->pressed & (PSP_CTRL_CROSS | PSP_CTRL_CIRCLE | PSP_CTRL_SQUARE)) {
+            stop_arrange(ui);
+            sound_play(SND_SELECT);
         }
         in = &none;
     }
@@ -1000,6 +1329,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if ((ui->tab == TAB_GAMES || ui->tab == TAB_APPS) && (in->pressed & PSP_CTRL_SQUARE) && count &&
         ui->intro >= 1 && ui->list->items[ui_selected(ui)].type != ENTRY_UMD) {
         ui->menu_open = 1;
+        ui->menu_sel = 0;
         sound_play(SND_OPEN);
     }
     int move = ui->tab == TAB_MUSIC || overlay ? 0 : step_input(ui, in, dt, grid);
@@ -1022,11 +1352,13 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     }
     ui->still += dt;
 
-    /* START startar också – ut till XMB går man med HOME (systemets egen dialog) */
+    /* START startar också – ut till XMB går man via Control Center (HOME) */
     u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
     if ((in->pressed & confirm) && count && ui->intro >= 1) {
         if (ui->can_launch) {
             ui->launch = 0;
+            meta(ui_selected(ui))->played = ++s_played_max; /* Senast spelat */
+            meta_save(ui->list, META_PLAYED);
             sound_play(SND_LAUNCH);
         } else {
             ui_toast(ui, L(S_NO_ARK));
@@ -1337,6 +1669,14 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
     if (video)
         gfx_tex(video, x, y, w, h, RGBA(255, 255, 255, (int)(255 * alpha * smooth(ui->preview_anim))));
 
+    /* fäst: en liten nål i övre högra hörnet */
+    if (meta(list_index)->pinned) {
+        float s = w / BIG_W, bx = x + w - 8 * s - 2, by = y + 8 * s + 2;
+        gfx_circle(bx, by, 6.5f * s, RGBA(18, 18, 22, (int)(200 * alpha)));
+        gfx_circle(bx, by - 1.4f * s, 2.4f * s, RGBA(240, 240, 244, (int)(255 * alpha)));
+        gfx_rect(bx - 0.6f * s, by - 0.5f * s, 1.2f * s, 4.2f * s, RGBA(240, 240, 244, (int)(255 * alpha)));
+    }
+
     /* valt kort: tunn ljus ram med ett litet glapp */
     if (focus > 0.01f)
         gfx_ring(x - 4, y - 4, w + 8, h + 8, r + 4, RGBA(240, 240, 244, (int)(235 * focus * alpha)));
@@ -1375,6 +1715,14 @@ static void draw_row(Ui *ui)
             }
             if (x > SCREEN_W || x + w < 0 || alpha <= 0.01f)
                 continue;
+            if (ui->moving && p == ui->sel[ui->tab]) { /* Flytta: kortet lyfts, med pilar åt båda hållen */
+                y -= 5;
+                float ay = y + h / 2, pa = alpha * (0.6f + 0.4f * sinf(ui->time * 5));
+                float l[6] = { x - 13, ay, x - 7, ay - 6, x - 7, ay + 6 };
+                float r[6] = { x + w + 13, ay, x + w + 7, ay - 6, x + w + 7, ay + 6 };
+                gfx_fan(x - 9, ay, l, 3, with_alpha(LIGHT, pa));
+                gfx_fan(x + w + 9, ay, r, 3, with_alpha(LIGHT, pa));
+            }
             draw_card(ui, v->idx[p], x, y, w, h, focus, alpha);
         }
     }
@@ -1422,6 +1770,20 @@ static void draw_details(Ui *ui)
     if (e->type != ENTRY_HOMEBREW && e->game_id[0])
         text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, fade), ALIGN_LEFT, e->game_id);
 
+    if (ui->moving) { /* Flytta: ◀ ▶ Flytta   ✕ Klart i stället för Starta */
+        float hx = MARGIN, hy = 233;
+        float l[6] = { hx, hy, hx + 6, hy - 4.5f, hx + 6, hy + 4.5f };
+        float r[6] = { hx + 15, hy, hx + 9, hy - 4.5f, hx + 9, hy + 4.5f };
+        gfx_fan(hx + 3, hy, l, 3, with_alpha(LIGHT, 0.9f * fade));
+        gfx_fan(hx + 12, hy, r, 3, with_alpha(LIGHT, 0.9f * fade));
+        hx += 21;
+        text_draw(hx, hy + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, fade), ALIGN_LEFT, L(S_F_MOVE));
+        hx += text_width(0.6f, 0, L(S_F_MOVE)) + 14;
+        gfx_button(hx + 6.5f, hy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * fade),
+                   with_alpha(DARK, fade));
+        text_draw(hx + 17, hy + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, fade), ALIGN_LEFT, L(S_F_DONE));
+        return;
+    }
     const char *go = L(S_LAUNCH);
     float bx = MARGIN, by = 220, bh = 26;
     float tw = text_width(0.66f, 0, go);
@@ -1441,7 +1803,7 @@ static void draw_details(Ui *ui)
 }
 
 /* Alternativmenyn (□): en panel nere till vänster, över Starta-knappen, med kortets namn,
- * valet att flytta det till den andra fliken och ✕ / ○ längst ner. */
+ * fäst, flytta, sortering och byte av flik, och ✕ / ○ längst ner. */
 static void draw_menu(Ui *ui)
 {
     float a = smooth(ui->menu_anim);
@@ -1449,7 +1811,8 @@ static void draw_menu(Ui *ui)
     if (a <= 0 || i < 0)
         return;
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * a)));
-    float w = 214, h = 96, x = MARGIN - 6, y = 258 - h + (1 - a) * 10;
+    const float row = 26;
+    float w = 214, h = 26 + MI_COUNT * row + 34, x = MARGIN - 6, y = 258 - h + (1 - a) * 10;
     gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, (int)(150 * a)));
     gfx_round_rect(x, y, w, h, 9, RGBA(40, 41, 47, (int)(255 * a)));
 
@@ -1457,9 +1820,16 @@ static void draw_menu(Ui *ui)
     text_ellipsis(title, sizeof(title), ui->list->items[i].title, 0.5f, w - 24);
     text_draw(x + 12, y + 18, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, title);
 
-    const char *item = L(ui->tab == TAB_APPS ? S_MOVE_TO_GAMES : S_MOVE_TO_APPS);
-    gfx_round_rect(x + 6, y + 26, w - 12, 30, 7, with_alpha(LIGHT, 0.95f * a));
-    text_draw(x + 16, y + 46, text_fit(0.62f, 0.45f, 0, w - 32, item), 0, with_alpha(DARK, a), ALIGN_LEFT, item);
+    for (int k = 0; k < MI_COUNT; k++) {
+        char buf[64];
+        const char *item = menu_label(ui, k, buf, sizeof(buf));
+        float ry = y + 26 + k * row;
+        int sel = k == ui->menu_sel;
+        if (sel)
+            gfx_round_rect(x + 6, ry, w - 12, row - 2, 7, with_alpha(LIGHT, 0.95f * a));
+        text_draw(x + 16, ry + 17, text_fit(0.6f, 0.45f, 0, w - 32, item), 0, with_alpha(sel ? DARK : TEXT_MAIN, a),
+                  ALIGN_LEFT, item);
+    }
 
     float fx = x + 12, fy = y + h - 18;
     gfx_button(fx + 6.5f, fy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a),
