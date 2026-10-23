@@ -856,10 +856,34 @@ static const char *cc_label(int item)
     return L(S_SHUTDOWN);
 }
 
+#define CC_LEAVE 0.22f /* sekunder att tona till svart innan USB, filer, viloläge m.fl. */
+
+void ui_open_cc(Ui *ui)
+{
+    ui->cc_open = 1;
+    ui->cc_confirm = 0;
+    ui->cc_pos = ui->cc_sel; /* markeringen står där den stod sist, utan att glida dit */
+    ui->cc_label = 0;
+    ui->menu_open = ui->cat_open = 0;
+    sound_play(SND_OPEN);
+}
+
 /* UI_SETTINGS / UI_ACTION (ui->cc_action) / UI_NONE */
 static int update_cc(Ui *ui, const UiInput *in, float dt)
 {
-    ui->cc_anim = clampf(ui->cc_anim + (ui->cc_open ? 7 : -7) * dt, 0, 1);
+    ui->cc_anim = clampf(ui->cc_anim + (ui->cc_open ? 5.5f : -8) * dt, 0, 1);
+    ui->cc_pos = approach(ui->cc_pos, ui->cc_sel, 18.0f, dt);
+    ui->cc_label = clampf(ui->cc_label + dt * 7, 0, 1);
+    if (ui->cc_leave > 0) {
+        /* tona till svart först – sedan byter main.c läge utan att något blinkar */
+        ui->cc_leave += dt / CC_LEAVE;
+        if (ui->cc_leave < 1)
+            return UI_NONE;
+        ui->cc_leave = 0;
+        ui->cc_open = 0;
+        ui->cc_anim = 0;
+        return UI_ACTION;
+    }
     if (!ui->cc_open)
         return UI_NONE;
     int move = step_input(ui, in, dt, 0);
@@ -868,6 +892,7 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
         if (next != ui->cc_sel) {
             ui->cc_sel = next;
             ui->cc_confirm = 0;
+            ui->cc_label = 0;
             sound_play(SND_MOVE);
         }
     }
@@ -897,17 +922,17 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
     case CC_OFF:
         if (!ui->cc_confirm) { /* som i inställningarna: ✕ två gånger */
             ui->cc_confirm = 1;
+            ui->cc_label = 0;
             sound_play(SND_SELECT);
             return UI_NONE;
         }
         break;
     }
-    ui->cc_open = 0;
     ui->cc_confirm = 0;
-    ui->cc_anim = 0; /* main.c bygger kanske upp allt på nytt (USB, filer) */
     ui->cc_action = actions[ui->cc_sel];
+    ui->cc_leave = 0.001f;
     sound_play(SND_SELECT);
-    return UI_ACTION;
+    return UI_NONE;
 }
 
 int ui_update(Ui *ui, const UiInput *in, float dt)
@@ -929,10 +954,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     /* HOME öppnar Control Center var man än är (utom under startanimationen) och stänger
      * andra paneler – före dem, så att ingen av dem sväljer knappen */
     if ((in->pressed & PSP_CTRL_HOME) && !ui->cc_open && ui->intro >= 1) {
-        ui->cc_open = 1;
-        ui->cc_confirm = 0;
-        ui->menu_open = ui->cat_open = 0;
-        sound_play(SND_OPEN);
+        ui_open_cc(ui);
         in = &none;
     }
     if (ui->menu_open) {
@@ -1859,37 +1881,96 @@ static void draw_cc_glyph(int item, float cx, float cy, u32 c, u32 bg)
     }
 }
 
-/* Control Center: en panel nerifrån med en rad runda knappar, som PS5:s */
+/* blandar två färger (RGB), t = 0 → a, 1 → b, helt ogenomskinlig */
+static u32 mix(u32 a, u32 b, float t)
+{
+    u32 out = 0xFF000000;
+    for (int s = 0; s < 24; s += 8)
+        out |= (u32)lerpf((a >> s) & 0xFF, (b >> s) & 0xFF, clampf(t, 0, 1)) << s;
+    return out;
+}
+
+/* Panelens färg: temats (som inställningarna, lite mörkare för texten) – grå med egen bakgrundsbild */
+static void cc_colors(u32 *top, u32 *bottom)
+{
+    if (g_wallpaper[0]) {
+        *top = RGBA(48, 49, 55, 255);
+        *bottom = RGBA(26, 27, 31, 255);
+        return;
+    }
+    const Theme *t = theme_cur();
+    *top = mix(t->stop, RGBA(0, 0, 0, 255), 0.25f);
+    *bottom = mix(t->sbottom, RGBA(0, 0, 0, 255), 0.1f);
+}
+
+/* "Spelas nu" ovanför panelen, som musikkortet i PS5:s Control Center */
+static void draw_cc_music(Ui *ui, float x, float y, float a, u32 bg)
+{
+    int cur = music_current();
+    const Track *t = cur >= 0 && music_state() != MUSIC_STOPPED ? music_track(cur) : NULL;
+    if (!t)
+        return;
+    const float w = 206, h = 46, as = 34;
+    static char title[80], artist[64];
+    static int text_for = -2, text_gen = -1;
+    if (text_for != cur || text_gen != music_generation()) {
+        text_ellipsis(title, sizeof(title), t->title, 0.56f, w - as - 44);
+        text_ellipsis(artist, sizeof(artist), t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST), 0.46f, w - as - 44);
+        text_for = cur;
+        text_gen = music_generation();
+    }
+    gfx_glow(x, y + 2, w, h, 8, RGBA(0, 0, 0, (int)(120 * a)));
+    gfx_round_rect(x, y, w, h, 12, with_alpha(bg, 0.96f * a));
+    float ax = x + 6, ay = y + 6;
+    gfx_round_rect(ax, ay, as, as, 7, RGBA(70, 72, 84, (int)(255 * a)));
+    draw_note(ax + as / 2, ay + as / 2, 16, with_alpha(LIGHT, 0.9f * a));
+    if (ui->cover && ui->cover_for == cur)
+        gfx_tex(ui->cover, ax, ay, as, as, RGBA(255, 255, 255, (int)(255 * a * smooth(ui->cover_fade))));
+    text_draw(ax + as + 9, y + 20, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, title);
+    text_draw(ax + as + 9, y + 35, 0.46f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, artist);
+    draw_play_glyph(x + w - 18, y + h / 2, 6, music_state() == MUSIC_PLAYING, with_alpha(LIGHT, a));
+}
+
+/* Control Center: en panel som glider upp nerifrån med en rad ikoner, som PS5:s. Den vita
+ * markeringen glider mellan ikonerna och namnet på valt alternativ står ovanför. */
 static void draw_cc(Ui *ui)
 {
-    float a = smooth(ui->cc_anim);
-    if (a <= 0)
+    float t = ui->cc_anim;
+    if (t <= 0)
         return;
-    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(120 * a)));
-    float ph = 96, py = SCREEN_H - ph * a;
-    gfx_glow(0, py, SCREEN_W, ph + 20, 12, RGBA(0, 0, 0, (int)(150 * a)));
-    gfx_round_rect(0, py, SCREEN_W, ph + 20, 14, RGBA(30, 31, 37, (int)(250 * a)));
+    float e = 1 - (1 - t) * (1 - t) * (1 - t); /* mjuk inbromsning */
+    u32 top, bottom;
+    cc_colors(&top, &bottom);
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * e)));
 
-    /* valt alternativ ovanför knapparna, och ○ Tillbaka till höger */
-    const char *label = ui->cc_confirm ? L(S_CONFIRM) : cc_label(ui->cc_sel);
-    text_draw(MARGIN, py + 22, 0.66f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, label);
-    float bw = text_width(0.52f, 0, L(S_BACK));
-    gfx_button(SCREEN_W - MARGIN - bw - 10.5f, py + 18, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE,
-               with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
-    text_draw(SCREEN_W - MARGIN, py + 22.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, L(S_BACK));
+    const float ph = 84, step = 50;
+    float py = SCREEN_H - ph * e;
+    draw_cc_music(ui, MARGIN, py - 56, e, top);
+    gfx_glow(0, py, SCREEN_W, ph + 20, 12, RGBA(0, 0, 0, (int)(150 * e)));
+    gfx_round_rect(0, py, SCREEN_W, ph + 20, 16, with_alpha(top, 0.97f * e));
+    gfx_gradient_v(0, py + 16, SCREEN_W, ph - 16, with_alpha(top, 0.97f * e), with_alpha(bottom, 0.97f * e));
+    gfx_rect(16, py, SCREEN_W - 32, 1, RGBA(255, 255, 255, (int)(22 * e))); /* svag ljus kant upptill */
 
-    const float r = 19, gap = 13;
-    float x0 = (SCREEN_W - CC_COUNT * 2 * r - (CC_COUNT - 1) * gap) / 2 + r, cy = py + 58;
-    u32 tile = RGBA(58, 59, 67, 255);
+    float x0 = SCREEN_W / 2 - (CC_COUNT - 1) * step / 2, cy = py + 52;
+    float hx = x0 + ui->cc_pos * step;
+    gfx_glow(hx - 21, cy - 19, 42, 42, 6, RGBA(0, 0, 0, (int)(90 * e)));
+    gfx_round_rect(hx - 21, cy - 21, 42, 42, 11, with_alpha(LIGHT, e));
+
+    u32 hole = mix(top, bottom, 0.6f); /* panelens färg vid ikonerna – för "hålen" i ikonerna */
     for (int k = 0; k < CC_COUNT; k++) {
-        float cx = x0 + k * (2 * r + gap);
-        int sel = k == ui->cc_sel;
-        u32 bg = sel ? LIGHT : tile;
-        gfx_circle(cx, cy, r, with_alpha(bg, a));
-        if (sel)
-            gfx_ring(cx - r - 3.5f, cy - r - 3.5f, 2 * r + 7, 2 * r + 7, r + 3.5f, with_alpha(LIGHT, 0.9f * a));
-        draw_cc_glyph(k, cx, cy, with_alpha(sel ? DARK : LIGHT, a), with_alpha(bg, a));
+        float f = clampf(1 - fabsf(k - ui->cc_pos), 0, 1); /* hur mycket markeringen täcker ikonen */
+        float ia = smooth(t * 1.7f - k * 0.08f);           /* ikonerna tonas in en i taget */
+        float iy = cy + (1 - ia) * 10;
+        draw_cc_glyph(k, x0 + k * step, iy, with_alpha(mix(LIGHT, DARK, f), ia * e),
+                      with_alpha(mix(hole, LIGHT, f), ia * e));
     }
+
+    /* namnet ovanför markeringen */
+    const char *label = ui->cc_confirm ? L(S_CONFIRM) : cc_label(ui->cc_sel);
+    float la = smooth(ui->cc_label) * e;
+    float lw = text_width(0.6f, 0, label);
+    float lx = clampf(x0 + ui->cc_sel * step, MARGIN + lw / 2, SCREEN_W - MARGIN - lw / 2);
+    text_draw(lx, py + 22 + (1 - la) * 4, 0.6f, 0, with_alpha(TEXT_MAIN, la), ALIGN_CENTER, label);
 }
 
 static void draw_empty(Ui *ui)
@@ -1934,6 +2015,8 @@ void ui_draw(Ui *ui)
     float black = 1 - ui->intro;
     if (ui->launch > 0)
         black = fmaxf(black, clampf((ui->launch - 0.35f) / 0.65f, 0, 1));
+    if (ui->cc_leave > 0) /* Control Center: ut till svart innan USB, filer, viloläge … */
+        black = fmaxf(black, smooth(ui->cc_leave));
     if (black > 0)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * black)));
     gfx_end();
