@@ -348,10 +348,23 @@ void scan_all(EntryList *list, const char *self_path, const char *cache_file, Sc
     scan_game_dir(&s, "ef0:/PSP/GAME", self_path, 0, "");
     scan_free(&s.cached);
 
-    if (list->count > 1)
-        qsort(list->items, list->count, sizeof(Entry), compare_title);
+    /* cachen behåller mappnamnen – ändrar sig antalet spel i en mapp avgörs det nedan på nytt */
     if (cache_file && s.parsed > 0)
         save_cache(list, cache_file);
+    /* En mapp med ett enda spel (t.ex. ISO/<spelets namn>/spel.iso, en mapp per spel) är ingen
+     * kategori – om den inte har prefixet g_, s_ eller CAT_. Före sorteringen ligger spelen i en
+     * mapp intill varandra. */
+    for (int i = 0; i < list->count;) {
+        char *cat = list->items[i].category;
+        int n = 1;
+        while (i + n < list->count && !strcmp(list->items[i + n].category, cat))
+            n++;
+        if (n == 1 && cat[0] && strncasecmp(cat, "g_", 2) && strncasecmp(cat, "s_", 2) && strncasecmp(cat, "CAT_", 4))
+            cat[0] = 0;
+        i += n;
+    }
+    if (list->count > 1)
+        qsort(list->items, list->count, sizeof(Entry), compare_title);
 }
 
 void scan_free(EntryList *list)

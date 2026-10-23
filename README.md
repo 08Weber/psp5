@@ -88,7 +88,8 @@ A few other things I cared about:
 - **It has categories.** Put games in folders – `ISO/<folder>/` or `PSP/GAME/<folder>/<game>/` – and press
   SELECT to pick one. Start a folder name with `g_` to put everything in it under Games (for example
   `PSP/GAME/g_GBA` for GBA games packed as EBOOTs) or with `s_` for Apps; the prefix isn't shown. A `bg.png` in the
-  folder is shown behind it in the picker. The active category shows up in the tab name ("Games · GBA").
+  folder is shown behind it in the picker. The active category shows up in the tab name ("Games · GBA"). A folder
+  with a single game (one folder per game) is not a category unless it has one of the prefixes.
 - **It has a Control Center.** HOME opens a PS5-style panel with sleep, USB, the file manager, settings, the XMB,
   restart and power off. *Settings → Power and USB* can also turn the screen off and put the PSP to sleep after a
   while without a button press (not while music is playing).

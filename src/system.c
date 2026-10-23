@@ -369,7 +369,7 @@ int sys_display(int on)
         int level = -1, unk = 0;
         if (s_light_get && kcall(s_light_get, (u32)&level, (u32)&unk) >= 0 && level >= 0)
             s_light = level;
-        if (s_light_set)
+        if (s_light_set && s_light >= 0) /* bara om ljusstyrkan går att ställa tillbaka */
             kcall(s_light_set, 0, 0);
         kcall(s_disp_off, 0, 0);
     }

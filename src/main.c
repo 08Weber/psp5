@@ -470,6 +470,10 @@ int main(int argc, char *argv[])
         if (testrun_take_resume())
             s_resumed = 1;
         if (s_sleeping || s_resumed) {
+            if (dark == 1) /* somnade med släckt skärm: vakna med den tänd */
+                sys_display(1);
+            dark = 0;
+            idle = 0;
             if (g_boot_anim && ui.launch < 0 && !s_safe) {
                 sleep_and_wake(&ui, in_settings);
                 old = ~0u; /* knappen som hoppade över startskärmen räknas inte */
@@ -479,7 +483,7 @@ int main(int argc, char *argv[])
             }
         }
         UiInput in;
-        read_pad(&in, &old, !in_settings);
+        read_pad(&in, &old, 1);
 
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
@@ -496,7 +500,7 @@ int main(int argc, char *argv[])
         /* skärm av och viloläge efter en stund utan knapptryck (Inställningar → Ström och USB).
          * Musiken spelar vidare med släckt skärm, och medan den spelar somnar PSP:n inte. */
         static const short SCREEN_OFF_S[] = { 0, 60, 180, 300, 600 }, SLEEP_S[] = { 0, 300, 600, 900, 1800 };
-        int active = in.held || in.lx < 60 || in.lx > 196 || in.ly < 60 || in.ly > 196;
+        int active = (in.held & ~PSP_CTRL_HOLD) || in.lx < 60 || in.lx > 196 || in.ly < 60 || in.ly > 196;
         idle = active ? 0 : idle + dt;
         if (dark && active) { /* knappen som tände skärmen gör inget annat */
             if (dark == 1)
@@ -525,7 +529,9 @@ int main(int argc, char *argv[])
         }
 
         if (in_settings) {
-            int action = settings_update(&in, dt);
+            /* HOME stänger inställningarna och öppnar Control Center */
+            int home = (in.pressed & PSP_CTRL_HOME) != 0;
+            int action = home ? SA_CLOSE : settings_update(&in, dt);
             if (action == SA_CLOSE) {
                 in_settings = 0;
                 preview_pause(0);
@@ -533,6 +539,11 @@ int main(int argc, char *argv[])
                     ui_toast(&ui, L(S_SAVED));
                 if (g_sort_xmb != sort_xmb || g_hide_dupes != hide_dupes)
                     ui_relist(&ui, 0, 0); /* sortera om Spel och Appar */
+                if (home) {
+                    ui.cc_open = 1;
+                    ui.cc_confirm = 0;
+                    sound_play(SND_OPEN);
+                }
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
