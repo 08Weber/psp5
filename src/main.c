@@ -583,6 +583,12 @@ int main(int argc, char *argv[])
         if (action == UI_ACTION) { /* Control Center: viloläge, USB, filer, XMB, omstart, stäng av */
             if (run_action(ui.cc_action, &list, &ui))
                 app_start(&list, &ui, 0);
+            /* viloläge: skärmen har tonats till svart – håll den svart tills PSP:n somnar,
+             * annars syns menyn en kort stund innan (sleep_and_wake tar sedan över) */
+            for (int k = 0; ui.cc_action == SA_SUSPEND && k < 120 && !s_sleeping && s_running; k++) {
+                gfx_begin(RGBA(0, 0, 0, 255));
+                gfx_end();
+            }
             old = in.held;
             continue;
         }
