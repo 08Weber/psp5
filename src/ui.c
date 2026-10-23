@@ -246,20 +246,26 @@ static void keyfile_apply(const EntryList *l, const char *name, void (*fn)(int i
     free(buf);
 }
 
+/* Samma nyckel kan finnas flera gånger (ISO och CSO av samma spel): första raden gäller */
 static void set_played(int i, int line, int lines)
 {
-    s_meta[i].played = lines - line;
+    if ((u32)(lines - line) > s_meta[i].played)
+        s_meta[i].played = lines - line;
     if (s_meta[i].played > s_played_max)
         s_played_max = s_meta[i].played;
 }
-static void set_rank(int i, int line, int lines) { s_meta[i].rank = line + 1; }
+static void set_rank(int i, int line, int lines)
+{
+    if (!s_meta[i].rank)
+        s_meta[i].rank = line + 1;
+}
 static void set_pinned(int i, int line, int lines) { s_meta[i].pinned = 1; }
 
 static void meta_load(const EntryList *l)
 {
     free(s_meta);
-    s_meta_n = l->count;
     s_meta = calloc(l->count ? l->count : 1, sizeof(Meta));
+    s_meta_n = s_meta ? l->count : 0;
     s_played_max = 0;
     if (!s_meta)
         return;
@@ -271,17 +277,23 @@ static void meta_load(const EntryList *l)
 /* Skriver nycklarna för listindexen idx[0..n) till <data>/<name>, en per rad */
 static void keyfile_write(const EntryList *l, const char *name, const int *idx, int n)
 {
-    char path[64], key[80];
+    /* allt i en buffert och en enda skrivning – tusen små skrivningar gav ett märkbart häng */
+    char path[64], *buf = malloc(n * 80 + 1);
+    if (!buf)
+        return;
+    int len = 0;
+    for (int k = 0; k < n; k++) {
+        entry_cover_key(&l->items[idx[k]], buf + len, 79);
+        len += strlen(buf + len);
+        buf[len++] = '\n';
+    }
     snprintf(path, sizeof(path), "%s/%s", g_data_dir, name);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (fd < 0)
-        return;
-    for (int k = 0; k < n; k++) {
-        entry_cover_key(&l->items[idx[k]], key, sizeof(key));
-        strcat(key, "\n");
-        sceIoWrite(fd, key, strlen(key));
+    if (fd >= 0) {
+        sceIoWrite(fd, buf, len);
+        sceIoClose(fd);
     }
-    sceIoClose(fd);
+    free(buf);
 }
 
 static int cmp_played_desc(const void *a, const void *b)
@@ -698,7 +710,7 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
         if (t != TAB_MUSIC && v->count && v->idx)
             chosen[t] = remap_index(v->idx[ui->sel[t]], removed_front, added_front);
         /* står man först i fliken blir en nyinsatt skiva markerad */
-        if (added_front && (t == TAB_GAMES || t == TAB_LIBRARY) && ui->sel[t] == 0)
+        if (added_front && !ui->moving && (t == TAB_GAMES || t == TAB_LIBRARY) && ui->sel[t] == 0)
             chosen[t] = 0;
         free(v->idx);
         v->idx = NULL;
@@ -766,34 +778,27 @@ static void resort(Ui *ui)
 /* Flytta: ger alla kort en egen, unik plats i den ordning de syns nu, och byter till egen ordning */
 static void start_arrange(Ui *ui)
 {
-    const LoaderView *v = view(ui);
+    int *idx = s_meta ? malloc((s_meta_n ? s_meta_n : 1) * sizeof(int)) : NULL;
+    if (!idx) {
+        sound_play(SND_ERROR);
+        return;
+    }
+    /* Alla kort får täta, unika platser 1, 2, 3 … i den ordning de syns nu – i alla flikar och
+     * kategorier, med den sortering som gäller (nya spel utan plats sist). Bytet till egen
+     * ordning ändrar alltså ingenting man ser. */
+    for (int i = 0; i < s_meta_n; i++)
+        idx[i] = i;
+    s_sort_list = ui->list;
+    qsort(idx, s_meta_n, sizeof(int), cmp_row);
+    for (int k = 0; k < s_meta_n; k++)
+        s_meta[idx[k]].rank = k + 1;
+    free(idx);
     if (g_sort != SORT_CUSTOM) {
-        /* raden som den ser ut nu blir början på den egna ordningen; tidigare platser efter den */
-        for (int i = 0; i < s_meta_n; i++)
-            if (s_meta[i].rank > 0)
-                s_meta[i].rank += v->count;
-        for (int p = 0; p < v->count; p++)
-            meta(v->idx[p])->rank = p + 1;
         g_sort = SORT_CUSTOM;
         config_save(g_data_dir);
         char buf[64];
         ui_toast(ui, menu_label(ui, MI_SORT, buf, sizeof(buf)));
     }
-    /* täta platser 1, 2, 3 … – kort utan plats (nya spel) får nästa lediga i listans ordning */
-    int *idx = malloc((s_meta_n ? s_meta_n : 1) * sizeof(int));
-    if (!idx)
-        return;
-    int n = 0, next = 1;
-    for (int i = 0; i < s_meta_n; i++)
-        if (s_meta[i].rank > 0)
-            idx[n++] = i;
-    qsort(idx, n, sizeof(int), cmp_rank);
-    for (int k = 0; k < n; k++)
-        s_meta[idx[k]].rank = next++;
-    for (int i = 0; i < s_meta_n; i++)
-        if (!s_meta[i].rank)
-            s_meta[i].rank = next++;
-    free(idx);
     resort(ui);
     ui->moving = 1;
 }
@@ -814,8 +819,10 @@ static void arrange_step(Ui *ui, int dir)
     if (nb < 0 || nb >= v->count)
         return;
     int a = v->idx[*sel], b = v->idx[nb];
-    if (meta(a)->pinned != meta(b)->pinned || ui->list->items[b].type == ENTRY_UMD) {
-        sound_play(SND_ERROR);
+    if (meta(a)->pinned != meta(b)->pinned || ui->list->items[a].type == ENTRY_UMD ||
+        ui->list->items[b].type == ENTRY_UMD) {
+        if (ui->repeat_held == 0) /* bara första trycket, inte när knappen hålls */
+            sound_play(SND_ERROR);
         return;
     }
     int r = meta(a)->rank;
@@ -833,6 +840,10 @@ static void menu_choose(Ui *ui)
     int i = ui_selected(ui);
     switch (ui->menu_sel) {
     case MI_PIN:
+        if (!s_meta) { /* inget minne för listan – då går det inte att fästa */
+            sound_play(SND_ERROR);
+            break;
+        }
         meta(i)->pinned ^= 1;
         meta_save(ui->list, META_PINS);
         ui->menu_open = 0;
@@ -1357,8 +1368,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if ((in->pressed & confirm) && count && ui->intro >= 1) {
         if (ui->can_launch) {
             ui->launch = 0;
-            meta(ui_selected(ui))->played = ++s_played_max; /* Senast spelat */
-            meta_save(ui->list, META_PLAYED);
+            if (s_meta) { /* Senast spelat */
+                meta(ui_selected(ui))->played = ++s_played_max;
+                meta_save(ui->list, META_PLAYED);
+            }
             sound_play(SND_LAUNCH);
         } else {
             ui_toast(ui, L(S_NO_ARK));
@@ -2284,6 +2297,8 @@ static void draw_cc_music(Ui *ui, float x, float y, float a, u32 bg)
     static float shown, last;
     float dt = clampf(ui->time - last, 0, 0.05f);
     last = ui->time;
+    if (ui->cc_open && ui->cc_anim < 0.15f) /* panelen öppnas: inget kvar från förra gången */
+        shown = music_state() == MUSIC_PLAYING;
     shown = clampf(shown + (music_state() == MUSIC_PLAYING ? 6 : -6) * dt, 0, 1);
     int cur = music_current();
     const Track *t = cur >= 0 ? music_track(cur) : NULL;
