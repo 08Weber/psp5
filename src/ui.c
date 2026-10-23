@@ -154,7 +154,7 @@ static int is_app(const Entry *e)
 
 /* --- kategorier --- */
 
-#define MAX_CATS 32
+#define MAX_CATS 64
 static char s_cat_name[MAX_CATS][40]; /* mappnamnet, t.ex. "g_GBA" */
 static char s_cat_dir[MAX_CATS][96];  /* mappen (för bg.png), t.ex. "ms0:/PSP/GAME/g_GBA" */
 static int s_ncat;
@@ -926,6 +926,15 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     /* alternativmenyn: ✕ väljer, ○ eller □ stänger – resten av gränssnittet får inga knappar */
     ui->menu_anim = clampf(ui->menu_anim + (ui->menu_open ? 7 : -7) * dt, 0, 1);
     static const UiInput none = { 0, 0, 128, 128 };
+    /* HOME öppnar Control Center var man än är (utom under startanimationen) och stänger
+     * andra paneler – före dem, så att ingen av dem sväljer knappen */
+    if ((in->pressed & PSP_CTRL_HOME) && !ui->cc_open && ui->intro >= 1) {
+        ui->cc_open = 1;
+        ui->cc_confirm = 0;
+        ui->menu_open = ui->cat_open = 0;
+        sound_play(SND_OPEN);
+        in = &none;
+    }
     if (ui->menu_open) {
         u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
         u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE;
@@ -936,14 +945,6 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             ui->menu_open = 0;
             sound_play(SND_BACK);
         }
-        in = &none;
-    }
-    /* HOME öppnar Control Center var man än är (utom under startanimationen) */
-    if ((in->pressed & PSP_CTRL_HOME) && !ui->cc_open && ui->intro >= 1) {
-        ui->cc_open = 1;
-        ui->cc_confirm = 0;
-        ui->menu_open = ui->cat_open = 0;
-        sound_play(SND_OPEN);
         in = &none;
     }
     int cc_was_open = ui->cc_open;

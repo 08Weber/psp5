@@ -826,7 +826,14 @@ static void view_update(const UiInput *in)
             break;
         }
     if (in->pressed & PSP_CTRL_CROSS) {
-        join(g_wallpaper, sizeof(g_wallpaper), s_path, s_items[s_sel].name);
+        char path[MAX_PATH];
+        join(path, sizeof(path), s_path, s_items[s_sel].name);
+        if (strlen(path) >= sizeof(g_wallpaper)) { /* får inte plats i psp5.cfg */
+            toast(L(S_F_FAILED));
+            sound_play(SND_ERROR);
+            return;
+        }
+        snprintf(g_wallpaper, sizeof(g_wallpaper), "%s", path);
         config_save(g_data_dir);
         toast(L(S_WALLPAPER_SET));
         sound_play(SND_SELECT);

@@ -45,6 +45,8 @@ static int load_icon_near(int range)
             if (p < 0 || p >= v->count)
                 continue;
             int i = v->idx[p];
+            if (i < 0 || i >= s_list->count)
+                return 0; /* shortcut: fliken byggdes om under tiden (ui_relist) – fångar inte allt, ett lås behövs om det syns krascher */
             if (s_slots[i].state != SLOT_EMPTY)
                 continue;
             s_slots[i].state = SLOT_LOADING;
