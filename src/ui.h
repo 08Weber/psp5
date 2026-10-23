@@ -91,6 +91,9 @@ typedef struct {
     int cc_open;
     float cc_anim;
     int cc_sel;
+    float cc_pos;        /* markeringen glider mot cc_sel */
+    float cc_label;      /* 0→1: namnet på valt alternativ tonas in */
+    float cc_leave;      /* >0: tonar till svart innan åtgärden körs, 1 = klart */
     int cc_confirm;      /* valt alternativ väntar på ett andra tryck */
     int cc_action;       /* SA_* som main.c ska utföra efter UI_ACTION */
 
@@ -107,6 +110,8 @@ void ui_relist(Ui *ui, int removed_front, int added_front);
 int ui_update(Ui *ui, const UiInput *in, float dt);
 void ui_draw(Ui *ui);
 void ui_toast(Ui *ui, const char *msg);
+/* Öppnar Control Center (HOME) och stänger andra paneler. */
+void ui_open_cc(Ui *ui);
 /* Låter korten glida in igen som vid start (efter startskärmen). */
 void ui_replay_intro(Ui *ui);
 /* Index i spellistan för markerad post, eller -1. */

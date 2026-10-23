@@ -319,6 +319,8 @@ static void usb_mode(void)
         gfx_button(SCREEN_W / 2 - 40, 246, 6.5f, BTN_CIRCLE, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
         text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         osd_draw();
+        if (t < 0.25f) /* tonas in från svart, som filhanteraren */
+            gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - t / 0.25f))));
         gfx_end();
     }
     sys_usb_stop();
@@ -539,11 +541,8 @@ int main(int argc, char *argv[])
                     ui_toast(&ui, L(S_SAVED));
                 if (g_sort_xmb != sort_xmb || g_hide_dupes != hide_dupes)
                     ui_relist(&ui, 0, 0); /* sortera om Spel och Appar */
-                if (home) {
-                    ui.cc_open = 1;
-                    ui.cc_confirm = 0;
-                    sound_play(SND_OPEN);
-                }
+                if (home)
+                    ui_open_cc(&ui);
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {

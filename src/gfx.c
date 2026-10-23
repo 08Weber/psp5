@@ -130,6 +130,12 @@ void gfx_init(void)
     sceGuShadeModel(GU_SMOOTH);
     sceGuFinish();
     sceGuSync(0, 0);
+    /* båda bildbuffertarna svarta innan skärmen slås på – annars syns förra lägets sista
+     * bild en kort stund (blinkade vid byte till USB-läge och filhanteraren) */
+    for (int i = 0; i < 2; i++) {
+        gfx_begin(RGBA(0, 0, 0, 255));
+        gfx_end();
+    }
     sceDisplayWaitVblankStart();
     sceGuDisplay(GU_TRUE);
 
