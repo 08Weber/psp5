@@ -460,7 +460,7 @@ int main(int argc, char *argv[])
 
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
-    unsigned char sort_xmb = 0, hide_dupes = 0; /* hur flikarna byggdes när inställningarna öppnades */
+    unsigned char sort = 0, hide_dupes = 0; /* hur flikarna byggdes när inställningarna öppnades */
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
     float idle = 0; /* sekunder utan knapptryck – för skärm av och viloläge */
@@ -539,7 +539,7 @@ int main(int argc, char *argv[])
                 preview_pause(0);
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
-                if (g_sort_xmb != sort_xmb || g_hide_dupes != hide_dupes)
+                if (g_sort != sort || g_hide_dupes != hide_dupes)
                     ui_relist(&ui, 0, 0); /* sortera om Spel och Appar */
                 if (home)
                     ui_open_cc(&ui);
@@ -570,7 +570,7 @@ int main(int argc, char *argv[])
             /* menyn fungerar: slå på ett pausat launcherläge innan inställningarna läser
              * det, annars visas "Boot psp5" som av tills första spelstarten (issue #8) */
             start_confirmed();
-            sort_xmb = g_sort_xmb;
+            sort = g_sort;
             hide_dupes = g_hide_dupes;
             preview_pause(1); /* spelets musik ska inte spela bakom inställningarna */
             settings_open();
