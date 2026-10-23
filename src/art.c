@@ -233,25 +233,71 @@ Texture *art_load_bg(const Entry *e)
     cover_path(e, "bg", path, sizeof(path));
     if ((t = ntx_load(path)))
         return t;
-    cache_path(e, "bg", path, sizeof(path));
+    cache_path(e, "bg2", path, sizeof(path)); /* bg2: PIC1 i full storlek sedan 1.6.1 */
     if ((t = ntx_load(path)))
         return t;
 
     Image img;
-    int blur;
+    int blur, w = SCREEN_W, h = SCREEN_H;
     if (decode_embedded(e, e->pic_offset, e->pic_size, "PIC1.PNG", &img)) {
-        blur = 0; /* PIC1 visas skarp, som en stor omslagsbild */
+        blur = 0; /* PIC1 visas skarp i skärmens storlek, som en stor omslagsbild */
     } else if (decode_embedded(e, e->icon_offset, e->icon_size, "ICON0.PNG", &img)) {
-        blur = 10; /* ikonen förstoras – kraftig oskärpa ger en mjuk färgyta */
+        blur = 10; /* ikonen förstoras – kraftig oskärpa ger en mjuk färgyta, liten fil räcker */
+        w = BG_W;
+        h = BG_H;
     } else {
         return NULL;
     }
 
-    if (fit(&img, BG_W, BG_H)) {
+    if (fit(&img, w, h)) {
         img_blur(&img, blur);
         t = img_to_texture(&img, GU_PSM_5650);
         if (t)
             ntx_save(path, t);
+    }
+    img_free(&img);
+    return t;
+}
+
+/* PIC0 som spelets logga: genomskinliga kanter skärs bort, så att själva loggan fyller rutan */
+Texture *art_load_logo(const Entry *e)
+{
+    if (!e->pic0_size)
+        return NULL;
+    char path[256];
+    cache_path(e, "p0", path, sizeof(path));
+    Texture *t = ntx_load(path);
+    if (t)
+        return t;
+
+    Image img;
+    if (!decode_embedded(e, e->pic0_offset, e->pic0_size, "PIC0.PNG", &img))
+        return NULL;
+    int x0 = img.w, y0 = img.h, x1 = -1, y1 = -1;
+    for (int y = 0; y < img.h; y++)
+        for (int x = 0; x < img.w; x++)
+            if ((img.px[y * img.w + x] >> 24) > 16) {
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+    int cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+    Image crop = { cw, ch, cw > 0 && ch > 0 ? malloc(cw * ch * 4) : NULL };
+    if (crop.px) {
+        for (int y = 0; y < ch; y++)
+            memcpy(crop.px + y * cw, img.px + (y + y0) * img.w + x0, cw * 4);
+        int w = LOGO_W, h = ch * LOGO_W / cw; /* behåll formatet, rymmas i LOGO_W×LOGO_H */
+        if (h > LOGO_H) {
+            h = LOGO_H;
+            w = cw * LOGO_H / ch;
+        }
+        if (w > 0 && h > 0 && fit(&crop, w, h)) {
+            t = img_to_texture(&crop, GU_PSM_8888);
+            if (t)
+                ntx_save(path, t);
+        }
+        img_free(&crop);
     }
     img_free(&img);
     return t;

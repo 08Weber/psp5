@@ -2,6 +2,8 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
+#include <psptypes.h>
+
 /* Lagringen psp5 startades från: "ms0:" eller "ef0:" (PSP Go:s internminne) */
 extern char g_root[5];
 /* psp5:s egna filer (omslag, cache, psp5.cfg) på den lagringen, t.ex. "ef0:/PSP5" */
@@ -38,6 +40,17 @@ void sys_suspend(void);
 void sys_shutdown(void);
 /* Startar ARK:s återställningsmeny. Returnerar bara om det misslyckades. */
 void sys_recovery(void);
+
+/* HOME-knappen till psp5 (Control Center) i stället för systemets avslutadialog.
+ * 1 = det går (ARK finns). En vakthund lämnar tillbaka HOME till systemet om menyn
+ * slutar läsa knapparna i tre sekunder. */
+int sys_home_init(void);
+/* PSP_CTRL_HOME om HOME hålls in, annars 0. Anropas varje bildruta i menyn. */
+u32 sys_home_buttons(void);
+/* Systemets HOME-dialog på igen – före spelstart, avslut och viloläge. */
+void sys_home_release(void);
+/* Släcker (0) eller tänder (1) skärmen. 0 = går inte (ingen ARK). */
+int sys_display(int on);
 
 int sys_usb_start(void);
 void sys_usb_stop(void);

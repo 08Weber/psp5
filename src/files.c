@@ -17,6 +17,8 @@
 #include "system.h"
 #include "theme.h"
 #include "osd.h"
+#include "art.h"
+#include "config.h"
 
 #define LIST_X   24.0f
 #define LIST_W   432.0f
@@ -793,6 +795,70 @@ static int vertical(const UiInput *in, float dt)
     return dir;
 }
 
+/* --- bildvisaren: ✕ på en JPEG/PNG visar den som bakgrundsbild (beskuren till skärmen) --- */
+
+static Texture *s_view;
+static int s_viewing;
+
+static int is_image(const FileEntry *e)
+{
+    const char *dot = e->kind == KIND_FILE ? strrchr(e->name, '.') : NULL;
+    return dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") || !strcasecmp(dot, ".png"));
+}
+
+static int view_load(void)
+{
+    char path[MAX_PATH];
+    tex_free(s_view);
+    join(path, sizeof(path), s_path, s_items[s_sel].name);
+    s_view = art_load_wallpaper(path);
+    return s_view != NULL;
+}
+
+static void view_update(const UiInput *in)
+{
+    int dir = (in->pressed & PSP_CTRL_RIGHT) ? 1 : (in->pressed & PSP_CTRL_LEFT) ? -1 : 0;
+    for (int i = s_sel + dir; dir && i >= 0 && i < s_count; i += dir)
+        if (is_image(&s_items[i])) { /* nästa / föregående bild i mappen */
+            s_sel = i;
+            view_load();
+            sound_play(SND_MOVE);
+            break;
+        }
+    if (in->pressed & PSP_CTRL_CROSS) {
+        join(g_wallpaper, sizeof(g_wallpaper), s_path, s_items[s_sel].name);
+        config_save(g_data_dir);
+        toast(L(S_WALLPAPER_SET));
+        sound_play(SND_SELECT);
+    } else if (in->pressed & PSP_CTRL_CIRCLE) {
+        s_viewing = 0;
+        tex_free(s_view);
+        s_view = NULL;
+        sound_play(SND_BACK);
+    }
+}
+
+static void view_draw(void)
+{
+    if (s_view)
+        gfx_tex(s_view, 0, 0, SCREEN_W, SCREEN_H, RGBA(255, 255, 255, 255));
+    gfx_gradient_v(0, 0, SCREEN_W, 50, RGBA(0, 0, 0, 150), RGBA(0, 0, 0, 0));
+    gfx_gradient_v(0, SCREEN_H - 60, SCREEN_W, 60, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 170));
+    char name[80];
+    text_ellipsis(name, sizeof(name), s_items[s_sel].shown, 0.6f, SCREEN_W - 2 * LIST_X);
+    text_draw(LIST_X, 26, 0.6f, 0, TEXT_MAIN, ALIGN_LEFT, name);
+    float x = LIST_X, y = 250;
+    gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, LIGHT, DARK);
+    text_draw(x + 17, y + 4.5f, 0.54f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_SET_WALLPAPER));
+    x += 17 + text_width(0.54f, 0, L(S_SET_WALLPAPER)) + 14;
+    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, LIGHT, DARK);
+    text_draw(x + 17, y + 4.5f, 0.54f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_BACK));
+    float l[6] = { SCREEN_W - LIST_X - 22, y, SCREEN_W - LIST_X - 16, y - 4.5f, SCREEN_W - LIST_X - 16, y + 4.5f };
+    gfx_fan(SCREEN_W - LIST_X - 19, y, l, 3, LIGHT);
+    float r[6] = { SCREEN_W - LIST_X, y, SCREEN_W - LIST_X - 6, y - 4.5f, SCREEN_W - LIST_X - 6, y + 4.5f };
+    gfx_fan(SCREEN_W - LIST_X - 3, y, r, 3, LIGHT);
+}
+
 void files_open(void)
 {
     s_ndev = 0;
@@ -837,6 +903,10 @@ int files_update(const UiInput *in, float dt)
         return 0;
     }
 
+    if (s_viewing) {
+        view_update(in);
+        return 0;
+    }
     int move = vertical(in, dt);
     if (s_menu) {
         if (move) {
@@ -877,6 +947,9 @@ int files_update(const UiInput *in, float dt)
             char path[MAX_PATH];
             join(path, sizeof(path), s_path, e->name);
             enter(e->kind == KIND_DEVICE ? e->name : path, NULL);
+            sound_play(SND_SELECT);
+        } else if (e && is_image(e) && view_load()) {
+            s_viewing = 1;
             sound_play(SND_SELECT);
         } else if (s_path[0]) {
             open_menu(M_OPTIONS); /* ✕ på en fil: vad ska göras med den */
@@ -1093,20 +1166,24 @@ static void draw_progress(void)
 static void draw_scene(void)
 {
     float a = s_open, slide = (1 - a) * 10;
-    static const float neutral[3] = { 120, 120, 120 };
-    theme_backdrop(theme_cur(), s_time, neutral, 1, 1);
-    draw_header(a, slide);
-    draw_list(a, slide);
-    if (s_clip_n) { /* urklippet nere till vänster */
-        char line[64];
-        snprintf(line, sizeof(line), "%s: %d", L(s_clip_move ? S_F_MOVE : S_F_COPY), s_clip_n);
-        gfx_round_rect(LIST_X, 243, 12, 15, 2, fade(RGBA(214, 214, 220, 255), a));
-        gfx_rect(LIST_X + 3, 241, 6, 4, fade(RGBA(150, 152, 160, 255), a));
-        text_draw(LIST_X + 18, 255, 0.54f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
+    if (s_viewing) {
+        view_draw();
+    } else {
+        static const float neutral[3] = { 120, 120, 120 };
+        theme_backdrop(theme_cur(), s_time, neutral, 1, 1);
+        draw_header(a, slide);
+        draw_list(a, slide);
+        if (s_clip_n) { /* urklippet nere till vänster */
+            char line[64];
+            snprintf(line, sizeof(line), "%s: %d", L(s_clip_move ? S_F_MOVE : S_F_COPY), s_clip_n);
+            gfx_round_rect(LIST_X, 243, 12, 15, 2, fade(RGBA(214, 214, 220, 255), a));
+            gfx_rect(LIST_X + 3, 241, 6, 4, fade(RGBA(150, 152, 160, 255), a));
+            text_draw(LIST_X + 18, 255, 0.54f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
+        }
+        draw_hints(a * (1 - s_menu_anim));
+        draw_menu();
+        draw_progress();
     }
-    draw_hints(a * (1 - s_menu_anim));
-    draw_menu();
-    draw_progress();
     if (s_toast_time > 0) {
         float ta = clampf(s_toast_time / 0.4f, 0, 1);
         float w = text_width(0.6f, 0, s_toast) + 30;
@@ -1127,6 +1204,9 @@ void files_draw(void)
 
 void files_close(void)
 {
+    s_viewing = 0;
+    tex_free(s_view);
+    s_view = NULL;
     stop_op();
     clear_clip();
     free(s_items);

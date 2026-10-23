@@ -17,8 +17,13 @@ void art_init(const char *base_dir);
 /* Kortbild (8888, rundade hörn). `accent` får bildens medelfärg. NULL om ingen ikon finns. */
 Texture *art_load_icon(const Entry *e, u32 *accent);
 
-/* Bakgrund (5650, BG_W×BG_H): PIC1 skarp, annars ikonen kraftigt suddad. */
+/* Bakgrund (5650): PIC1 skarp i 480×272, annars ikonen kraftigt suddad (BG_W×BG_H). */
 Texture *art_load_bg(const Entry *e);
+
+/* Spelets logga (PIC0, 8888) utan genomskinliga kanter, högst LOGO_W×LOGO_H. NULL om den saknas. */
+#define LOGO_W 200
+#define LOGO_H 84
+Texture *art_load_logo(const Entry *e);
 
 #define COVER_SIZE 64
 /* Omslag till en låt (8888, COVER_SIZE i kvadrat): ur ID3-taggen, annars cover.jpg/folder.jpg

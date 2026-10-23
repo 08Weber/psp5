@@ -10,7 +10,7 @@
 #include "system.h"
 
 #define MAX_SFO_SIZE (64 * 1024)
-#define MAX_ISO_DEPTH 1 /* ISO-mappen + en nivå undermappar */
+#define MAX_ISO_DEPTH 2 /* ISO-mappen + två nivåer undermappar (kategori/undermapp) */
 
 #define PBP_MAGIC 0x50425000   /* "\0PBP" */
 #define CACHE_MAGIC 0x324C564E /* "NVL2" */
@@ -113,7 +113,7 @@ void entry_read_sfo(Entry *e, const u8 *sfo, u32 size)
     sfo_get_string(sfo, size, "DISC_ID", e->game_id, sizeof(e->game_id));
 }
 
-static void add_iso(ScanState *s, const char *path, const char *name, u32 size, u32 time)
+static void add_iso(ScanState *s, const char *path, const char *name, u32 size, u32 time, const char *cat)
 {
     if (from_cache(s, path, size, time, time))
         return;
@@ -123,10 +123,14 @@ static void add_iso(ScanState *s, const char *path, const char *name, u32 size, 
     if (iso_open(&r, path) < 0)
         return;
 
-    /* utan PARAM.SFO är det inget PSP-spel (eller så är filen trasig) */
-    u32 sfo_size;
+    /* Utan PARAM.SFO i en läsbar ISO är det inget PSP-spel (t.ex. UMD-video i ISO/VIDEO).
+     * Går filen inte att läsa alls (okänt eller trasigt format) visas den ändå, med
+     * filnamnet som titel: ARK kan ofta starta den, och spelet ska inte försvinna tyst. */
+    u32 sfo_size = 0;
     u8 *sfo = iso_load(&r, "PSP_GAME/PARAM.SFO", &sfo_size, MAX_SFO_SIZE);
-    Entry *e = sfo ? add_entry(s->list) : NULL;
+    u8 cd001[6] = "";
+    int readable = iso_read(&r, cd001, 6, 16 * 2048) == 6 && !memcmp(cd001 + 1, "CD001", 5);
+    Entry *e = sfo || !readable ? add_entry(s->list) : NULL;
     if (!e) {
         free(sfo);
         iso_close(&r);
@@ -136,11 +140,13 @@ static void add_iso(ScanState *s, const char *path, const char *name, u32 size, 
     e->type = ENTRY_ISO;
     e->file_size = size;
     e->file_time = e->sort_time = time;
+    strncpy(e->category, cat, sizeof(e->category) - 1);
     strncpy(e->title, name, sizeof(e->title) - 1);
     char *dot = strrchr(e->title, '.');
     if (dot)
         *dot = 0;
-    entry_read_sfo(e, sfo, sfo_size);
+    if (sfo)
+        entry_read_sfo(e, sfo, sfo_size);
     free(sfo);
 
     IsoFile f;
@@ -151,6 +157,10 @@ static void add_iso(ScanState *s, const char *path, const char *name, u32 size, 
     if (iso_find(&r, "PSP_GAME/PIC1.PNG", &f)) {
         e->pic_offset = f.offset;
         e->pic_size = f.size;
+    }
+    if (iso_find(&r, "PSP_GAME/PIC0.PNG", &f)) {
+        e->pic0_offset = f.offset;
+        e->pic0_size = f.size;
     }
     if (iso_find(&r, "PSP_GAME/ICON1.PMF", &f)) {
         e->vid_offset = f.offset;
@@ -163,7 +173,7 @@ static void add_iso(ScanState *s, const char *path, const char *name, u32 size, 
     iso_close(&r);
 }
 
-static void scan_iso_dir(ScanState *s, const char *dir, int depth)
+static void scan_iso_dir(ScanState *s, const char *dir, int depth, const char *cat)
 {
     SceUID d = sceIoDopen(dir);
     if (d < 0)
@@ -177,10 +187,10 @@ static void scan_iso_dir(ScanState *s, const char *dir, int depth)
             snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name);
             if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
                 if (depth < MAX_ISO_DEPTH)
-                    scan_iso_dir(s, path, depth + 1);
+                    scan_iso_dir(s, path, depth + 1, depth ? cat : ent.d_name);
             } else if (has_ext(ent.d_name, "iso") || has_ext(ent.d_name, "cso") ||
                        has_ext(ent.d_name, "zso") || has_ext(ent.d_name, "dax")) { /* libcisoread och ARK läser DAX */
-                add_iso(s, path, ent.d_name, (u32)ent.d_stat.st_size, pack_time(&ent.d_stat.sce_st_mtime));
+                add_iso(s, path, ent.d_name, (u32)ent.d_stat.st_size, pack_time(&ent.d_stat.sce_st_mtime), cat);
             }
         }
         memset(&ent, 0, sizeof(ent)); /* d_private måste vara nollad */
@@ -189,7 +199,7 @@ static void scan_iso_dir(ScanState *s, const char *dir, int depth)
 }
 
 /* 0 = mappen har ingen EBOOT.PBP. folder_time = mappens ändringstid (XMB-ordningen). */
-static int add_eboot(ScanState *s, const char *path, const char *folder, u32 folder_time)
+static int add_eboot(ScanState *s, const char *path, const char *folder, u32 folder_time, const char *cat)
 {
     SceIoStat st;
     if (sceIoGetstat(path, &st) < 0)
@@ -220,6 +230,7 @@ static int add_eboot(ScanState *s, const char *path, const char *folder, u32 fol
     e->file_size = size;
     e->file_time = time;
     e->sort_time = folder_time;
+    strncpy(e->category, cat, sizeof(e->category) - 1);
 
     u32 sfo_size = h.icon0_offset - h.param_offset;
     if (sfo_size > 0 && sfo_size <= MAX_SFO_SIZE) {
@@ -227,12 +238,12 @@ static int add_eboot(ScanState *s, const char *path, const char *folder, u32 fol
         if (sfo) {
             sceIoLseek32(fd, h.param_offset, PSP_SEEK_SET);
             if (sceIoRead(fd, sfo, sfo_size) == (int)sfo_size) {
-                char cat[8] = "";
+                char kind[8] = "";
                 entry_read_sfo(e, sfo, sfo_size);
-                sfo_get_string(sfo, sfo_size, "CATEGORY", cat, sizeof(cat));
-                if (strcmp(cat, "EG") == 0)
+                sfo_get_string(sfo, sfo_size, "CATEGORY", kind, sizeof(kind));
+                if (strcmp(kind, "EG") == 0)
                     e->type = ENTRY_PSN;
-                else if (strcmp(cat, "ME") == 0)
+                else if (strcmp(kind, "ME") == 0)
                     e->type = ENTRY_POPS;
             }
             free(sfo);
@@ -245,6 +256,8 @@ static int add_eboot(ScanState *s, const char *path, const char *folder, u32 fol
     e->pic_offset = e->pic_size ? h.pic1_offset : 0;
     e->vid_size = h.pic0_offset - h.icon1_offset;
     e->vid_offset = e->vid_size ? h.icon1_offset : 0;
+    e->pic0_size = h.pic1_offset - h.pic0_offset;
+    e->pic0_offset = e->pic0_size ? h.pic0_offset : 0;
     e->snd_size = h.psp_offset - h.snd0_offset;
     e->snd_offset = e->snd_size ? h.snd0_offset : 0;
     sceIoClose(fd);
@@ -253,7 +266,7 @@ static int add_eboot(ScanState *s, const char *path, const char *folder, u32 fol
 
 /* depth 0 = PSP/GAME. En mapp utan EBOOT.PBP är en kategorimapp (t.ex. GAME/PS1/<spel>,
  * GAME/Emulators/TempGBA) – som arkMenu letar vi då en nivå ner i den. */
-static void scan_game_dir(ScanState *s, const char *dir, const char *self_path, int depth)
+static void scan_game_dir(ScanState *s, const char *dir, const char *self_path, int depth, const char *cat)
 {
     SceUID d = sceIoDopen(dir);
     if (d < 0)
@@ -267,9 +280,9 @@ static void scan_game_dir(ScanState *s, const char *dir, const char *self_path, 
             snprintf(path, sizeof(path), "%s/%s/EBOOT.PBP", dir, ent.d_name);
             /* psp5 själv (som app) ska inte synas i listan */
             if (strcasecmp(ent.d_name, "PSP5") != 0 && (!self_path || strcasecmp(path, self_path) != 0) &&
-                !add_eboot(s, path, ent.d_name, pack_time(&ent.d_stat.sce_st_mtime)) && depth == 0) {
+                !add_eboot(s, path, ent.d_name, pack_time(&ent.d_stat.sce_st_mtime), cat) && depth == 0) {
                 snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name);
-                scan_game_dir(s, path, self_path, 1);
+                scan_game_dir(s, path, self_path, 1, ent.d_name);
             }
         }
         memset(&ent, 0, sizeof(ent));
@@ -328,11 +341,11 @@ void scan_all(EntryList *list, const char *self_path, const char *cache_file, Sc
      * sökvägen ef0:, annars startas de som från minneskortet och hittas inte (issue #6). */
     int ms0 = !sys_ms_is_ef();
     if (ms0)
-        scan_iso_dir(&s, "ms0:/ISO", 0);
-    scan_iso_dir(&s, "ef0:/ISO", 0);
+        scan_iso_dir(&s, "ms0:/ISO", 0, "");
+    scan_iso_dir(&s, "ef0:/ISO", 0, "");
     if (ms0)
-        scan_game_dir(&s, "ms0:/PSP/GAME", self_path, 0);
-    scan_game_dir(&s, "ef0:/PSP/GAME", self_path, 0);
+        scan_game_dir(&s, "ms0:/PSP/GAME", self_path, 0, "");
+    scan_game_dir(&s, "ef0:/PSP/GAME", self_path, 0, "");
     scan_free(&s.cached);
 
     if (list->count > 1)
