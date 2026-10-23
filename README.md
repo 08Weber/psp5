@@ -85,6 +85,17 @@ A few other things I cared about:
   Memory Stick (and the internal storage on a PSP Go), mark files with □, and copy, move, rename or delete them
   or make a new folder from the △ menu. Copying shows a progress bar and can be cancelled with ○, and deleting
   always asks first.
+- **It has categories.** Put games in folders – `ISO/<folder>/` or `PSP/GAME/<folder>/<game>/` – and press
+  SELECT to pick one. Start a folder name with `g_` to put everything in it under Games (for example
+  `PSP/GAME/g_GBA` for GBA games packed as EBOOTs) or with `s_` for Apps; the prefix isn't shown. A `bg.png` in the
+  folder is shown behind it in the picker. The active category shows up in the tab name ("Games · GBA").
+- **It has a Control Center.** HOME opens a PS5-style panel with sleep, USB, the file manager, settings, the XMB,
+  restart and power off. *Settings → Power and USB* can also turn the screen off and put the PSP to sleep after a
+  while without a button press (not while music is playing).
+- **It shows the game's logo** (PIC0) under the selected game, and the background art (PIC1) in full resolution.
+- **It remembers where you were** – after a game, psp5 opens on the same tab, category and game.
+- **It can show your pictures.** Press ✕ on a JPEG or PNG in the file manager to view it (← → for the next one)
+  and ✕ again to use it as the wallpaper.
 - **It never touches flash0**, and you can always get back to the normal XMB.
 
 ## Installing
@@ -106,7 +117,8 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | △ | settings |
 | any button | skip the startup screen |
 | ○ | back |
-| HOME | quit to the XMB |
+| SELECT | categories (folders in ISO and PSP/GAME) · shuffle in Music |
+| HOME | Control Center: sleep, USB, files, settings, XMB, restart, power off |
 
 If something ever goes wrong, hold **SELECT** while the PSP boots – ARK then skips its settings and you land
 in the normal XMB. psp5 also looks after itself. If a start doesn't finish (the PSP froze or was switched off

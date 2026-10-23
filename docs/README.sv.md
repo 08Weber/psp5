@@ -226,7 +226,8 @@ Okända rader och kommentarer behålls.
 | L / R | byt flik (Spel / Appar) |
 | ✕ eller START (○ med japansk knappinställning) | starta |
 | △ | inställningar |
-| HOME | tillbaka till XMB (systemets egen fråga) |
+| SELECT | kategorier (mappar i ISO och PSP/GAME) · blanda i Musik |
+| HOME | Control Center: viloläge, USB, filer, inställningar, XMB, starta om, stäng av |
 
 ## Vad som visas
 - `ms0:/ISO` (+ en nivå undermappar): `.iso`, `.cso`, `.zso` – fliken **Spel**
