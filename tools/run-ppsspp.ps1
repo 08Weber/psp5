@@ -1,4 +1,4 @@
-# psp5 – made by Mille Weber
+# psp5 – made by 08Weber
 # Kopierar launchern + testdata till PPSSPP:s minneskort och startar den i PPSSPP.
 #   powershell -ExecutionPolicy Bypass -File tools\run-ppsspp.ps1 [-NoTestData]
 param([switch]$NoTestData)

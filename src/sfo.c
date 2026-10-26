@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 #include <string.h>
 #include "sfo.h"
 

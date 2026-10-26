@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Alla texter i gränssnittet. En rad per text, en kolumn per språk i ordningen
  * engelska, svenska, tyska, franska, spanska, italienska, nederländska,
  * portugisiska, ryska, japanska. Saknas en översättning används engelska. */

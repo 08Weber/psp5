@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 #ifndef SOUND_H
 #define SOUND_H
 

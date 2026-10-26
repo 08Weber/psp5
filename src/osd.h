@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 #ifndef OSD_H
 #define OSD_H
 

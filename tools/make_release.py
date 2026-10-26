@@ -1,4 +1,4 @@
-# psp5 – made by Mille Weber
+# psp5 – made by 08Weber
 """Packar release-zipparna (en per ARK och PSP-sort) från dist/ och dist-ark4/.
 
     py tools/make_release.py 2.0.0
@@ -17,7 +17,7 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 README = """psp5 v{version} for {ark}
-made by Mille Weber - https://github.com/08Weber/psp5
+made by 08Weber - https://github.com/08Weber/psp5
 
 This zip is for PSPs running {ark} (PSP-1000, PSP-2000 and PSP-3000).
 {other}
@@ -36,7 +36,7 @@ Full guide: https://github.com/08Weber/psp5/blob/main/INSTALL.md
 """
 
 README_GO = """psp5 v{version} for the PSP Go with {ark}
-made by Mille Weber - https://github.com/08Weber/psp5
+made by 08Weber - https://github.com/08Weber/psp5
 
 This zip is for the PSP Go (PSP-N1000) running {ark}.
 {other}

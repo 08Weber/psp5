@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Filhanteraren, i samma stil som inställningarna: temats bakgrund, en lista med mapparna
  * först och en tunn ljus ram runt det valda, och en liten alternativmeny (△, eller ✕ på en fil).
  * Kopiering, flytt och radering körs i en egen tråd med förloppsstapel och går att avbryta.

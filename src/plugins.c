@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* PLUGINS.TXT: "runlevel, sökväg, on|off" per rad. Vi behåller filen rad för rad
  * och ändrar bara det sista fältet på de rader man slår av/på. */
 #include <pspkernel.h>

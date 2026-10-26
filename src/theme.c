@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Färgteman. PS5 har inga egna färgteman, men konsolen säljs med skal i olika färger
  * (Midnight Black, Cosmic Red, Nova Pink, Starlight Blue, Galactic Purple, Deep Earth-
  * serien Volcanic Red/Cobalt Blue/Sterling Silver och Chroma-serien Indigo/Teal/Pearl),

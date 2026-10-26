@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Gränssnittsljud i stil med moderna konsolmenyer: mjuka, korta och luftiga.
  * Allt syntetiseras här (sinustoner, filtrerat brus, envelopes) – inga ljudfiler. */
 #include <pspkernel.h>

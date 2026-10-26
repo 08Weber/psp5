@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* ARK-4 har ingen "ArkCtrl"-modul – där ligger sctrlArkGetConfig i SystemCtrlForUser
  * (samma NID, ARK-4 core/systemctrl/exports.exp). Anropas bara när ARK-4 körs. */
 	.set noreorder

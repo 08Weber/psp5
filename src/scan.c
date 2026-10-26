@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 #include <pspkernel.h>
 #include <string.h>
 #include <strings.h>

@@ -1,5 +1,5 @@
 #!/bin/bash
-# psp5 – made by Mille Weber
+# psp5 – made by 08Weber
 # Bygger launchern i WSL och lägger resultatet i dist/PSP/GAME/PSP5 (ARK-5-versionen)
 # eller dist-ark4/PSP/GAME/PSP5 (ARK-4-versionen, "ark4").
 # Båda fungerar också på PSP Go – psp5 känner själv av internminnet (ef0:).

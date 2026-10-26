@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* MP3-spelaren: skannar ms0:/MUSIC (läser ID3-taggar) i bakgrunden och spelar upp
  * låtarna i en egen tråd med PSP:ns inbyggda avkodare (sceMp3) via SRC-ljudkanalen,
  * som klarar 44,1 kHz, 48 kHz m.fl. Gränssnittet styr tråden med en liten kommandokö,

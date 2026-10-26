@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Startskärm i samma stil och ordning som en PS5:s uppstart:
  *   1. en liten grå logga mitt på svart (psp5:s egen symbol – inte Sonys)
  *   2. svart, sedan en liten grå hälsovarning
