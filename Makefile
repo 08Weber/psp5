@@ -1,4 +1,4 @@
-# psp5 – made by Mille Weber
+# psp5 – made by 08Weber
 TARGET = psp5
 OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/launch.o \
        src/gfx.o src/image.o src/art.o src/loader.o src/ui.o \

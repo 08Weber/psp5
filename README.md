@@ -1,6 +1,6 @@
 # psp5
 
-**Made by Mille Weber**
+**Made by 08Weber**
 
 I love the PSP, but going back to the XMB after using a PS5 always feels a bit dated. So I built
 psp5: a launcher for the PSP that tries to recreate the look and feel of the **PS5 user interface** –
@@ -173,5 +173,5 @@ on the PSP Go).
 
 GPL-3.0 – see [LICENSE](LICENSE).
 
-psp5 is an unofficial fan project by Mille Weber. It is not affiliated with or endorsed by Sony Interactive
+psp5 is an unofficial fan project by 08Weber. It is not affiliated with or endorsed by Sony Interactive
 Entertainment. "PSP", "PS5" and "PlayStation" are trademarks of Sony Interactive Entertainment Inc.

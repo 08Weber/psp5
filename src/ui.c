@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* psp5:s utseende: valt spels bild över hela skärmen, en rad kort högst upp
  * där valt kort är stort med tunn ljus ram, flikar för spel/appar/bibliotek
  * (biblioteket visar allt i ett rutnät),

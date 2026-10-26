@@ -1,4 +1,4 @@
-# psp5 – made by Mille Weber
+# psp5 – made by 08Weber
 # Kör testbygget (dist-test) i PPSSPP med ett testskript – utan att skicka tangenter till skrivbordet.
 #   powershell -ExecutionPolicy Bypass -File tools\ppsspp-test.ps1 -Script tools\tests\settings.txt -Out <mapp>
 # -StartMark N låtsas att N starter i rad inte blev klara (startskyddet, tools\tests\safe.txt använder 1).

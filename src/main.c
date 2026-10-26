@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* psp5 – egen launcher för PSP med ARK-5. Kan köras som vanlig app
  * (ms0:/PSP/GAME/PSP5) eller som ARK:s launcher (ARK_01234/VBOOT.PBP). */
 #include <pspkernel.h>

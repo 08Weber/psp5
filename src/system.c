@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Systemfunktioner som arkMenu har: USB, ström, XMB och återställningsmeny.
  * Fungerar på både ARK-4 och ARK-5 – versionen känns av vid start. */
 #include <pspkernel.h>

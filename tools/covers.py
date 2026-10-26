@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# psp5 – made by Mille Weber
+# psp5 – made by 08Weber
 """Förbereder omslagsbilder för psp5 på datorn.
 
 Skannar minneskortet precis som launchern (ISO/ med iso/cso/zso, PSP/GAME/*/EBOOT.PBP)

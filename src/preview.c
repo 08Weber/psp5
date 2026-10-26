@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Spelets förhandsvisning som i XMB: står man på ett spel en stund spelas dess ICON1.PMF
  * (en kort video som ersätter ikonen) och SND0.AT3 (musik), om spelet har dem.
  * En styrtråd byter spel; video och ljud spelas i varsin tråd, så att ljudets blockerande

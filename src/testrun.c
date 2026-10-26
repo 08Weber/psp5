@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 #ifdef PSP5_TEST
 /* Skriptat testläge för PPSSPP: trycker knappar och sparar skärmdumpar
  * utan att någon behöver använda datorns tangentbord. */

@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* UMD-skivan, på samma sätt som ARK-5:s arkMenu (Launcher-Menus/arkMenu/src/umd.cpp
  * och gamemgr.cpp): en tråd tittar efter skivan och läser PARAM.SFO när den har
  * snurrat upp. Bilderna läses senare av art.c direkt från disc0:. */

@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Volymknapparna går direkt till systemet, och en vanlig app kan inte läsa dem. Volymen
  * finns i kärnans sceImposeGetParam: ARK hittar funktionen (och översätter NID:en för
  * 6.60/6.61) och kubridge anropar den i kärnläge. Ändras värdet visas indikatorn. */

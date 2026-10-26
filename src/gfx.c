@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Liten 2D-renderare direkt mot GU: rektanglar, gradienter, texturer,
  * rundade former via 9-slice och text via intraFont. */
 #include <pspkernel.h>

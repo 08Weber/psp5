@@ -1,4 +1,4 @@
-/* psp5 – made by Mille Weber */
+/* psp5 – made by 08Weber */
 /* Inställningar i samma anda som PS5:s: mörk yta med ett strålkastarljus,
  * kategorier till vänster, alternativ till höger med tunna skiljelinjer
  * och en tunn ljus ram runt det valda. All grafik ritas här. */

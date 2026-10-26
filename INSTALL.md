@@ -1,6 +1,6 @@
 # Installing psp5
 
-*psp5 – made by Mille Weber*
+*psp5 – made by 08Weber*
 
 **You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go) and a **USB cable**.
 
