@@ -1741,6 +1741,53 @@ static int read_clock(ScePspDateTime *now)
     return sceRtcGetCurrentTick(&tick) >= 0 && sceRtcSetTick(now, &tick) >= 0;
 }
 
+/* blandar två färger (RGB), t = 0 → a, 1 → b, helt ogenomskinlig */
+static u32 mix(u32 a, u32 b, float t)
+{
+    u32 out = 0xFF000000;
+    for (int s = 0; s < 24; s += 8)
+        out |= (u32)lerpf((a >> s) & 0xFF, (b >> s) & 0xFF, clampf(t, 0, 1)) << s;
+    return out;
+}
+
+/* Flikarnas ikoner i toppraden (~13×10 px runt cx, cy) */
+static void draw_tab_glyph(int tab, float cx, float cy, u32 c, u32 bg)
+{
+    switch (tab) {
+    case TAB_GAMES: /* handkontroll */
+        gfx_round_rect(cx - 5.5f, cy - 3.6f, 11.0f, 5.2f, 2.2f, c);
+        gfx_round_rect(cx - 6.6f, cy - 2.0f, 3.8f, 6.2f, 1.8f, c);
+        gfx_round_rect(cx + 2.8f, cy - 2.0f, 3.8f, 6.2f, 1.8f, c);
+        gfx_rect(cx - 4.7f, cy - 1.4f, 2.8f, 0.9f, bg);
+        gfx_rect(cx - 3.75f, cy - 2.35f, 0.9f, 2.8f, bg);
+        gfx_circle(cx + 3.9f, cy - 1.5f, 0.8f, bg);
+        gfx_circle(cx + 2.8f, cy - 0.3f, 0.8f, bg);
+        break;
+    case TAB_APPS: /* tre rutor + cirkel uppe till höger */
+        gfx_round_rect(cx - 5.2f, cy - 5.2f, 4.6f, 4.6f, 1.3f, c);
+        gfx_round_rect(cx - 5.2f, cy + 0.6f, 4.6f, 4.6f, 1.3f, c);
+        gfx_round_rect(cx + 0.6f, cy + 0.6f, 4.6f, 4.6f, 1.3f, c);
+        gfx_circle(cx + 2.9f, cy - 2.9f, 2.3f, c);
+        break;
+    case TAB_LIBRARY: /* 3×2 små spelkort */
+        for (int r = 0; r < 2; r++)
+            for (int col = 0; col < 3; col++)
+                gfx_round_rect(cx - 5.7f + col * 4.1f, cy - 5.0f + r * 5.4f, 3.2f, 4.4f, 0.9f, c);
+        break;
+    case TAB_MUSIC:
+        draw_note(cx, cy + 0.5f, 11.5f, c);
+        break;
+    case TAB_PICTURES: { /* bildram med sol och berg */
+        gfx_round_rect(cx - 6.4f, cy - 5.0f, 12.8f, 10.0f, 2.2f, c);
+        gfx_round_rect(cx - 4.6f, cy - 3.2f, 9.2f, 6.4f, 1.0f, bg);
+        gfx_circle(cx - 2.3f, cy - 1.1f, 1.2f, c);
+        float m[6] = { cx - 1.8f, cy + 3.2f, cx + 1.5f, cy - 0.6f, cx + 4.6f, cy + 3.2f };
+        gfx_fan(cx + 1.4f, cy + 1.8f, m, 3, c);
+        break;
+    }
+    }
+}
+
 static void draw_top_bar(Ui *ui)
 {
     float a = ui->intro;
@@ -1749,9 +1796,8 @@ static void draw_top_bar(Ui *ui)
     char clock[8] = "";
     if (read_clock(&now))
         snprintf(clock, sizeof(clock), "%02d:%02d", now.hour, now.minute);
-    text_draw(SCREEN_W - MARGIN, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock);
-    float cw = text_width(0.8f, 0, clock);
-    float bx = SCREEN_W - MARGIN - cw - 32;
+    float cw = text_width(0.72f, 0, clock);
+    float bx = SCREEN_W - MARGIN - cw - 30;
     int battery = scePowerIsBatteryExist();
     int charging = testrun_charging() >= 0 ? testrun_charging() : battery && scePowerIsBatteryCharging() > 0;
     int level = testrun_battery() >= 0 ? testrun_battery() : battery ? scePowerGetBatteryLifePercent() : -1;
@@ -1775,54 +1821,77 @@ static void draw_top_bar(Ui *ui)
         else
             snprintf(info, sizeof(info), "%d%%", level);
     }
-    float iw = info[0] ? text_width(0.6f, 0, info) + 5 : 0;
+    float iw = info[0] ? text_width(0.58f, 0, info) + 5 : 0;
+    float status_left = bx - (charging ? 9 : 0) - iw;
+    gfx_round_rect(status_left - 9, 8, (SCREEN_W - MARGIN) - status_left + 18, 24, 12, RGBA(0, 0, 0, (int)(110 * a)));
+    text_draw(SCREEN_W - MARGIN, 24.5f, 0.72f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock);
     if (info[0])
-        text_draw(bx - 5, 24.5f, 0.6f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, info);
-    draw_battery(bx, 15.5f, level, charging, ui->time, a, iw);
+        text_draw(bx - 5, 24.0f, 0.58f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, info);
+    draw_battery(bx, 15.0f, level, charging, ui->time, a, iw);
 
-    /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
-    static float size = 0.8f, gap = 20, sized_room = -1;
-    static int sized_tab = -1, sized_cats = -1;
-    static const char *sized_lang;
-    /* fliken med ett kategorifilter heter t.ex. "Spel · GBA" */
+    /* Flikraden: en mörk glaskapsel med ikoner för varje flik och en ljus kapsel som glider
+     * mjukt till vald flik och vecklar ut dess namn. */
     static char names[TAB_COUNT][64];
+    static float full_w[TAB_COUNT];
+    static int sized_cats = -1;
+    static const char *sized_lang;
     int cats = ui->cat[TAB_GAMES] | ui->cat[TAB_APPS] << 8 | ui->cat[TAB_LIBRARY] << 16;
-    float room = bx - 18 - iw - MARGIN; /* plats för laddningsblixten och procenten till vänster om batteriet */
-    if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang || cats != sized_cats) {
+    if (L(TAB_NAMES[0]) != sized_lang || cats != sized_cats) {
         for (int t = 0; t < TAB_COUNT; t++) {
             if (t < TAB_MUSIC && ui->cat[t] > 0)
                 snprintf(names[t], sizeof(names[t]), "%s · %s", L(TAB_NAMES[t]), cat_title(ui->cat[t]));
             else
                 snprintf(names[t], sizeof(names[t]), "%s", L(TAB_NAMES[t]));
+            full_w[t] = 25 + text_width(0.60f, 1, names[t]) + 11;
         }
-        size = 0.8f;
-        gap = 20;
-        for (;;) {
-            float w = 0;
-            for (int t = 0; t < TAB_COUNT; t++)
-                w += text_width(size, t == ui->tab, names[t]) + gap;
-            if (w - gap <= room || size <= 0.56f)
-                break;
-            size -= 0.04f;
-            gap = 14;
-        }
-        sized_room = room;
-        sized_tab = ui->tab;
         sized_lang = L(TAB_NAMES[0]);
         sized_cats = cats;
     }
-    float x = MARGIN;
+
+    static float s_tab_pos = -1, s_last_time;
+    if (s_tab_pos < 0 || ui->intro < 0.05f)
+        s_tab_pos = ui->tab;
+    float dt = clampf(ui->time - s_last_time, 0, 0.05f);
+    s_last_time = ui->time;
+    s_tab_pos += (ui->tab - s_tab_pos) * clampf(dt * 18.0f, 0, 1);
+    if (fabsf(ui->tab - s_tab_pos) < 0.004f)
+        s_tab_pos = ui->tab;
+
+    const float slot_w = 28.0f, x0 = MARGIN;
+    int t0 = (int)floorf(clampf(s_tab_pos, 0, TAB_COUNT - 1));
+    int t1 = t0 + 1 < TAB_COUNT ? t0 + 1 : t0;
+    float frac = clampf(s_tab_pos - t0, 0, 1);
+    float pill_w = lerpf(full_w[t0], full_w[t1], smooth(frac));
+    float pill_x = x0 + s_tab_pos * slot_w;
+    float track_w = (TAB_COUNT - 1) * slot_w + pill_w;
+
+    /* yttre mörk glaskapsel */
+    gfx_round_rect(x0 - 4, 8, track_w + 8, 24, 12, RGBA(0, 0, 0, (int)(115 * a)));
+    gfx_round_rect(x0 - 3, 9, track_w + 6, 22, 11, RGBA(255, 255, 255, (int)(14 * a)));
+
+    /* glidande ljus kapsel för aktiv flik */
+    gfx_glow(pill_x, 11, pill_w, 20, 5, RGBA(0, 0, 0, (int)(95 * a)));
+    gfx_round_rect(pill_x, 10, pill_w, 20, 10, with_alpha(LIGHT, 0.96f * a));
+
+    /* ikoner + vald fliks titel */
     for (int t = 0; t < TAB_COUNT; t++) {
-        int active = t == ui->tab;
-        text_draw(x, 25, size, active, with_alpha(active ? TEXT_MAIN : RGBA(255, 255, 255, 120), a),
-                  ALIGN_LEFT, names[t]);
-        x += text_width(size, active, names[t]) + gap;
+        float u = clampf(t - s_tab_pos, 0.0f, 1.0f);
+        float ix = x0 + t * slot_w + u * (pill_w - slot_w) + 14.0f;
+        float cover = clampf(1.0f - fabsf(t - s_tab_pos), 0.0f, 1.0f);
+        u32 ic = with_alpha(mix(RGBA(212, 215, 226, 255), DARK, cover), a * (0.72f + 0.28f * cover));
+        u32 ibg = with_alpha(mix(RGBA(26, 28, 34, 255), LIGHT, cover), a);
+        draw_tab_glyph(t, ix, 20.0f, ic, ibg);
     }
+    float ta = clampf(1.0f - fabsf(ui->tab - s_tab_pos) * 2.0f, 0.0f, 1.0f);
+    if (ta > 0.01f)
+        text_draw(pill_x + 25 + (1 - ta) * 4, 24.5f, 0.60f, 1, with_alpha(DARK, a * ta), ALIGN_LEFT, names[ui->tab]);
+
+    float x = x0 + track_w + 8;
 
     /* musik som spelas syns som en liten not med titeln i de andra flikarna */
     int cur = music_current();
     if (ui->tab != TAB_MUSIC && cur >= 0 && music_state() != MUSIC_STOPPED) {
-        float right = bx - 16 - iw, left = x + 4;
+        float right = status_left - 14, left = x + 4;
         if (right - left > 40) {
             static char line[100];
             static int line_for = -2, line_gen = -1;
@@ -1836,8 +1905,8 @@ static void draw_top_bar(Ui *ui)
             }
             float pulse = music_state() == MUSIC_PLAYING ? 0.75f + 0.25f * sinf(ui->time * 3) : 0.5f;
             float tw = text_width(0.5f, 0, line);
-            draw_note(right - tw - 8, 20.5f, 10, with_alpha(LIGHT, pulse * a));
-            text_draw(right, 24.5f, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, line);
+            draw_note(right - tw - 8, 20.0f, 10, with_alpha(LIGHT, pulse * a));
+            text_draw(right, 24.0f, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, line);
         }
     }
 }
@@ -2591,15 +2660,6 @@ static void draw_cc_glyph(int item, float cx, float cy, u32 c, u32 bg)
         gfx_round_rect(cx - 1.4f, cy - 10, 2.8f, 10, 1.4f, c);
         break;
     }
-}
-
-/* blandar två färger (RGB), t = 0 → a, 1 → b, helt ogenomskinlig */
-static u32 mix(u32 a, u32 b, float t)
-{
-    u32 out = 0xFF000000;
-    for (int s = 0; s < 24; s += 8)
-        out |= (u32)lerpf((a >> s) & 0xFF, (b >> s) & 0xFF, clampf(t, 0, 1)) << s;
-    return out;
 }
 
 /* Panelens färg: temats (som inställningarna, lite mörkare för texten) – grå med egen bakgrundsbild */
