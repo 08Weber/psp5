@@ -429,6 +429,10 @@ static const char *const T[S_COUNT][NL] = {
     [S_WALLPAPER_SET] = { "Wallpaper set", "Bakgrundsbilden är bytt", "Hintergrundbild gesetzt",
                           "Fond d'écran défini", "Fondo establecido", "Sfondo impostato", "Achtergrond ingesteld",
                           "Imagem de fundo definida", "Обои установлены", "壁紙を設定しました" },
+    [S_CONTROL_CENTER] = { "Control Center on HOME", "Control Center på HOME", "Control Center auf HOME",
+                           "Control Center sur HOME", "Centro de control en HOME", "Centro di controllo su HOME",
+                           "Control Center op HOME", "Centro de Controlo no HOME", "Пункт управления на HOME",
+                           "HOMEでコントロールセンター" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

@@ -274,6 +274,8 @@ static void read_pad(UiInput *in, u32 *old, int home)
 {
     SceCtrlData pad;
     sceCtrlPeekBufferPositive(&pad, 1);
+    if (!home)
+        sys_home_release(); /* Control Center avstängt: låt systemet / Custom Home ha HOME (issue #16) */
     /* i användarläge betyder HOME-biten bara att systemets dialog syns */
     pad.Buttons = (pad.Buttons & ~PSP_CTRL_HOME) | (home ? sys_home_buttons() : 0);
     pad.Buttons = testrun_buttons(pad.Buttons); /* bara i testbyggen */
@@ -485,7 +487,7 @@ int main(int argc, char *argv[])
             }
         }
         UiInput in;
-        read_pad(&in, &old, 1);
+        read_pad(&in, &old, g_control_center);
 
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
@@ -609,6 +611,8 @@ int main(int argc, char *argv[])
     }
 
     /* HOME → Avsluta: till XMB (även när psp5 är ARK:s launcher) */
+    if (in_settings)
+        settings_commit();
     app_stop(&list, &ui);
     sceIoRemove(START_MARK);
     sys_exit_xmb();
