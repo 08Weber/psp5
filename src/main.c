@@ -564,9 +564,11 @@ int main(int argc, char *argv[])
         }
 
         if (in_settings) {
-            /* HOME eller SELECT stänger inställningarna och öppnar Control Center */
+            /* HOME eller SELECT stänger inställningarna och öppnar Control Center;
+             * L och R stegar vidare längs toppraden (← Sök, → Spel) */
             int home = (in.pressed & (PSP_CTRL_HOME | PSP_CTRL_SELECT)) != 0;
-            int action = home ? SA_CLOSE : settings_update(&in, dt);
+            int lr = (in.pressed & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER));
+            int action = (home || lr) ? SA_CLOSE : settings_update(&in, dt);
             if (action == SA_CLOSE) {
                 in_settings = 0;
                 preview_pause(0);
@@ -574,8 +576,12 @@ int main(int argc, char *argv[])
                     ui_toast(&ui, L(S_SAVED));
                 if (g_sort != sort || g_hide_dupes != hide_dupes)
                     ui_relist(&ui, 0, 0); /* sortera om Spel och Appar */
-                if (home)
+                if (home) {
                     ui_open_cc(&ui);
+                } else if (lr) {
+                    sound_play(SND_TAB);
+                    ui_set_tab(&ui, (lr & PSP_CTRL_LTRIGGER) ? TAB_SEARCH : TAB_GAMES);
+                }
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {

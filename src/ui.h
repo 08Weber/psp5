@@ -7,7 +7,7 @@
 #include "loader.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */ };
-enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_PICTURES, TAB_COUNT };
+enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_PICTURES, TAB_MEDIA, TAB_VIDEO, TAB_SEARCH, TAB_COUNT };
 
 typedef struct {
     u32 pressed; /* nedtryckta denna bildruta */
@@ -77,6 +77,22 @@ typedef struct {
     float pic_fade;
     int pic_viewing;     /* 1 = helskärmsvisning i Bild-fliken */
 
+    /* videor (TAB_VIDEO) */
+    int vid_sel;
+    float vid_scroll;
+    int vid_target;
+    float vid_still;
+    int vid_viewing;     /* 1 = helskärmsvisning i Video-fliken */
+
+    /* sök (TAB_SEARCH) */
+    char search_query[48];
+    int search_focus;    /* 0 = teckenraden, 1 = resultatlistan */
+    int search_key;      /* valt tecken i teckenraden */
+    int search_sel;      /* valt resultat */
+    float search_scroll;
+    int search_target;
+    int search_launch_idx; /* >= 0 när ett sökresultat startas */
+
     /* spelets video i valt kort (preview.c): tonas in när första bilden finns */
     float preview_anim;
 
@@ -128,6 +144,7 @@ void ui_open_cc(Ui *ui);
 void ui_replay_intro(Ui *ui);
 /* Index i spellistan för markerad post, eller -1. */
 int ui_selected(const Ui *ui);
+void ui_set_tab(Ui *ui, int tab);
 
 /* Enkel skärm under första skanningen. */
 void ui_draw_scanning(int done, const char *name, float time);
