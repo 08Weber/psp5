@@ -159,7 +159,8 @@ static void scan_walls(const char *dir, int depth)
             if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
                 if (depth == 0)
                     scan_walls(path, 1);
-            } else if (dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") || !strcasecmp(dot, ".png"))) {
+            } else if (dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") || !strcasecmp(dot, ".png") ||
+                               !strcasecmp(dot, ".bmp"))) {
                 add_wall(path);
             }
         }
@@ -294,9 +295,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "2.0.1 (ARK-4)");
+    info(c, L(S_VERSION), "2.2.0 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "2.0.1 (ARK-5)");
+    info(c, L(S_VERSION), "2.2.0 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
@@ -382,6 +383,12 @@ static void build(int rebuild)
     c = &s_cats[CAT_POWER];
     c->name = L(S_CAT_POWER);
     action(c, L(S_USB_MODE), SA_USB, 0);
+    if (sys_usbnet_version() > 0) {
+        int st = sys_usbnet_state();
+        action(c, "USBNet", SA_USBNET, 0);
+        snprintf(c->items[c->count - 1].info, sizeof(c->items[0].info), "%s",
+                 L((st & 12) ? S_USB_CONNECTED : (st & 1) ? S_YES : S_USB_WAITING));
+    }
     action(c, L(S_FILES), SA_FILES, 0);
     choice(c, L(S_SCREEN_OFF), &g_screen_off, OPT_SCREEN_OFF, 5);
     c->items[c->count - 1].own = 1;
@@ -544,6 +551,17 @@ int settings_update(const UiInput *in, float dt)
             mark_dirty(it);
             sound_play(SND_TOGGLE);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
+            if (it->action == SA_USBNET) {
+                int r = sys_usbnet_probe(1200);
+                int st = sys_usbnet_state();
+                int ok = r == 0 || (st & 12);
+                snprintf(it->info, sizeof(it->info), "%s",
+                         L(ok ? S_USB_CONNECTED : (st & 1) ? S_YES : S_USB_WAITING));
+                snprintf(S.toast, sizeof(S.toast), "USBNet: %s", it->info);
+                S.toast_time = 2.4f;
+                sound_play(ok ? SND_SELECT : SND_ERROR);
+                return SA_NONE;
+            }
             sound_play(SND_SELECT);
             if (it->confirm && S.confirm_item != *sel) {
                 S.confirm_item = *sel;
@@ -684,8 +702,8 @@ static void draw_hints(float a)
 {
     const char *sel = L(S_SELECT), *back = L(S_BACK);
     float w = 13 + 5 + text_width(0.58f, 0, sel) + 14 + 13 + 5 + text_width(0.58f, 0, back);
-    float x = SCREEN_W - 22 - w, y = 252;
-    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
+    float x = SCREEN_W - 24 - w, y = 246;
+    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
     gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
     x += 18;
     text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, sel);
@@ -730,6 +748,8 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
     case IT_ACTION:
         if (S.confirm_item == index)
             snprintf(value, sizeof(value), "%s", L(S_CONFIRM));
+        else if (it->info[0])
+            snprintf(value, sizeof(value), "%s", it->info);
         break;
     }
     float value_w = 0;

@@ -53,6 +53,7 @@ static volatile int s_sleeping; /* PSP:n går in i viloläge – skärmen hålls
 static volatile int s_resumed;  /* PSP:n har vaknat klart – visa startskärmen */
 static char s_self[256];
 static char s_list_cache[256];
+static char s_pending_music[256]; /* MP3 som öppnades i filhanteraren */
 static char s_ingame_mark[32], s_start_mark[32], s_cache_dir[32]; /* i DATA_DIR, sätts i main */
 static u64 s_scan_start;
 
@@ -188,6 +189,11 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     if (!s_safe)
         music_init(); /* läser in ms0:/MUSIC i bakgrunden */
     ui_init(ui, list, confirm_is_circle(), launch_supported());
+    if (s_pending_music[0]) {
+        music_play_path(s_pending_music);
+        s_pending_music[0] = 0;
+        ui->tab = TAB_MUSIC;
+    }
 }
 
 /* Viloläge med sidoknappen: när PSP:n somnar ritas skärmen svart, så att det är
@@ -283,6 +289,12 @@ static void read_pad(UiInput *in, u32 *old, int home)
     in->held = pad.Buttons;
     in->lx = pad.Lx;
     in->ly = pad.Ly;
+    /* ♪ (NOTE) eller L + R + START tar en skärmbild (PNG) i ms0:/PICTURE/PSP5 */
+    u32 combo = PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER | PSP_CTRL_START;
+    if ((in->pressed & PSP_CTRL_NOTE) || ((pad.Buttons & combo) == combo && (*old & combo) != combo)) {
+        osd_request_screenshot();
+        in->pressed &= ~(PSP_CTRL_NOTE | combo);
+    }
     *old = pad.Buttons;
 }
 
@@ -395,10 +407,29 @@ static int run_action(int action, EntryList *list, Ui *ui)
         app_stop(list, ui);
         usb_mode();
         return 1; /* filer kan ha ändrats – skanna om */
-    case SA_FILES:
+    case SA_FILES: {
         app_stop(list, ui);
         files_mode();
+        char open_path[256];
+        int open_act = files_take_open(open_path, sizeof(open_path));
+        if (open_act == FO_GAME) {
+            Entry e;
+            memset(&e, 0, sizeof(e));
+            snprintf(e.path, sizeof(e.path), "%s", open_path);
+            const char *dot = strrchr(open_path, '.');
+            if (dot && !strcasecmp(dot, ".pbp"))
+                e.type = strstr(open_path, "/PSP/GAME/PSX/") ? ENTRY_POPS : ENTRY_HOMEBREW;
+            else
+                e.type = ENTRY_ISO;
+            start_confirmed();
+            set_ingame_mark();
+            launch_entry(&e);
+            sceIoRemove(INGAME_MARK);
+        } else if (open_act == FO_MUSIC) {
+            snprintf(s_pending_music, sizeof(s_pending_music), "%s", open_path);
+        }
         return 1;
+    }
     case SA_CLEAR_CACHE:
         app_stop(list, ui);
         delete_dir_files(s_cache_dir);
@@ -533,8 +564,8 @@ int main(int argc, char *argv[])
         }
 
         if (in_settings) {
-            /* HOME stänger inställningarna och öppnar Control Center */
-            int home = (in.pressed & PSP_CTRL_HOME) != 0;
+            /* HOME eller SELECT stänger inställningarna och öppnar Control Center */
+            int home = (in.pressed & (PSP_CTRL_HOME | PSP_CTRL_SELECT)) != 0;
             int action = home ? SA_CLOSE : settings_update(&in, dt);
             if (action == SA_CLOSE) {
                 in_settings = 0;

@@ -189,6 +189,77 @@ static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
     return 1;
 }
 
+static u16 le16(const u8 *p) { return p[0] | (p[1] << 8); }
+static u32 le32(const u8 *p) { return p[0] | (p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24); }
+
+/* BMP (24/32/16/8-bitars, t.ex. skärmdumpar från PSP-plugins). Skalas ner vid behov. */
+static int decode_bmp(const void *data, u32 size, Image *out, u32 max_pixels)
+{
+    const u8 *b = data;
+    if (size < 54 || b[0] != 'B' || b[1] != 'M')
+        return 0;
+    u32 off = le32(b + 10), dib = le32(b + 14);
+    int w = (int)le32(b + 18), h_raw = (int)le32(b + 22);
+    int top_down = h_raw < 0, h = top_down ? -h_raw : h_raw;
+    u16 planes = le16(b + 26), bpp = le16(b + 28);
+    u32 comp = le32(b + 30);
+    if (dib < 40 || planes != 1 || w <= 0 || h <= 0 || w > 8192 || h > 8192 || off >= size)
+        return 0;
+    if ((comp != 0 && comp != 3) || (bpp != 8 && bpp != 16 && bpp != 24 && bpp != 32))
+        return 0;
+    u32 row_bytes = ((u32)w * bpp + 31) / 32 * 4;
+    if (off + (u64)row_bytes * h > size)
+        return 0;
+    const u8 *pal = b + 14 + dib;
+    u32 pal_end = 14 + dib + 256 * 4;
+    if (bpp == 8 && pal_end > size)
+        return 0;
+
+    int step = 1;
+    while ((u32)(w / step) * (u32)(h / step) > max_pixels)
+        step *= 2;
+    int dw = w / step, dh = h / step;
+    if (dw < 1 || dh < 1)
+        return 0;
+    out->w = dw;
+    out->h = dh;
+    out->px = malloc(dw * dh * 4);
+    if (!out->px)
+        return 0;
+
+    int r565 = comp == 3 && dib >= 52 && le32(b + 42) == 0x07E0;
+    for (int dy = 0; dy < dh; dy++) {
+        int sy = dy * step;
+        int row_idx = top_down ? sy : (h - 1 - sy);
+        const u8 *src = b + off + (u32)row_idx * row_bytes;
+        u32 *dst = out->px + dy * dw;
+        for (int dx = 0; dx < dw; dx++) {
+            int sx = dx * step;
+            u8 r = 0, g = 0, bl = 0;
+            if (bpp == 24 || bpp == 32) {
+                const u8 *p = src + sx * (bpp / 8);
+                bl = p[0]; g = p[1]; r = p[2];
+            } else if (bpp == 16) {
+                u16 v = le16(src + sx * 2);
+                if (r565) {
+                    r = ((v >> 11) & 31) * 255 / 31;
+                    g = ((v >> 5) & 63) * 255 / 63;
+                    bl = (v & 31) * 255 / 31;
+                } else {
+                    r = ((v >> 10) & 31) * 255 / 31;
+                    g = ((v >> 5) & 31) * 255 / 31;
+                    bl = (v & 31) * 255 / 31;
+                }
+            } else if (bpp == 8) {
+                const u8 *c = pal + src[sx] * 4;
+                bl = c[0]; g = c[1]; r = c[2];
+            }
+            dst[dx] = RGBA(r, g, bl, 255);
+        }
+    }
+    return 1;
+}
+
 int img_decode_cover(const void *data, u32 size, Image *out, int min_side)
 {
     const u8 *b = data;
@@ -196,6 +267,8 @@ int img_decode_cover(const void *data, u32 size, Image *out, int min_side)
         return decode_png(data, size, out, MAX_COVER_PIXELS);
     if (size >= 4 && b[0] == 0xFF && b[1] == 0xD8)
         return decode_jpeg(data, size, out, min_side);
+    if (size >= 54 && b[0] == 'B' && b[1] == 'M')
+        return decode_bmp(data, size, out, MAX_COVER_PIXELS);
     return 0;
 }
 
@@ -416,4 +489,81 @@ int ntx_save(const char *path, const Texture *t)
     if (!ok)
         sceIoRemove(path);
     return ok;
+}
+
+typedef struct {
+    SceUID fd;
+    u8 buf[16384];
+    u32 len;
+} PngWrite;
+
+static void png_write_cb(png_structp png, png_bytep data, png_size_t len)
+{
+    PngWrite *w = png_get_io_ptr(png);
+    while (len > 0) {
+        u32 room = sizeof(w->buf) - w->len;
+        u32 chunk = len < room ? (u32)len : room;
+        memcpy(w->buf + w->len, data, chunk);
+        w->len += chunk;
+        data += chunk;
+        len -= chunk;
+        if (w->len == sizeof(w->buf)) {
+            if (sceIoWrite(w->fd, w->buf, w->len) != (int)w->len)
+                png_error(png, "io");
+            w->len = 0;
+        }
+    }
+}
+
+static void png_flush_cb(png_structp png) {}
+
+int img_save_png(const char *path, const u32 *px, int w, int h, int stride)
+{
+    PngWrite *pw = malloc(sizeof(PngWrite));
+    u8 *volatile row = malloc(w * 3);
+    if (!pw || !row) {
+        free(pw);
+        free((void *)row);
+        return 0;
+    }
+    pw->fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    pw->len = 0;
+    if (pw->fd < 0) {
+        free(pw);
+        free((void *)row);
+        return 0;
+    }
+    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    png_infop info = png ? png_create_info_struct(png) : NULL;
+    if (!png || !info || setjmp(png_jmpbuf(png))) {
+        if (png)
+            png_destroy_write_struct(&png, info ? &info : NULL);
+        sceIoClose(pw->fd);
+        sceIoRemove(path);
+        free(pw);
+        free((void *)row);
+        return 0;
+    }
+    png_set_write_fn(png, pw, png_write_cb, png_flush_cb);
+    png_set_IHDR(png, info, w, h, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_write_info(png, info);
+    for (int y = 0; y < h; y++) {
+        const u32 *src = px + y * stride;
+        for (int x = 0; x < w; x++) {
+            u32 c = src[x];
+            row[x * 3] = c & 0xFF;
+            row[x * 3 + 1] = (c >> 8) & 0xFF;
+            row[x * 3 + 2] = (c >> 16) & 0xFF;
+        }
+        png_write_row(png, row);
+    }
+    png_write_end(png, NULL);
+    if (pw->len > 0 && sceIoWrite(pw->fd, pw->buf, pw->len) != (int)pw->len)
+        longjmp(png_jmpbuf(png), 1);
+    png_destroy_write_struct(&png, &info);
+    sceIoClose(pw->fd);
+    free(pw);
+    free((void *)row);
+    return 1;
 }

@@ -804,15 +804,177 @@ static int vertical(const UiInput *in, float dt)
     return dir;
 }
 
-/* --- bildvisaren: ✕ på en JPEG/PNG visar den som bakgrundsbild (beskuren till skärmen) --- */
+/* --- bildvisaren: ✕ på en JPEG/PNG/BMP visar den i helskärm --- */
 
 static Texture *s_view;
 static int s_viewing;
 
+/* --- textvisaren: ✕ på .txt/.ini/.cfg/.log/.md --- */
+#define MAX_TEXT_LINES 256
+#define TEXT_VIEW_ROWS 10
+static char (*s_text_lines)[96];
+static int s_text_n, s_text_top, s_text_viewing;
+static float s_text_scroll;
+
+/* --- öppna i musikspelaren eller som spel/app --- */
+static int s_open_kind;
+static char s_open_path[MAX_PATH];
+
+int files_take_open(char *out, int size)
+{
+    int k = s_open_kind;
+    if (k && out && size > 0)
+        snprintf(out, size, "%s", s_open_path);
+    s_open_kind = FO_NONE;
+    s_open_path[0] = 0;
+    return k;
+}
+
+static const char *file_ext(const FileEntry *e)
+{
+    return e && e->kind == KIND_FILE ? strrchr(e->name, '.') : NULL;
+}
+
 static int is_image(const FileEntry *e)
 {
-    const char *dot = e->kind == KIND_FILE ? strrchr(e->name, '.') : NULL;
-    return dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") || !strcasecmp(dot, ".png"));
+    const char *dot = file_ext(e);
+    return dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") || !strcasecmp(dot, ".png") ||
+                   !strcasecmp(dot, ".bmp"));
+}
+
+static int is_music(const FileEntry *e)
+{
+    const char *dot = file_ext(e);
+    return dot && !strcasecmp(dot, ".mp3");
+}
+
+static int is_game(const FileEntry *e)
+{
+    const char *dot = file_ext(e);
+    return dot && (!strcasecmp(dot, ".iso") || !strcasecmp(dot, ".cso") || !strcasecmp(dot, ".zso") ||
+                   !strcasecmp(dot, ".dax") || !strcasecmp(dot, ".pbp"));
+}
+
+static int is_text(const FileEntry *e)
+{
+    const char *dot = file_ext(e);
+    return dot && (!strcasecmp(dot, ".txt") || !strcasecmp(dot, ".ini") || !strcasecmp(dot, ".cfg") ||
+                   !strcasecmp(dot, ".log") || !strcasecmp(dot, ".md"));
+}
+
+static int can_open(const FileEntry *e)
+{
+    return e && (e->kind != KIND_FILE || is_image(e) || is_music(e) || is_game(e) || is_text(e));
+}
+
+static int text_load(void)
+{
+    char path[MAX_PATH];
+    join(path, sizeof(path), s_path, s_items[s_sel].name);
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return 0;
+    char *buf = malloc(16384);
+    if (!buf) {
+        sceIoClose(fd);
+        return 0;
+    }
+    int n = sceIoRead(fd, buf, 16383);
+    sceIoClose(fd);
+    if (n < 0) {
+        free(buf);
+        return 0;
+    }
+    buf[n] = 0;
+    free(s_text_lines);
+    s_text_lines = calloc(MAX_TEXT_LINES, sizeof(*s_text_lines));
+    if (!s_text_lines) {
+        free(buf);
+        return 0;
+    }
+    s_text_n = 0;
+    const char *p = buf;
+    if ((u8)p[0] == 0xEF && (u8)p[1] == 0xBB && (u8)p[2] == 0xBF)
+        p += 3; /* UTF-8 BOM */
+    while (*p && s_text_n < MAX_TEXT_LINES) {
+        const char *nl = strchr(p, '\n');
+        int len = nl ? (int)(nl - p) : (int)strlen(p);
+        if (len > 0 && p[len - 1] == '\r')
+            len--;
+        int pos = 0;
+        do {
+            int chunk = len - pos;
+            if (chunk > 76)
+                chunk = 76;
+            char *dst = s_text_lines[s_text_n++];
+            int k = 0;
+            for (int i = 0; i < chunk && k < 92; i++) {
+                unsigned char c = (unsigned char)p[pos + i];
+                dst[k++] = (c == '\t' || c < 32) ? ' ' : c;
+            }
+            dst[k] = 0;
+            pos += chunk;
+        } while (pos < len && s_text_n < MAX_TEXT_LINES);
+        if (!nl)
+            break;
+        p = nl + 1;
+    }
+    free(buf);
+    s_text_top = 0;
+    s_text_scroll = 0;
+    return 1;
+}
+
+static void text_update(const UiInput *in, float dt)
+{
+    int move = vertical(in, dt);
+    if (in->pressed & PSP_CTRL_LTRIGGER)
+        move = -TEXT_VIEW_ROWS;
+    if (in->pressed & PSP_CTRL_RTRIGGER)
+        move = TEXT_VIEW_ROWS;
+    int max_top = s_text_n > TEXT_VIEW_ROWS ? s_text_n - TEXT_VIEW_ROWS : 0;
+    if (move && max_top > 0) {
+        int next = (int)clampf(s_text_top + move, 0, max_top);
+        if (next != s_text_top) {
+            s_text_top = next;
+            sound_play(SND_MOVE);
+        }
+    }
+    s_text_scroll += (s_text_top - s_text_scroll) * clampf(dt * 16, 0, 1);
+    if (in->pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_CROSS)) {
+        s_text_viewing = 0;
+        free(s_text_lines);
+        s_text_lines = NULL;
+        sound_play(SND_BACK);
+    }
+}
+
+static void text_view_draw(float a)
+{
+    static const float neutral[3] = { 120, 120, 120 };
+    theme_backdrop(theme_cur(), s_time, neutral, 1, 1);
+    char name[96];
+    text_ellipsis(name, sizeof(name), s_items[s_sel].name, 0.72f, LIST_W);
+    text_draw(LIST_X + 4, 36, 0.72f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, name);
+    float top = 52, h = TEXT_VIEW_ROWS * 17.0f + 12;
+    gfx_round_rect(LIST_X, top, LIST_W, h, 8, RGBA(18, 19, 24, (int)(175 * a)));
+    gfx_clip(LIST_X + 6, top + 4, LIST_W - 16, h - 8);
+    for (int i = (int)s_text_scroll; i < s_text_n && i <= (int)s_text_scroll + TEXT_VIEW_ROWS; i++) {
+        float y = top + 18 + (i - s_text_scroll) * 17.0f;
+        text_draw(LIST_X + 10, y, 0.5f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, s_text_lines[i]);
+    }
+    gfx_clip_reset();
+    if (s_text_n > TEXT_VIEW_ROWS) {
+        float bh = h - 12, th = clampf(bh * TEXT_VIEW_ROWS / s_text_n, 12, bh);
+        float ty = top + 6 + (bh - th) * s_text_scroll / (s_text_n - TEXT_VIEW_ROWS);
+        gfx_round_rect(LIST_X + LIST_W - 6, ty, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
+    }
+    const char *back = L(S_BACK);
+    float w = 18 + text_width(0.56f, 0, back);
+    float x = SCREEN_W - 24 - w, y = 246;
+    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
+    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, fade(LIGHT, a), fade(DARK, a));
+    text_draw(x + 18, y + 4.5f, 0.56f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, back);
 }
 
 static int view_load(void)
@@ -827,8 +989,9 @@ static int view_load(void)
 static void view_update(const UiInput *in)
 {
     int dir = (in->pressed & PSP_CTRL_RIGHT) ? 1 : (in->pressed & PSP_CTRL_LEFT) ? -1 : 0;
-    for (int i = s_sel + dir; dir && i >= 0 && i < s_count; i += dir)
-        if (is_image(&s_items[i])) { /* nästa / föregående bild i mappen */
+    for (int step = 1; dir && step < s_count; step++) {
+        int i = (s_sel + dir * step + s_count) % s_count;
+        if (is_image(&s_items[i])) { /* nästa / föregående bild i mappen (går runt) */
             int prev = s_sel;
             s_sel = i;
             if (view_load()) {
@@ -841,6 +1004,7 @@ static void view_update(const UiInput *in)
             }
             break;
         }
+    }
     if (in->pressed & PSP_CTRL_CROSS) {
         char path[MAX_PATH];
         join(path, sizeof(path), s_path, s_items[s_sel].name);
@@ -930,10 +1094,14 @@ int files_update(const UiInput *in, float dt)
         view_update(in);
         return 0;
     }
+    if (s_text_viewing) {
+        text_update(in, dt);
+        return 0;
+    }
     int move = vertical(in, dt);
     if (s_menu) {
-        if (move) {
-            int next = (int)clampf(s_menu_sel + move, 0, s_menu_n - 1);
+        if (move && s_menu_n > 0) {
+            int next = (s_menu_sel + move + s_menu_n) % s_menu_n;
             if (next != s_menu_sel)
                 sound_play(SND_MOVE);
             s_menu_sel = next;
@@ -947,12 +1115,13 @@ int files_update(const UiInput *in, float dt)
         return 0;
     }
 
+    int page = 0;
     if (in->pressed & PSP_CTRL_LTRIGGER)
-        move = -ROWS;
+        page = -ROWS;
     if (in->pressed & PSP_CTRL_RTRIGGER)
-        move = ROWS;
-    if (move && s_count) {
-        int next = (int)clampf(s_sel + move, 0, s_count - 1);
+        page = ROWS;
+    if ((move || page) && s_count) {
+        int next = page ? (int)clampf(s_sel + page, 0, s_count - 1) : (s_sel + move + s_count) % s_count;
         if (next != s_sel) {
             s_sel = next;
             sound_play(SND_MOVE);
@@ -980,8 +1149,19 @@ int files_update(const UiInput *in, float dt)
                 toast(L(S_F_FAILED));
                 sound_play(SND_ERROR);
             }
-        } else if (s_path[0]) {
-            open_menu(M_OPTIONS); /* ✕ på en fil: vad ska göras med den */
+        } else if (e && is_text(e)) {
+            if (text_load()) {
+                s_text_viewing = 1;
+                sound_play(SND_SELECT);
+            } else {
+                toast(L(S_F_FAILED));
+                sound_play(SND_ERROR);
+            }
+        } else if (e && (is_music(e) || is_game(e))) {
+            join(s_open_path, sizeof(s_open_path), s_path, e->name);
+            s_open_kind = is_music(e) ? FO_MUSIC : FO_GAME;
+            sound_play(SND_SELECT);
+            return 1;
         }
     } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE) {
         e->marked ^= 1;
@@ -1054,7 +1234,8 @@ static void draw_hints(float a)
 {
     struct { int btn; StrId text; } h[4];
     int n = 0;
-    h[n++] = (typeof(h[0])){ BTN_CROSS, S_F_OPEN };
+    if (!s_path[0] || (s_count && can_open(&s_items[s_sel])))
+        h[n++] = (typeof(h[0])){ BTN_CROSS, S_F_OPEN };
     if (s_path[0]) {
         h[n++] = (typeof(h[0])){ BTN_SQUARE, S_F_MARK };
         h[n++] = (typeof(h[0])){ BTN_TRIANGLE, S_OPTIONS };
@@ -1063,8 +1244,8 @@ static void draw_hints(float a)
     float w = -14;
     for (int i = 0; i < n; i++)
         w += 18 + text_width(0.56f, 0, L(h[i].text)) + 14;
-    float x = SCREEN_W - 22 - w, y = 252;
-    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
+    float x = SCREEN_W - 24 - w, y = 246;
+    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
     for (int i = 0; i < n; i++) {
         gfx_button(x + 6.5f, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
         x += 18;
@@ -1197,6 +1378,8 @@ static void draw_scene(void)
     float a = s_open, slide = (1 - a) * 10;
     if (s_viewing) {
         view_draw();
+    } else if (s_text_viewing) {
+        text_view_draw(a);
     } else {
         static const float neutral[3] = { 120, 120, 120 };
         theme_backdrop(theme_cur(), s_time, neutral, 1, 1);
@@ -1205,9 +1388,9 @@ static void draw_scene(void)
         if (s_clip_n) { /* urklippet nere till vänster */
             char line[64];
             snprintf(line, sizeof(line), "%s: %d", L(s_clip_move ? S_F_MOVE : S_F_COPY), s_clip_n);
-            gfx_round_rect(LIST_X, 243, 12, 15, 2, fade(RGBA(214, 214, 220, 255), a));
-            gfx_rect(LIST_X + 3, 241, 6, 4, fade(RGBA(150, 152, 160, 255), a));
-            text_draw(LIST_X + 18, 255, 0.54f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
+            gfx_round_rect(LIST_X, 238, 12, 15, 2, fade(RGBA(214, 214, 220, 255), a));
+            gfx_rect(LIST_X + 3, 236, 6, 4, fade(RGBA(150, 152, 160, 255), a));
+            text_draw(LIST_X + 18, 250.5f, 0.54f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
         }
         draw_hints(a * (1 - s_menu_anim));
         draw_menu();
@@ -1234,6 +1417,9 @@ void files_draw(void)
 void files_close(void)
 {
     s_viewing = 0;
+    s_text_viewing = 0;
+    free(s_text_lines);
+    s_text_lines = NULL;
     tex_free(s_view);
     s_view = NULL;
     stop_op();

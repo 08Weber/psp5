@@ -80,7 +80,7 @@ def make(version, ark, dist, go=False):
 
 
 if __name__ == '__main__':
-    v = sys.argv[1] if len(sys.argv) > 1 else '2.0.1'
+    v = sys.argv[1] if len(sys.argv) > 1 else '2.2.0'
     make(v, 'ARK-5', 'dist')
     make(v, 'ARK-4', 'dist-ark4')
     make(v, 'ARK-5', 'dist', go=True)

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "gfx.h"
+#include "osd.h"
 #include "testrun.h"
 
 #define BUF_W 512
@@ -173,6 +174,7 @@ void gfx_end_with(void (*after_draw)(void))
     sceGuSync(0, 0);
     if (after_draw)
         after_draw();
+    osd_capture((const u32 *)(0x44000000 + (u32)s_draw), BUF_W);
     testrun_frame((const void *)(0x44000000 + (u32)s_draw)); /* bara i testbyggen */
     sceDisplayWaitVblankStart();
     s_draw = sceGuSwapBuffers();
