@@ -20,7 +20,7 @@
 
 #define ALREADY_LOADED  0x80020139
 #define ALREADY_LOADED2 0x80111102 /* samma sak, från sceUtilityLoadModule */
-#define MAX_MEDIA  (2 * 1024 * 1024)
+#define MAX_MEDIA  (6 * 1024 * 1024)
 #define PACKET     2048
 #define RB_PACKETS 64
 #define BUF_W      512    /* sceMpegAvcDecode skriver rader om 512 bildpunkter */
