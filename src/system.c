@@ -3,6 +3,7 @@
  * Fungerar på både ARK-4 och ARK-5 – versionen känns av vid start. */
 #include <pspkernel.h>
 #include <pspctrl.h>
+#include <psputility.h>
 #include <pspusb.h>
 #include <pspusbstor.h>
 #include <psploadexec_kernel.h>
@@ -33,6 +34,15 @@ int scePowerRequestStandby(void);
 
 static int exists(const char *path);
 
+static int dir_exists(const char *path)
+{
+    SceUID d = sceIoDopen(path);
+    if (d < 0)
+        return 0;
+    sceIoDclose(d);
+    return 1;
+}
+
 /* ARK-4: sctrlArkGetConfig ligger i SystemCtrlForUser (src/ark4stub.S) */
 ARKConfig *sctrlArkGetConfig_ark4(ARKConfig *conf);
 
@@ -50,6 +60,28 @@ char g_data_dir[16] = "ms0:/PSP5";
 
 void sys_set_root(const char *self_path)
 {
+    if (launch_supported() && sctrlKernelMsIsEf() == 1) {
+        if (kuKernelInitApitype() != 0x141 && self_path && self_path[0]) {
+            /* Startad från XMB på PSP Go:s internminne (apitype 0x152): Sony låter då ms0:
+             * peka på ef0: och laddar inte minneskortsdrivrutinen alls (issue #17, #20, #22).
+             * Starta om direkt i läge 0x141 (som VBOOT.PBP), där både ms0: och ef0: finns. */
+            char ef_self[256];
+            if (!strncasecmp(self_path, "ms0:", 4))
+                snprintf(ef_self, sizeof(ef_self), "ef0:%s", self_path + 4);
+            else
+                snprintf(ef_self, sizeof(ef_self), "%s", self_path);
+            if (exists(ef_self)) {
+                struct SceKernelLoadExecVSHParam param;
+                memset(&param, 0, sizeof(param));
+                param.size = sizeof(param);
+                param.args = strlen(ef_self) + 1;
+                param.argp = ef_self;
+                param.key = "game";
+                sctrlKernelLoadExecVSHWithApitype(0x141, ef_self, &param);
+            }
+        }
+        snprintf(g_root, sizeof(g_root), "ef0:");
+    }
     /* som app i ef0:/PSP/GAME/PSP5 eller som launcher i ef0:/PSP/SAVEDATA/ARK_01234 */
     if (self_path && !strncasecmp(self_path, "ef0:", 4))
         snprintf(g_root, sizeof(g_root), "ef0:");
@@ -77,6 +109,26 @@ static void fake_device(void)
 }
 #endif
 
+static void resolve_ark_dir(void)
+{
+    char cand[3][ARK_PATH_SIZE];
+    int n = 0;
+    snprintf(cand[n++], ARK_PATH_SIZE, "%s/PSP/SAVEDATA/ARK_01234/", g_root);
+    if (s_model == 4 && strcasecmp(g_root, "ef0:") != 0)
+        snprintf(cand[n++], ARK_PATH_SIZE, "ef0:/PSP/SAVEDATA/ARK_01234/");
+    if (!s_ms_is_ef && strcasecmp(g_root, "ms0:") != 0)
+        snprintf(cand[n++], ARK_PATH_SIZE, "ms0:/PSP/SAVEDATA/ARK_01234/");
+
+    for (int i = 0; i < n; i++) {
+        if (dir_exists(cand[i])) {
+            snprintf(s_ark_dir, sizeof(s_ark_dir), "%s", cand[i]);
+            if (IS_ARK_CONFIG(&s_conf))
+                snprintf(s_conf.arkpath, sizeof(s_conf.arkpath), "%s", cand[i]);
+            return;
+        }
+    }
+}
+
 void sys_init(const char *self_path)
 {
     char path[200];
@@ -102,11 +154,19 @@ void sys_init(const char *self_path)
         if (IS_ARK_CONFIG(&s_conf) && s_conf.arkpath[0]) {
             s_has_ark = 1;
             snprintf(s_ark_dir, sizeof(s_ark_dir), "%s", s_conf.arkpath);
+            /* Om ARK föll tillbaka till SEPLUGINS men ARK_01234 finns på ms0:/ef0:, använd ARK_01234 (issue #22, #23) */
+            if (strstr(s_ark_dir, "SEPLUGINS") || !dir_exists(s_ark_dir))
+                resolve_ark_dir();
         } else if (exists(settings) || exists(vboot)) {
             s_has_ark = 1; /* konfigurationen gick inte att läsa – standardmappen finns */
-        } else if (s_ark == 4 && exists(path)) {
-            s_has_ark = 1; /* ARK-4 utan ARK-mapp använder <lagring>/SEPLUGINS/ */
-            snprintf(s_ark_dir, sizeof(s_ark_dir), "%s/SEPLUGINS/", g_root);
+        } else {
+            resolve_ark_dir();
+            if (dir_exists(s_ark_dir)) {
+                s_has_ark = 1;
+            } else if (s_ark == 4 && exists(path)) {
+                s_has_ark = 1; /* ARK-4 utan ARK-mapp använder <lagring>/SEPLUGINS/ */
+                snprintf(s_ark_dir, sizeof(s_ark_dir), "%s/SEPLUGINS/", g_root);
+            }
         }
     }
 #ifdef PSP5_TEST
@@ -114,7 +174,18 @@ void sys_init(const char *self_path)
 #endif
     g_arkcfg_ark4 = s_ark == 4;
     snprintf(path, sizeof(path), "%sVBOOT.PBP", s_ark_dir);
-    s_is_launcher = self_path && !strcasecmp(self_path, path);
+    const char *base = self_path ? strrchr(self_path, '/') : NULL;
+    s_is_launcher = (self_path && !strcasecmp(self_path, path)) ||
+                    (base && !strcasecmp(base + 1, "VBOOT.PBP"));
+
+    /* ARK-5 sätter klockfrekvens (överklockning) och ef0:/ms0:-cache först när en modul
+     * startas efter att kärnan har nått systemstatus 0x20000 (som arkMenu gör vid start).
+     * Trigga det direkt här innan våra trådar och filskanningar startar (issue #19). */
+    if (s_has_ark) {
+        int r = sceUtilityLoadModule(PSP_MODULE_AV_AVCODEC);
+        if (r >= 0)
+            sceUtilityUnloadModule(PSP_MODULE_AV_AVCODEC);
+    }
 }
 
 int sys_has_ark(void) { return s_has_ark; }
@@ -122,12 +193,17 @@ int sys_ark_version(void) { return s_ark; }
 int sys_model(void) { return s_model; }
 int sys_ms_is_ef(void) { return s_ms_is_ef; }
 int sys_is_psp1000(void) { return s_model == 0; }
-const char *sys_ark_dir(void) { return s_ark_dir; }
+const char *sys_ark_dir(void)
+{
+    if (strstr(s_ark_dir, "SEPLUGINS"))
+        resolve_ark_dir(); /* om användaren nyss skapade ARK_01234 via USB eller filhanteraren (issue #23) */
+    return s_ark_dir;
+}
 int sys_is_launcher(void) { return s_is_launcher; }
 
 static void settings_path(char *path, int size)
 {
-    snprintf(path, size, "%sSETTINGS.TXT", s_ark_dir);
+    snprintf(path, size, "%sSETTINGS.TXT", sys_ark_dir());
 }
 
 /* ARK läser SETTINGS.TXT vid varje omstart och slår då på launcherläget igen, så
@@ -167,29 +243,45 @@ void sys_exit_xmb(void)
         sceKernelExitGame();
         return;
     }
-    pause_launcher();
-    if (s_ark >= 5) {
-        /* stäng också av läget i minnet, så att inget i den här sessionen startar launchern.
-         * (ARK-4 har en annan SEConfig-layout och läser ändå om SETTINGS.TXT vid omstarten.) */
-        SEConfigARK se;
-        memset(&se, 0, sizeof(se));
-        if (sctrlSEGetConfigEx((SEConfig *)&se, sizeof(se)) >= 0 && se.magic == ARK_CONFIG_MAGIC) {
-            se.launcher_mode = 0;
-            sctrlSESetConfigEx((SEConfig *)&se, sizeof(se));
-        }
+    /* Pausa bara launcherläget om psp5 faktiskt körs som launcher (VBOOT.PBP).
+     * Om användaren slog på "Starta psp5 vid uppstart" inifrån appen i PSP/GAME/PSP5
+     * och sedan avslutar, ska inställningen inte slås av igen (issue #23). */
+    if (s_is_launcher) {
+        pause_launcher();
+        if (s_ark >= 5) {
+            /* stäng också av läget i minnet, så att inget i den här sessionen startar launchern.
+             * (ARK-4 har en annan SEConfig-layout och läser ändå om SETTINGS.TXT vid omstarten.) */
+            SEConfigARK se;
+            memset(&se, 0, sizeof(se));
+            if (sctrlSEGetConfigEx((SEConfig *)&se, sizeof(se)) >= 0 && se.magic == ARK_CONFIG_MAGIC) {
+                se.launcher_mode = 0;
+                sctrlSESetConfigEx((SEConfig *)&se, sizeof(se));
+            }
 #ifndef PSP5_ARK4
-        if (IS_ARK_CONFIG(&s_conf)) { /* skriv aldrig tillbaka en konfiguration som inte gick att läsa */
-            s_conf.launcher[0] = 0;
-            sctrlArkSetConfig(&s_conf);
-        }
+            if (IS_ARK_CONFIG(&s_conf)) { /* skriv aldrig tillbaka en konfiguration som inte gick att läsa */
+                s_conf.launcher[0] = 0;
+                sctrlArkSetConfig(&s_conf);
+            }
 #endif
+        }
     }
+    sceKernelDelayThread(50000); /* låt minneskortets/ef0:-cachen skriva klart (issue #19, #23) */
     sctrlKernelExitVSH(NULL);
 }
 
-void sys_restart(void) { scePowerRequestColdReset(0); }
+void sys_restart(void)
+{
+    sceKernelDelayThread(50000);
+    scePowerRequestColdReset(0);
+}
+
 void sys_suspend(void) { scePowerRequestSuspend(); }
-void sys_shutdown(void) { scePowerRequestStandby(); }
+
+void sys_shutdown(void)
+{
+    sceKernelDelayThread(50000);
+    scePowerRequestStandby();
+}
 
 static int exists(const char *path)
 {
@@ -223,26 +315,49 @@ void sys_recovery(void)
     }
 }
 
+static int kcall(void *f, u32 a1, u32 a2)
+{
+    KernelCallArg a;
+    memset(&a, 0, sizeof(a));
+    a.arg1 = a1;
+    a.arg2 = a2;
+    return kuKernelCall(f, &a) < 0 ? -1 : (int)a.ret1;
+}
+
 int sys_usb_start(void)
 {
     static const char *mods[] = {
-        "flash0:/kd/semawm.prx",     "flash0:/kd/usbstor.prx",      "flash0:/kd/usbstormgr.prx",
-        "flash0:/kd/usbstorms.prx",  "flash0:/kd/usbstoreflash.prx", "flash0:/kd/usbstorboot.prx",
+        "flash0:/kd/usb.prx",        "flash0:/kd/semawm.prx",       "flash0:/kd/usbstor.prx",
+        "flash0:/kd/usbstormgr.prx", "flash0:/kd/usbstorms.prx",    "flash0:/kd/usbstoreflash.prx",
+        "flash0:/kd/usbstorboot.prx",
     };
     static int loaded;
     if (s_usb_on || !s_has_ark)
         return s_usb_on;
+    /* ARK:s USB-laddning kan låsa USB-anslutningen på PSP Go om kabeln redan sitter i –
+     * stäng av USB-laddningen innan drivrutinerna aktiveras (issue #20). */
+    void *disable_charge = (void *)sctrlHENFindFunction("scePower_Service", "scePower_driver", 0x90285886);
+    if (disable_charge)
+        kcall(disable_charge, 0, 0);
     if (!loaded) {
         for (unsigned i = 0; i < sizeof(mods) / sizeof(mods[0]); i++) {
+            if (s_model != 4 && strstr(mods[i], "usbstoreflash"))
+                continue;
             SceUID mid = kuKernelLoadModule(mods[i], 0, NULL);
             if (mid >= 0)
                 sceKernelStartModule(mid, 0, NULL, NULL, NULL);
         }
         loaded = 1;
     }
+    if (sceUsbGetState() & PSP_USB_ACTIVATED) {
+        sceUsbDeactivate(0x1c8);
+        sceKernelDelayThread(10000);
+    }
     sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0);
     sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0);
-    sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0);
+    if (s_model == 4)
+        sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0);
+    sceUsbstorBootSetCapacity(0x800000);
     /* som arkMenu: resultatet ignoreras – ett fel här stängde USB-läget direkt (issue #10) */
     sceUsbActivate(0x1c8);
     s_usb_on = 1;
@@ -254,7 +369,8 @@ void sys_usb_stop(void)
     if (!s_usb_on)
         return;
     sceUsbDeactivate(0x1c8);
-    sceUsbStop(USBSTOR_EF_DRIVERNAME, 0, 0);
+    if (s_model == 4)
+        sceUsbStop(USBSTOR_EF_DRIVERNAME, 0, 0);
     sceUsbStop(PSP_USBSTOR_DRIVERNAME, 0, 0);
     sceUsbStop(PSP_USBBUS_DRIVERNAME, 0, 0);
     s_usb_on = 0;
@@ -284,15 +400,6 @@ static void *s_peek, *s_popup, *s_disp_on, *s_disp_off, *s_light_set, *s_light_g
 static volatile int s_popup_off;  /* 1 = systemets HOME-dialog är avstängd */
 static volatile u32 s_heartbeat;  /* sceKernelGetSystemTimeLow() när menyn senast läste knapparna */
 static int s_light = -1;          /* ljusstyrkan innan skärmen släcktes */
-
-static int kcall(void *f, u32 a1, u32 a2)
-{
-    KernelCallArg a;
-    memset(&a, 0, sizeof(a));
-    a.arg1 = a1;
-    a.arg2 = a2;
-    return kuKernelCall(f, &a) < 0 ? -1 : (int)a.ret1;
-}
 
 static void set_popup(int on)
 {

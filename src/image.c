@@ -21,6 +21,78 @@ typedef struct {
     u32 reserved;
 } NtxHeader;
 
+typedef struct {
+    const u8 *data;
+    u32 size, pos;
+} PngMem;
+
+static void png_read_mem(png_structp png, png_bytep dst, png_size_t len)
+{
+    PngMem *m = png_get_io_ptr(png);
+    if (m->pos + len > m->size)
+        png_error(png, "eof");
+    memcpy(dst, m->data + m->pos, len);
+    m->pos += len;
+}
+
+/* Stora PNG-bilder (t.ex. 1080p/4K-skärmdumpar eller bakgrundsbilder i filhanteraren, issue #14)
+ * skalas ner rad för rad under avkodningen så att hela bilden inte behöver ligga i RAM. */
+static int decode_png_scaled(const void *data, u32 size, Image *out, u32 max_pixels)
+{
+    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (!png)
+        return 0;
+    png_infop info = png_create_info_struct(png);
+    if (!info) {
+        png_destroy_read_struct(&png, NULL, NULL);
+        return 0;
+    }
+    u8 *volatile row = NULL;
+    out->px = NULL;
+    if (setjmp(png_jmpbuf(png))) {
+        png_destroy_read_struct(&png, &info, NULL);
+        free((void *)row);
+        img_free(out);
+        return 0;
+    }
+    PngMem mem = { data, size, 0 };
+    png_set_read_fn(png, &mem, png_read_mem);
+    png_read_info(png, info);
+    u32 w = png_get_image_width(png, info), h = png_get_image_height(png, info);
+    if (!w || !h || w > 8192 || h > 8192 || png_get_interlace_type(png, info) != PNG_INTERLACE_NONE)
+        longjmp(png_jmpbuf(png), 1);
+    png_set_expand(png);
+    png_set_strip_16(png);
+    png_set_gray_to_rgb(png);
+    png_set_add_alpha(png, 0xFF, PNG_FILLER_AFTER);
+    png_read_update_info(png, info);
+
+    int step = 1;
+    while ((w / step) * (h / step) > max_pixels)
+        step *= 2;
+    int dw = w / step, dh = h / step;
+    if (dw < 1 || dh < 1)
+        longjmp(png_jmpbuf(png), 1);
+    out->w = dw;
+    out->h = dh;
+    out->px = malloc(dw * dh * 4);
+    row = malloc(w * 4);
+    if (!out->px || !row)
+        longjmp(png_jmpbuf(png), 1);
+    for (u32 y = 0; y < h; y++) {
+        png_read_row(png, row, NULL);
+        if (y % step == 0 && (int)(y / step) < dh) {
+            u32 *dst = out->px + (y / step) * dw;
+            const u32 *src = (const u32 *)row;
+            for (int x = 0; x < dw; x++)
+                dst[x] = src[x * step];
+        }
+    }
+    png_destroy_read_struct(&png, &info, NULL);
+    free((void *)row);
+    return 1;
+}
+
 static int decode_png(const void *data, u32 size, Image *out, u32 max_pixels)
 {
     png_image png;
@@ -30,7 +102,7 @@ static int decode_png(const void *data, u32 size, Image *out, u32 max_pixels)
         return 0;
     if (png.width * png.height > max_pixels) {
         png_image_free(&png);
-        return 0;
+        return decode_png_scaled(data, size, out, max_pixels);
     }
     png.format = PNG_FORMAT_RGBA; /* R,G,B,A i minnet = ABGR som u32 på little endian */
     out->w = png.width;

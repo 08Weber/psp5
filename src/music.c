@@ -453,9 +453,9 @@ static void scan_library(void)
     s_scan_count = s_scan_cap = 0;
     unsigned char *buf = malloc(TAG_READ);
     if (buf) {
-        scan_dir("ms0:/MUSIC", NULL, 0, buf);
         if (!sys_ms_is_ef())
-            scan_dir("ef0:/MUSIC", NULL, 0, buf); /* PSP Go:s internminne */
+            scan_dir("ms0:/MUSIC", NULL, 0, buf);
+        scan_dir("ef0:/MUSIC", NULL, 0, buf); /* PSP Go:s internminne */
         free(buf);
     }
     if (s_quit) { /* avbruten av music_term */

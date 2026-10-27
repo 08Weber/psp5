@@ -93,7 +93,8 @@ static unsigned char *bool_key(const char *k)
         { "hidemac", offsetof(CfwConf, hidemac) },         { "hidedlc", offsetof(CfwConf, hidedlc) },
         { "noled", offsetof(CfwConf, noled) },             { "noumd", offsetof(CfwConf, noumd) },
         { "deadef", offsetof(CfwConf, deadef) },           { "noanalog", offsetof(CfwConf, noanalog) },
-        { "vitamute", offsetof(CfwConf, vitamute) },       { "qaflags", offsetof(CfwConf, qaflags) },
+        { "vitamute", offsetof(CfwConf, vitamute) },       { "vitmute", offsetof(CfwConf, vitamute) },
+        { "qaflags", offsetof(CfwConf, qaflags) },
     };
     for (unsigned i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
         if (!strcasecmp(k, keys[i].name))
@@ -152,6 +153,8 @@ int arkcfg_load(const char *path)
 {
     set_defaults();
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (fd < 0 && !g_arkcfg_ark4)
+        fd = sceIoOpen("flash1:/SETTINGS.TXT", PSP_O_RDONLY, 0); /* ARK-5 flash-installation (issue #23) */
     if (fd < 0)
         return 0;
     int size = sceIoLseek32(fd, 0, PSP_SEEK_END);
@@ -301,10 +304,25 @@ int arkcfg_save(const char *path)
         put(fd, "\n");
     }
 
+    int ok = 0;
     SceUID f = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (f < 0)
-        return 0;
-    int ok = sceIoWrite(f, out.data, out.len) == out.len;
-    sceIoClose(f);
+    if (f >= 0) {
+        ok = sceIoWrite(f, out.data, out.len) == out.len;
+        sceIoClose(f);
+    }
+    /* ARK-5 med flash-installation läser flash1:/SETTINGS.TXT om ARK_01234 saknar filen –
+     * håll även flash1:/SETTINGS.TXT uppdaterad om den finns (issue #19, #23) */
+    if (!g_arkcfg_ark4) {
+        SceIoStat st;
+        if (!ok || sceIoGetstat("flash1:/SETTINGS.TXT", &st) >= 0) {
+            SceUID ff = sceIoOpen("flash1:/SETTINGS.TXT", PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+            if (ff >= 0) {
+                int fok = sceIoWrite(ff, out.data, out.len) == out.len;
+                sceIoClose(ff);
+                if (!ok)
+                    ok = fok;
+            }
+        }
+    }
     return ok;
 }

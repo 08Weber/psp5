@@ -69,7 +69,8 @@ static struct {
     float scroll, open, time;
     int confirm_item;   /* -1 = ingen */
     float confirm_time;
-    int cfw_dirty, plugins_dirty, own_dirty;
+    int cfw_dirty, plugins_dirty, own_dirty, toast_pending;
+    float save_timer;
     int repeat_dir;
     float repeat_timer;
     char toast[96];
@@ -278,6 +279,8 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_BOOT_ANIM), &g_boot_anim);
     c->items[c->count - 1].own = 1;
+    toggle(c, L(S_CONTROL_CENTER), &g_control_center); /* av: HOME går till systemet / Custom Home (issue #16) */
+    c->items[c->count - 1].own = 1;
     choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
     c->items[c->count - 1].own = 1;
     choice(c, L(S_SORT), &g_sort, OPT_SORT, SORT_COUNT); /* "som XMB": ordningen från Homebrew Sorter (issue #7) */
@@ -291,9 +294,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "2.0.0 (ARK-4)");
+    info(c, L(S_VERSION), "2.0.1 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "2.0.0 (ARK-5)");
+    info(c, L(S_VERSION), "2.0.1 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
@@ -404,9 +407,8 @@ void settings_open(void)
     S.confirm_item = -1;
 }
 
-int settings_commit(void)
+static void flush_dirty(void)
 {
-    int changed = S.cfw_dirty || S.plugins_dirty;
     if (S.own_dirty) {
         snprintf(g_wallpaper, sizeof(g_wallpaper), "%s", s_wall_sel ? s_wall_path[s_wall_sel - 1] : "");
         config_save(PSP5_DATA_DIR); /* ljud och språk gäller direkt, ingen omstart */
@@ -422,6 +424,14 @@ int settings_commit(void)
         plugins_save();
     }
     S.cfw_dirty = S.plugins_dirty = S.own_dirty = 0;
+    S.save_timer = 0;
+}
+
+int settings_commit(void)
+{
+    flush_dirty();
+    int changed = S.toast_pending;
+    S.toast_pending = 0;
     return changed;
 }
 
@@ -451,12 +461,16 @@ static int vertical(const UiInput *in, float dt)
 
 static void mark_dirty(const Item *it)
 {
-    if (it->own)
+    if (it->own) {
         S.own_dirty = 1;
-    else if (it->plugin)
+    } else if (it->plugin) {
         S.plugins_dirty = 1;
-    else
+        S.toast_pending = 1;
+    } else {
         S.cfw_dirty = 1;
+        S.toast_pending = 1;
+    }
+    S.save_timer = 0.35f; /* spara strax efter ändringen så att inget tappas vid direkt omstart (issue #23) */
 }
 
 /* Övre kanten för rad i i den högra listan (innan scroll). */
@@ -470,6 +484,8 @@ int settings_update(const UiInput *in, float dt)
         S.toast_time -= dt;
     if (S.confirm_time > 0 && (S.confirm_time -= dt) <= 0)
         S.confirm_item = -1;
+    if (S.save_timer > 0 && (S.save_timer -= dt) <= 0)
+        flush_dirty();
 
     Category *c = &s_cats[S.cat];
     int *sel = &S.item[S.cat];
@@ -478,7 +494,7 @@ int settings_update(const UiInput *in, float dt)
 
     if (S.focus == 0) {
         if (move) {
-            int cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
+            int cat = (S.cat + move + CAT_COUNT) % CAT_COUNT; /* gå runt i listan (issue #15) */
             if (cat != S.cat)
                 sound_play(SND_MOVE);
             S.cat = cat;
@@ -494,8 +510,8 @@ int settings_update(const UiInput *in, float dt)
         }
     } else {
         Item *it = &c->items[*sel];
-        if (move) {
-            int next = (int)clampf(*sel + move, 0, c->count - 1);
+        if (move && c->count > 0) {
+            int next = (*sel + move + c->count) % c->count; /* gå runt i listan (issue #15) */
             if (next != *sel)
                 sound_play(SND_MOVE);
             *sel = next;

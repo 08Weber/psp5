@@ -707,6 +707,15 @@ static void rename_selected(void)
     }
     join(from, sizeof(from), s_path, s_items[idx].name);
     join(to, sizeof(to), s_path, name);
+    SceIoStat st;
+    if (strcasecmp(name, s_items[idx].name) != 0 && sceIoGetstat(to, &st) >= 0) {
+        /* PSP:ns FAT-drivrutin byter inte namn över en befintlig fil (t.ex. VBOOT_ARKMENU.PBP → VBOOT.PBP, issue #22) */
+        if (FIO_S_ISDIR(st.st_mode) || sceIoRemove(to) < 0) {
+            toast(L(S_F_FAILED));
+            sound_play(SND_ERROR);
+            return;
+        }
+    }
     if (sceIoRename(from, to) < 0) {
         toast(L(S_F_FAILED));
         sound_play(SND_ERROR);
@@ -820,9 +829,16 @@ static void view_update(const UiInput *in)
     int dir = (in->pressed & PSP_CTRL_RIGHT) ? 1 : (in->pressed & PSP_CTRL_LEFT) ? -1 : 0;
     for (int i = s_sel + dir; dir && i >= 0 && i < s_count; i += dir)
         if (is_image(&s_items[i])) { /* nästa / föregående bild i mappen */
+            int prev = s_sel;
             s_sel = i;
-            view_load();
-            sound_play(SND_MOVE);
+            if (view_load()) {
+                sound_play(SND_MOVE);
+            } else {
+                s_sel = prev;
+                view_load();
+                toast(L(S_F_FAILED));
+                sound_play(SND_ERROR);
+            }
             break;
         }
     if (in->pressed & PSP_CTRL_CROSS) {
@@ -869,7 +885,7 @@ static void view_draw(void)
 void files_open(void)
 {
     s_ndev = 0;
-    if (dev_present("ms0:/"))
+    if (!sys_ms_is_ef() && dev_present("ms0:/"))
         s_devs[s_ndev++] = "ms0:/";
     if (sys_model() == 4 && dev_present("ef0:/"))
         s_devs[s_ndev++] = "ef0:/";
@@ -955,9 +971,15 @@ int files_update(const UiInput *in, float dt)
             join(path, sizeof(path), s_path, e->name);
             enter(e->kind == KIND_DEVICE ? e->name : path, NULL);
             sound_play(SND_SELECT);
-        } else if (e && is_image(e) && view_load()) {
-            s_viewing = 1;
-            sound_play(SND_SELECT);
+        } else if (e && is_image(e)) {
+            if (view_load()) {
+                s_viewing = 1;
+                sound_play(SND_SELECT);
+            } else {
+                /* öppna inte alternativmenyn om en bild inte gick att läsa (issue #14) */
+                toast(L(S_F_FAILED));
+                sound_play(SND_ERROR);
+            }
         } else if (s_path[0]) {
             open_menu(M_OPTIONS); /* ✕ på en fil: vad ska göras med den */
         }

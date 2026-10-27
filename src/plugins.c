@@ -10,7 +10,7 @@
 #include "plugins.h"
 #include "system.h"
 
-#define MAX_FILES 2
+#define MAX_FILES 3
 #define MAX_LINES 96
 #define LINE_LEN 192
 
@@ -63,6 +63,9 @@ static void load_file(const char *path)
 {
     if (s_file_count >= MAX_FILES)
         return;
+    for (int i = 0; i < s_file_count; i++)
+        if (!strcasecmp(s_files[i].path, path))
+            return;
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     if (fd < 0)
         return;
@@ -99,11 +102,11 @@ int plugins_load(const char *ark_dir)
     s_file_count = s_count = 0;
     snprintf(path, sizeof(path), "%sPLUGINS.TXT", ark_dir);
     load_file(path);
-    /* ARK-4 utan ARK-mapp använder <lagring>/SEPLUGINS/ som ARK-mapp – läs inte samma fil två gånger */
-    char se[40];
-    snprintf(se, sizeof(se), "%s/SEPLUGINS/PLUGINS.TXT", g_root);
-    if (strcasecmp(path, se))
-        load_file(se);
+    /* Läs även både ms0:/SEPLUGINS och ef0:/SEPLUGINS (PSP Go, issue #21).
+     * load_file hoppar över dubbletter om ark_dir redan är SEPLUGINS. */
+    if (!sys_ms_is_ef())
+        load_file("ms0:/SEPLUGINS/PLUGINS.TXT");
+    load_file("ef0:/SEPLUGINS/PLUGINS.TXT");
     return s_count;
 }
 
