@@ -80,76 +80,6 @@ static u32 with_alpha(u32 c, float a)
     return COLOR_ALPHA(c, (int)(((c >> 24) & 0xFF) * clampf(a, 0, 1)));
 }
 
-/* --- flikar --- */
-
-/* Kort som användaren flyttat med □ till den andra fliken (homebrew till Spel, eller tvärtom),
- * sparade i <data>/moved.txt: en rad per kort (entry_cover_key). s_moved börjar med '\n'. */
-static char s_moved[4096] = "\n";
-
-static void moved_path(char *out, int size)
-{
-    snprintf(out, size, "%s/moved.txt", g_data_dir);
-}
-
-static void moved_load(void)
-{
-    char path[64];
-    moved_path(path, sizeof(path));
-    s_moved[1] = 0;
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
-    if (fd < 0)
-        return;
-    int n = sceIoRead(fd, s_moved + 1, sizeof(s_moved) - 2);
-    sceIoClose(fd);
-    s_moved[n > 0 ? n + 1 : 1] = 0;
-}
-
-static char *moved_find(const Entry *e)
-{
-    char key[80];
-    entry_cover_key(e, key + 1, sizeof(key) - 2);
-    key[0] = '\n';
-    strcat(key, "\n");
-    return strstr(s_moved, key);
-}
-
-/* Flyttar kortet till den andra fliken och sparar. 0 = listan är full. */
-static int moved_toggle(const Entry *e)
-{
-    char *p = moved_find(e);
-    if (p) {
-        char *next = strchr(p + 1, '\n');
-        memmove(p, next, strlen(next) + 1);
-    } else {
-        char key[80];
-        entry_cover_key(e, key, sizeof(key));
-        int len = strlen(s_moved);
-        if (len + (int)strlen(key) + 2 > (int)sizeof(s_moved))
-            return 0;
-        snprintf(s_moved + len, sizeof(s_moved) - len, "%s\n", key);
-    }
-    char path[64];
-    moved_path(path, sizeof(path));
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (fd >= 0) {
-        sceIoWrite(fd, s_moved + 1, strlen(s_moved + 1));
-        sceIoClose(fd);
-    }
-    return 1;
-}
-
-/* Homebrew hamnar under Appar – utom i en kategorimapp med prefixet g_ (spel, t.ex. GBA-spel
- * som EBOOT) – och s_ lägger allt under Appar. □ → Flytta byter sedan för ett enskilt kort. */
-static int is_app(const Entry *e)
-{
-    int app = e->type == ENTRY_HOMEBREW;
-    if (!strncasecmp(e->category, "g_", 2))
-        app = 0;
-    else if (!strncasecmp(e->category, "s_", 2))
-        app = 1;
-    return app != (moved_find(e) != NULL);
-}
-
 /* --- senast spelat, egen ordning och fästa spel ---
  * <data>/played.txt (senast spelat först), order.txt (egen ordning) och pins.txt: en nyckel
  * (entry_cover_key) per rad. I minnet ligger de i s_meta, parallellt med spellistan. */
@@ -688,7 +618,6 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->tab_anim = 1;
     ui->accent[0] = ui->accent[1] = ui->accent[2] = 120;
     ui->cat_bg_for = -1;
-    moved_load();
     collect_cats(list); /* last_load letar kategorierna med namn */
     meta_load(list);    /* fästa spel, senast spelat och egen ordning – före sorteringen */
     char keys[TAB_MUSIC][80] = { "" };
@@ -767,23 +696,6 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
     ui->menu_open = 0; /* kortet menyn gällde kan ha flyttats */
     if (ui->tab < TAB_MUSIC)
         loader_set_view(view(ui));
-}
-
-/* □ i Spel/Appar: valt kort flyttas till den andra fliken, markeringen står kvar på samma plats */
-static void move_selected(Ui *ui)
-{
-    const Entry *e = &ui->list->items[ui_selected(ui)];
-    if (e->type == ENTRY_UMD || !moved_toggle(e)) {
-        sound_play(SND_ERROR);
-        return;
-    }
-    int tab = ui->tab, old = ui->sel[tab];
-    ui_relist(ui, 0, 0);
-    int n = ui->views[tab].count;
-    ui->sel[tab] = old < n ? old : (n ? n - 1 : 0);
-    ui->pos = ui->sel[tab] + 0.3f;
-    ui_toast(ui, L(tab == TAB_GAMES ? S_MOVED_TO_APPS : S_MOVED_TO_GAMES));
-    sound_play(SND_TOGGLE);
 }
 
 /* □-menyn för valt kort i Spel */
@@ -1891,7 +1803,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         }
         if ((in->pressed & confirm) && ui->intro >= 1) {
             static const int media_tabs[3] = { TAB_MUSIC, TAB_PICTURES, TAB_VIDEO };
-            switch_tab(ui, media_tabs[clampf(ui->sel[TAB_MEDIA], 0, 2)]);
+            switch_tab(ui, media_tabs[(int)clampf(ui->sel[TAB_MEDIA], 0, 2)]);
         }
     }
 
@@ -3035,13 +2947,6 @@ static void draw_videos(Ui *ui)
             gfx_glow(ix, iy + 2, iw, ih, 6, RGBA(0, 0, 0, (int)(130 * a * va)));
             gfx_tex(vt, ix, iy, iw, ih, RGBA(255, 255, 255, (int)(255 * a * va)));
         } else {
-            int ei = s_vids[ui->vid_sel].entry_idx;
-            IconSlot *slot = ei >= 0 ? loader_icon(ei) : NULL;
-            if (slot && slot->state == SLOT_READY) {
-                float s = fminf(bw / slot->tex->w, bh / slot->tex->h);
-                float iw = slot->tex->w * s, ih = slot->tex->h * s;
-                gfx_tex(slot->tex, bx + (bw - iw) / 2, by + (bh - ih) / 2, iw, ih, RGBA(170, 175, 190, (int)(180 * a)));
-            }
             gfx_circle(bx + bw / 2, by + bh / 2, 13, RGBA(0, 0, 0, (int)(140 * a)));
             draw_play_glyph(bx + bw / 2 + 1, by + bh / 2, 7.5f, 0, with_alpha(LIGHT, 0.9f * a));
         }
@@ -3119,6 +3024,19 @@ static void draw_vid_fullscreen(Ui *ui)
     text_draw(x, y + 4, 0.52f, 0, TEXT_DIM, ALIGN_LEFT, cnt);
 }
 
+/* ✕ Välj  ○ Tillbaka – längst ner i panelerna */
+static void draw_select_back(Ui *ui, float x, float y, float a)
+{
+    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a),
+               with_alpha(DARK, a));
+    x += 17;
+    text_draw(x, y + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_SELECT));
+    x += text_width(0.52f, 0, L(S_SELECT)) + 12;
+    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, with_alpha(LIGHT, 0.9f * a),
+               with_alpha(DARK, a));
+    text_draw(x + 17, y + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_BACK));
+}
+
 /* Sökfliken (🔍): PS5-sökfält med tangentrad och direktfiltrerade spel/appar */
 static void draw_search(Ui *ui)
 {
@@ -3127,20 +3045,20 @@ static void draw_search(Ui *ui)
     float launch = ui->launch < 0 ? 0 : smooth(ui->launch);
     a *= 1 - smooth(launch * 2);
 
-    int hits[MAX_ENTRIES];
-    int n = collect_search(ui, hits);
+    int hits[512];
+    int n = collect_search(ui, hits, 512);
 
     /* sökfältet högst upp */
     float sx = MARGIN, sy = 42 + slide, sw = SCREEN_W - 2 * MARGIN, sh = 24;
-    gfx_round_rect(sx, sy, sw, sh, 12, RGBA(255, 255, 255, (int)((ui->search_row == 0 ? 28 : 18) * a)));
-    if (ui->search_row == 0)
+    gfx_round_rect(sx, sy, sw, sh, 12, RGBA(255, 255, 255, (int)((ui->search_focus == 0 ? 28 : 18) * a)));
+    if (ui->search_focus == 0)
         gfx_ring(sx, sy, sw, sh, 12, RGBA(255, 255, 255, (int)(130 * a)));
     draw_search_icon(sx + 14, sy + 12, with_alpha(TEXT_MAIN, a));
 
-    if (ui->search_len > 0) {
-        text_draw(sx + 28, sy + 16.5f, 0.62f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, ui->search_q);
-        float qw = text_width(0.62f, 0, ui->search_q);
-        if (ui->search_row == 0 && ((int)(ui->time * 2.5f) & 1) == 0)
+    if (ui->search_query[0]) {
+        text_draw(sx + 28, sy + 16.5f, 0.62f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, ui->search_query);
+        float qw = text_width(0.62f, 0, ui->search_query);
+        if (ui->search_focus == 0 && ((int)(ui->time * 2.5f) & 1) == 0)
             gfx_rect(sx + 30 + qw, sy + 6, 1.5f, 12, with_alpha(LIGHT, a));
     } else {
         text_draw(sx + 28, sy + 16.5f, 0.6f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_SEARCH));
@@ -3153,20 +3071,20 @@ static void draw_search(Ui *ui)
     const int vis = 19;
     float kw = (sw - (vis - 1) * 2.0f) / vis, ky = sy + 30, kh = 19;
     int k0 = ui->search_key - vis / 2;
-    if (k0 > SEARCH_NCHARS - vis) k0 = SEARCH_NCHARS - vis;
+    if (k0 > SEARCH_KEY_COUNT - vis) k0 = SEARCH_KEY_COUNT - vis;
     if (k0 < 0) k0 = 0;
-    for (int i = 0; i < vis && k0 + i < SEARCH_NCHARS; i++) {
+    for (int i = 0; i < vis && k0 + i < SEARCH_KEY_COUNT; i++) {
         int k = k0 + i;
         float kx = sx + i * (kw + 2.0f);
         int sel = k == ui->search_key;
         if (sel) {
-            u32 kc = ui->search_row == 0 ? with_alpha(LIGHT, 0.95f * a) : RGBA(255, 255, 255, (int)(55 * a));
+            u32 kc = ui->search_focus == 0 ? with_alpha(LIGHT, 0.95f * a) : RGBA(255, 255, 255, (int)(55 * a));
             gfx_round_rect(kx, ky, kw, kh, 4.5f, kc);
         } else {
             gfx_round_rect(kx, ky, kw, kh, 4.5f, RGBA(255, 255, 255, (int)(16 * a)));
         }
-        u32 tc = (sel && ui->search_row == 0) ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
-        char ch = SEARCH_CHARS[k];
+        u32 tc = (sel && ui->search_focus == 0) ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
+        char ch = SEARCH_KEYS[k];
         if (ch == ' ') {
             gfx_rect(kx + kw / 2 - 4, ky + kh - 5.5f, 8, 1.6f, tc);
         } else if (ch == '<') {
@@ -3190,7 +3108,7 @@ static void draw_search(Ui *ui)
             if (r < 0)
                 continue;
             float y = ry0 + (r - ui->search_scroll) * rh;
-            int sel = ui->search_row == 1 && r == ui->search_sel;
+            int sel = ui->search_focus == 1 && r == ui->search_sel;
             if (sel)
                 gfx_round_rect(sx, y, sw, rh - 3, 7, with_alpha(LIGHT, 0.94f * a));
             int idx = hits[r];
@@ -3225,19 +3143,6 @@ static void draw_toast(Ui *ui)
     gfx_glow(x, y, w, 28, 10, RGBA(0, 0, 0, (int)(150 * a)));
     gfx_round_rect(x, y, w, 28, 7, RGBA(40, 41, 47, (int)(245 * a)));
     text_draw(SCREEN_W / 2, y + 18.5f, 0.62f, 0, RGBA(240, 240, 245, (int)(255 * a)), ALIGN_CENTER, ui->toast);
-}
-
-/* ✕ Välj  ○ Tillbaka – längst ner i panelerna */
-static void draw_select_back(Ui *ui, float x, float y, float a)
-{
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a),
-               with_alpha(DARK, a));
-    x += 17;
-    text_draw(x, y + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_SELECT));
-    x += text_width(0.52f, 0, L(S_SELECT)) + 12;
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, with_alpha(LIGHT, 0.9f * a),
-               with_alpha(DARK, a));
-    text_draw(x + 17, y + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_BACK));
 }
 
 /* Kategoriväljaren: kategorimappens bg.png över hela skärmen, listan till vänster */
