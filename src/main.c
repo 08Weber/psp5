@@ -579,7 +579,7 @@ int main(int argc, char *argv[])
                 if (home) {
                     ui_open_cc(&ui);
                 } else if (lr) {
-                    sound_play(SND_TAB);
+                    sound_play(SND_SWIPE);
                     ui_set_tab(&ui, (lr & PSP_CTRL_LTRIGGER) ? TAB_SEARCH : TAB_GAMES);
                 }
             } else if (action != SA_NONE) {
