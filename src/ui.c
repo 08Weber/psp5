@@ -807,10 +807,6 @@ static void menu_choose(Ui *ui)
         ui->menu_open = 1; /* ui_relist stänger menyn */
         sound_play(SND_TOGGLE);
         break;
-    default:
-        ui->menu_open = 0;
-        move_selected(ui);
-        break;
     }
 }
 
