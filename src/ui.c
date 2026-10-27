@@ -67,7 +67,7 @@
 #define LIGHT       RGBA(238, 238, 242, 255)
 #define DARK        RGBA(18, 18, 22, 255)
 
-static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_APPS, S_TAB_LIBRARY, S_TAB_MUSIC };
+static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_APPS, S_TAB_LIBRARY, S_TAB_MUSIC, S_TAB_PICTURES };
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -393,6 +393,8 @@ static const LoaderView *view(const Ui *ui)
 
 int ui_selected(const Ui *ui)
 {
+    if (ui->tab >= TAB_MUSIC)
+        return -1;
     const LoaderView *v = view(ui);
     return v->count ? v->idx[ui->sel[ui->tab]] : -1;
 }
@@ -528,7 +530,8 @@ static void switch_tab(Ui *ui, int tab)
     ui->still = 0;
     ui->label_for = -2;
     ui->seek_dir = ui->seeking = 0; /* en hållen pil gäller bara i musikfliken */
-    if (tab != TAB_MUSIC) /* musikfliken har inga kort – låt ikonerna ligga kvar */
+    ui->pic_viewing = 0;
+    if (tab < TAB_MUSIC) /* musik- och bildflikarna har inga spelkort – låt ikonerna ligga kvar */
         loader_set_view(view(ui));
 }
 
@@ -653,6 +656,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->label_for = -2;
     ui->lib_label_for = -2;
     ui->cover_for = -2;
+    ui->pic_tex_for = -1;
     ui->tab_anim = 1;
     ui->accent[0] = ui->accent[1] = ui->accent[2] = 120;
     ui->cat_bg_for = -1;
@@ -673,10 +677,10 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
                 break;
             }
         }
-    ui->pos = (ui->tab == TAB_MUSIC ? 0 : ui->sel[ui->tab]) + 1.5f; /* korten glider in vid start */
+    ui->pos = (ui->tab >= TAB_MUSIC ? 0 : ui->sel[ui->tab]) + 1.5f; /* korten glider in vid start */
     ui->grid_target = ui->sel[TAB_LIBRARY] / GRID_COLS;
     ui->grid_scroll = ui->grid_target;
-    loader_set_view(&ui->views[ui->tab == TAB_MUSIC ? TAB_GAMES : ui->tab]);
+    loader_set_view(&ui->views[ui->tab >= TAB_MUSIC ? TAB_GAMES : ui->tab]);
 }
 
 /* Spellistans index före → efter att första posten tagits bort och/eller lagts till. */
@@ -707,7 +711,7 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
     for (int t = 0; t < TAB_COUNT; t++) {
         LoaderView *v = &ui->views[t];
         chosen[t] = -1;
-        if (t != TAB_MUSIC && v->count && v->idx)
+        if (t < TAB_MUSIC && v->count && v->idx)
             chosen[t] = remap_index(v->idx[ui->sel[t]], removed_front, added_front);
         /* står man först i fliken blir en nyinsatt skiva markerad */
         if (added_front && !ui->moving && (t == TAB_GAMES || t == TAB_LIBRARY) && ui->sel[t] == 0)
@@ -718,7 +722,7 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
     }
     build_views(ui);
     for (int t = 0; t < TAB_COUNT; t++) {
-        if (t == TAB_MUSIC)
+        if (t >= TAB_MUSIC)
             continue;
         LoaderView *v = &ui->views[t];
         ui->sel[t] = 0;
@@ -726,14 +730,15 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
             if (v->idx[p] == chosen[t])
                 ui->sel[t] = p;
     }
-    if (ui->tab != TAB_MUSIC)
+    if (ui->tab < TAB_MUSIC)
         ui->pos += ui->sel[ui->tab] - old_sel; /* raden står still om samma kort är markerat */
     ui->still = 0;
     ui->bg_index = remap_index(ui->bg_index, removed_front, added_front);
     ui->label_for = -2;
     ui->lib_label_for = -2;
     ui->menu_open = 0; /* kortet menyn gällde kan ha flyttats */
-    loader_set_view(view(ui));
+    if (ui->tab < TAB_MUSIC)
+        loader_set_view(view(ui));
 }
 
 /* □ i Spel/Appar: valt kort flyttas till den andra fliken, markeringen står kvar på samma plats */
@@ -885,6 +890,10 @@ void ui_free(Ui *ui)
     ui->cat_bg_for = -1;
     tex_free(ui->cover);
     ui->cover = NULL;
+    tex_free(ui->pic_tex);
+    ui->pic_tex = NULL;
+    ui->pic_tex_for = -1;
+    ui->pic_viewing = 0;
     tex_free(s_wall);
     s_wall = NULL;
     strcpy(s_wall_for, "\1");
@@ -902,7 +911,7 @@ void ui_free(Ui *ui)
 void ui_replay_intro(Ui *ui)
 {
     ui->intro = 0;
-    if (ui->tab != TAB_MUSIC)
+    if (ui->tab < TAB_MUSIC)
         ui->pos = ui->sel[ui->tab] + 1.5f;
 }
 
@@ -1013,7 +1022,7 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
     vert.lx = 128;
     int move = step_input(ui, &vert, dt, 1);
     if (move && n) {
-        int next = clampf(ui->music_sel + move / 2, 0, n - 1);
+        int next = (ui->music_sel + move / 2 + n) % n;
         if (next != ui->music_sel) {
             ui->music_sel = next;
             sound_play(SND_MOVE);
@@ -1076,6 +1085,187 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
     ui->music_scroll = approach(ui->music_scroll, ui->music_target, 14.0f, dt);
 }
 
+/* --- bildfliken (TAB_PICTURES) --- */
+
+#define MAX_PICS 500
+typedef struct {
+    char path[160];
+    char title[64];
+    char sub[64];
+} PicItem;
+
+static PicItem *s_pics;
+static int s_npics, s_pics_cap, s_pics_scanned, s_pics_gen;
+
+static int cmp_pic(const void *a, const void *b)
+{
+    const PicItem *x = a, *y = b;
+    int c = strcasecmp(x->sub, y->sub);
+    return c ? c : strcasecmp(x->title, y->title);
+}
+
+static void add_pic(const char *path, const char *name, const char *folder, const char *dot)
+{
+    if (s_npics >= MAX_PICS)
+        return;
+    if (s_npics >= s_pics_cap) {
+        int ncap = s_pics_cap ? s_pics_cap * 2 : 32;
+        PicItem *p = realloc(s_pics, ncap * sizeof(*s_pics));
+        if (!p)
+            return;
+        s_pics = p;
+        s_pics_cap = ncap;
+    }
+    PicItem *it = &s_pics[s_npics++];
+    snprintf(it->path, sizeof(it->path), "%s", path);
+    int stem = (int)(dot - name);
+    if (stem >= (int)sizeof(it->title))
+        stem = sizeof(it->title) - 1;
+    snprintf(it->title, sizeof(it->title), "%.*s", stem, name);
+    char ext[8];
+    int k = 0;
+    for (const char *e = dot + 1; *e && k < 5; e++)
+        ext[k++] = (*e >= 'a' && *e <= 'z') ? *e - 32 : *e;
+    ext[k] = 0;
+    if (folder && folder[0])
+        snprintf(it->sub, sizeof(it->sub), "%s  ·  %s", folder, ext);
+    else
+        snprintf(it->sub, sizeof(it->sub), "%s", ext);
+}
+
+static void scan_pic_dir(const char *dir, const char *folder, int depth)
+{
+    SceUID d = sceIoDopen(dir);
+    if (d < 0)
+        return;
+    SceIoDirent ent;
+    char path[160];
+    memset(&ent, 0, sizeof(ent));
+    while (sceIoDread(d, &ent) > 0 && s_npics < MAX_PICS) {
+        if (ent.d_name[0] != '.' && snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name) < (int)sizeof(path)) {
+            if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
+                if (depth < 2)
+                    scan_pic_dir(path, ent.d_name, depth + 1);
+            } else {
+                const char *dot = strrchr(ent.d_name, '.');
+                if (dot && dot != ent.d_name &&
+                    (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") ||
+                     !strcasecmp(dot, ".png") || !strcasecmp(dot, ".bmp")))
+                    add_pic(path, ent.d_name, folder, dot);
+            }
+        }
+        memset(&ent, 0, sizeof(ent));
+    }
+    sceIoDclose(d);
+}
+
+static void ensure_pics(void)
+{
+    if (osd_take_screenshot_done())
+        s_pics_scanned = 0;
+    if (s_pics_scanned)
+        return;
+    s_pics_scanned = 1;
+    s_npics = 0;
+    static const char *const dirs[] = { "PICTURE", "PSP/PHOTO", "PSP/SCREENSHOT" };
+    for (int d = 0; d < 2; d++) {
+        if (d == 0 && sys_ms_is_ef())
+            continue;
+        const char *dev = d == 0 ? "ms0:" : "ef0:";
+        for (int k = 0; k < 3; k++) {
+            char root[64];
+            snprintf(root, sizeof(root), "%s/%s", dev, dirs[k]);
+            scan_pic_dir(root, k == 0 ? "" : (k == 1 ? "PHOTO" : "SCREENSHOT"), 0);
+        }
+    }
+    if (s_npics > 1)
+        qsort(s_pics, s_npics, sizeof(*s_pics), cmp_pic);
+    s_pics_gen++;
+}
+
+static void set_pic_wallpaper(Ui *ui, const char *path)
+{
+    if (strlen(path) >= sizeof(g_wallpaper)) {
+        sound_play(SND_ERROR);
+        return;
+    }
+    snprintf(g_wallpaper, sizeof(g_wallpaper), "%s", path);
+    config_save(g_data_dir);
+    ui_toast(ui, L(S_WALLPAPER_SET));
+    sound_play(SND_SELECT);
+}
+
+static void update_pictures(Ui *ui, const UiInput *in, float dt)
+{
+    ensure_pics();
+    int n = s_npics;
+    if (ui->pic_sel >= n)
+        ui->pic_sel = n > 0 ? n - 1 : 0;
+    if (!n) {
+        ui->pic_viewing = 0;
+        if (ui->pic_tex) {
+            tex_free(ui->pic_tex);
+            ui->pic_tex = NULL;
+            ui->pic_tex_for = -1;
+        }
+        return;
+    }
+
+    if (ui->pic_viewing) {
+        int dir = (in->pressed & PSP_CTRL_RIGHT) ? 1 : (in->pressed & PSP_CTRL_LEFT) ? -1 : 0;
+        if (dir) {
+            ui->pic_sel = (ui->pic_sel + dir + n) % n;
+            ui->pic_still = 1.0f;
+            sound_play(SND_MOVE);
+        }
+        if (in->pressed & PSP_CTRL_SQUARE)
+            set_pic_wallpaper(ui, s_pics[ui->pic_sel].path);
+        else if (in->pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_CROSS)) {
+            ui->pic_viewing = 0;
+            sound_play(SND_BACK);
+        }
+    } else {
+        UiInput vert = *in;
+        vert.held &= ~(PSP_CTRL_LEFT | PSP_CTRL_RIGHT);
+        vert.lx = 128;
+        int move = step_input(ui, &vert, dt, 1);
+        if (move) {
+            int next = (ui->pic_sel + move / 2 + n) % n;
+            if (next != ui->pic_sel) {
+                ui->pic_sel = next;
+                ui->pic_still = 0;
+                sound_play(SND_MOVE);
+            }
+        }
+        if (ui->intro >= 1) {
+            u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
+            if (in->pressed & confirm) {
+                ui->pic_viewing = 1;
+                ui->pic_still = 1.0f;
+                sound_play(SND_SELECT);
+            } else if (in->pressed & PSP_CTRL_SQUARE) {
+                set_pic_wallpaper(ui, s_pics[ui->pic_sel].path);
+            }
+        }
+    }
+
+    if (ui->pic_sel < ui->pic_target)
+        ui->pic_target = ui->pic_sel;
+    if (ui->pic_sel > ui->pic_target + MROWS - 1)
+        ui->pic_target = ui->pic_sel - (MROWS - 1);
+    ui->pic_scroll = approach(ui->pic_scroll, ui->pic_target, 14.0f, dt);
+
+    ui->pic_still += dt;
+    if (ui->pic_tex_for != ui->pic_sel && (ui->pic_still >= 0.14f || ui->pic_viewing)) {
+        tex_free(ui->pic_tex);
+        ui->pic_tex = art_load_wallpaper(s_pics[ui->pic_sel].path);
+        ui->pic_tex_for = ui->pic_sel;
+        ui->pic_fade = 0;
+    }
+    if (ui->pic_tex)
+        ui->pic_fade = clampf(ui->pic_fade + dt * 5.0f, 0, 1);
+}
+
 /* --- kategoriväljaren (SELECT) --- */
 
 #define CAT_ROWS 7
@@ -1088,8 +1278,8 @@ static void open_categories(Ui *ui)
         if (!c || s_cat_n[ui->tab][c])
             s_pick[s_npick++] = c;
     if (s_npick < 2) {
-        ui_toast(ui, L(S_NO_CATEGORIES));
-        sound_play(SND_ERROR);
+        /* inga kategorimappar: SELECT öppnar Control Center direkt */
+        ui_open_cc(ui);
         return;
     }
     ui->cat_open = 1;
@@ -1114,8 +1304,8 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
         return;
     }
     int move = step_input(ui, in, dt, 1);
-    if (move == 2 || move == -2) {
-        int next = clampf(ui->cat_sel + move / 2, 0, s_npick - 1);
+    if ((move == 2 || move == -2) && s_npick > 0) {
+        int next = (ui->cat_sel + move / 2 + s_npick) % s_npick;
         if (next != ui->cat_sel) {
             ui->cat_sel = next;
             ui->cat_still = 0;
@@ -1144,7 +1334,7 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
     ui->cat_bg_fade = clampf(ui->cat_bg_fade + dt * 4, 0, 1);
 
     u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
-    u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_SELECT;
+    u32 back = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
     if (in->pressed & ok) {
         ui->cat_open = 0;
         if (s_pick[ui->cat_sel] != ui->cat[ui->tab]) {
@@ -1154,26 +1344,30 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
             ui->tab_anim = 0;
         }
         sound_play(SND_SELECT);
+    } else if (in->pressed & PSP_CTRL_SELECT) {
+        ui->cat_open = 0;
+        ui_open_cc(ui); /* andra trycket på SELECT öppnar Control Center */
     } else if (in->pressed & back) {
         ui->cat_open = 0;
         sound_play(SND_BACK);
     }
 }
 
-/* --- Control Center (HOME) --- */
+/* --- Control Center (HOME eller SELECT) --- */
 
-enum { CC_MUSIC, CC_SLEEP, CC_USB, CC_FILES, CC_SETTINGS, CC_XMB, CC_RESTART, CC_OFF, CC_COUNT };
+enum { CC_MUSIC, CC_SCREENSHOT, CC_SLEEP, CC_USB, CC_FILES, CC_SETTINGS, CC_XMB, CC_RESTART, CC_OFF, CC_COUNT };
 
 static const char *cc_label(int item)
 {
     switch (item) {
-    case CC_MUSIC:    return L(music_state() == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
-    case CC_SLEEP:    return L(S_SLEEP);
-    case CC_USB:      return L(S_USB_MODE);
-    case CC_FILES:    return L(S_FILES);
-    case CC_SETTINGS: return L(S_SETTINGS);
-    case CC_XMB:      return L(S_TO_XMB);
-    case CC_RESTART:  return L(S_RESTART);
+    case CC_MUSIC:      return L(music_state() == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
+    case CC_SCREENSHOT: return L(S_SCREENSHOT);
+    case CC_SLEEP:      return L(S_SLEEP);
+    case CC_USB:        return L(S_USB_MODE);
+    case CC_FILES:      return L(S_FILES);
+    case CC_SETTINGS:   return L(S_SETTINGS);
+    case CC_XMB:        return L(S_TO_XMB);
+    case CC_RESTART:    return L(S_RESTART);
     }
     return L(S_SHUTDOWN);
 }
@@ -1211,7 +1405,7 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
         return UI_NONE;
     int move = step_input(ui, in, dt, 0);
     if (move) {
-        int next = clampf(ui->cc_sel + move, 0, CC_COUNT - 1);
+        int next = (ui->cc_sel + move + CC_COUNT) % CC_COUNT;
         if (next != ui->cc_sel) {
             ui->cc_sel = next;
             ui->cc_confirm = 0;
@@ -1220,7 +1414,7 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
         }
     }
     u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
-    u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_HOME;
+    u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_HOME | PSP_CTRL_SELECT;
     if (in->pressed & back) {
         ui->cc_open = 0;
         sound_play(SND_BACK);
@@ -1228,7 +1422,7 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
     }
     if (!(in->pressed & ok))
         return UI_NONE;
-    static const int actions[CC_COUNT] = { 0, SA_SUSPEND, SA_USB, SA_FILES, 0, SA_XMB, SA_RESTART, SA_SHUTDOWN };
+    static const int actions[CC_COUNT] = { 0, 0, SA_SUSPEND, SA_USB, SA_FILES, 0, SA_XMB, SA_RESTART, SA_SHUTDOWN };
     switch (ui->cc_sel) {
     case CC_MUSIC:
         if (music_current() >= 0 && music_state() != MUSIC_STOPPED)
@@ -1237,6 +1431,11 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
             music_play(ui->music_sel);
         else
             sound_play(SND_ERROR);
+        return UI_NONE;
+    case CC_SCREENSHOT:
+        ui->cc_open = 0;
+        ui->cc_anim = 0;
+        osd_request_screenshot();
         return UI_NONE;
     case CC_SETTINGS:
         ui->cc_open = 0;
@@ -1284,8 +1483,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
         u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE;
         int move = step_input(ui, in, dt, 1);
-        if ((move == 2 || move == -2) && ui->menu_sel + move / 2 >= 0 && ui->menu_sel + move / 2 < MI_COUNT) {
-            ui->menu_sel += move / 2;
+        if (move == 2 || move == -2) {
+            ui->menu_sel = (ui->menu_sel + move / 2 + MI_COUNT) % MI_COUNT;
             sound_play(SND_MOVE);
         }
         if (in->pressed & ok)
@@ -1317,22 +1516,31 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     update_categories(ui, in, dt);
     if (cat_was_open)
         in = &none;
-    if ((in->pressed & PSP_CTRL_SELECT) && ui->tab != TAB_MUSIC && ui->intro >= 1) {
-        open_categories(ui);
+    if ((in->pressed & PSP_CTRL_SELECT) && ui->intro >= 1) {
+        if (ui->tab < TAB_MUSIC)
+            open_categories(ui);
+        else
+            ui_open_cc(ui);
+        in = &none;
+    }
+    if (ui->tab == TAB_PICTURES && ui->pic_viewing && in != &none) {
+        update_pictures(ui, in, dt);
         in = &none;
     }
     if ((in->pressed & PSP_CTRL_TRIANGLE) && ui->intro >= 1)
         return UI_SETTINGS; /* ljudet spelas när inställningarna har lästs in (main.c) */
     if (in->pressed & PSP_CTRL_LTRIGGER)
-        switch_tab(ui, ui->tab - 1);
+        switch_tab(ui, (ui->tab + TAB_COUNT - 1) % TAB_COUNT);
     if (in->pressed & PSP_CTRL_RTRIGGER)
-        switch_tab(ui, ui->tab + 1);
+        switch_tab(ui, (ui->tab + 1) % TAB_COUNT);
 
     int overlay = in == &none; /* en panel är öppen: knapprepetitionen tillhör den */
     if (ui->tab == TAB_MUSIC && !overlay)
         update_music(ui, in, dt);
+    if (ui->tab == TAB_PICTURES && !overlay)
+        update_pictures(ui, in, dt);
 
-    int count = view(ui)->count;
+    int count = ui->tab < TAB_MUSIC ? view(ui)->count : 0;
     int *sel = &ui->sel[ui->tab];
     int grid = ui->tab == TAB_LIBRARY;
     if (grid && (in->pressed & PSP_CTRL_SQUARE) && count > 1 && ui->launch < 0)
@@ -1343,20 +1551,24 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->menu_sel = 0;
         sound_play(SND_OPEN);
     }
-    int move = ui->tab == TAB_MUSIC || overlay ? 0 : step_input(ui, in, dt, grid);
+    int move = ui->tab >= TAB_MUSIC || overlay ? 0 : step_input(ui, in, dt, grid);
     if (move && count) {
-        int next = *sel + move;
+        int next = *sel;
         if (move == 2 || move == -2) {
-            next = *sel + (move > 0 ? GRID_COLS : -GRID_COLS);
-            /* ner från näst sista raden till en kortare sista rad: sista kortet */
-            if (next >= count && *sel / GRID_COLS < (count - 1) / GRID_COLS)
+            int rows = (count + GRID_COLS - 1) / GRID_COLS;
+            int r = *sel / GRID_COLS, c = *sel % GRID_COLS;
+            r = (r + (move > 0 ? 1 : -1) + rows) % rows;
+            next = r * GRID_COLS + c;
+            if (next >= count)
                 next = count - 1;
-            if (next < 0 || next >= count)
-                next = *sel;
+        } else {
+            next = (*sel + move + count) % count;
         }
-        next = clampf(next, 0, count - 1);
         if (next != *sel) {
+            int wrapped = !grid && abs(next - *sel) > 1;
             *sel = next;
+            if (wrapped)
+                ui->pos = next + (move > 0 ? -0.7f : 0.7f);
             ui->still = 0;
             sound_play(SND_MOVE);
         }
@@ -1365,7 +1577,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
     /* START startar också – ut till XMB går man via Control Center (HOME) */
     u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
-    if ((in->pressed & confirm) && count && ui->intro >= 1) {
+    if (ui->tab < TAB_MUSIC && (in->pressed & confirm) && count && ui->intro >= 1) {
         if (ui->can_launch) {
             ui->launch = 0;
             if (s_meta) { /* Senast spelat */
@@ -1392,7 +1604,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->pos = approach(ui->pos, *sel, 13.0f, dt);
     if (fabsf(ui->pos - *sel) < 0.001f)
         ui->pos = *sel;
-    if (ui->tab != TAB_MUSIC)
+    if (ui->tab < TAB_MUSIC)
         loader_focus(*sel);
     if (music_needs_cjk())
         font_ensure_cjk(); /* japanska/ryska låttitlar (laddas bara en gång) */
@@ -1578,7 +1790,7 @@ static void draw_top_bar(Ui *ui)
     float room = bx - 18 - iw - MARGIN; /* plats för laddningsblixten och procenten till vänster om batteriet */
     if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang || cats != sized_cats) {
         for (int t = 0; t < TAB_COUNT; t++) {
-            if (t != TAB_MUSIC && ui->cat[t] > 0)
+            if (t < TAB_MUSIC && ui->cat[t] > 0)
                 snprintf(names[t], sizeof(names[t]), "%s · %s", L(TAB_NAMES[t]), cat_title(ui->cat[t]));
             else
                 snprintf(names[t], sizeof(names[t]), "%s", L(TAB_NAMES[t]));
@@ -1766,7 +1978,7 @@ static void draw_details(Ui *ui)
     if (ui->logo_cur && ui->bg_index == i) {
         Texture *lg = ui->logo_cur;
         float la = fade * smooth(ui->bg_fade) * (1 - smooth(ui->menu_anim));
-        gfx_tex(lg, MARGIN, 188 - lg->h, lg->w, lg->h, RGBA(255, 255, 255, (int)(255 * la)));
+        gfx_tex(lg, MARGIN, 198 - lg->h, lg->w, lg->h, RGBA(255, 255, 255, (int)(255 * la)));
     }
 
     /* titeln bredvid kortet glider in när markeringen byts */
@@ -1774,17 +1986,17 @@ static void draw_details(Ui *ui)
     text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * fade),
               ALIGN_LEFT, ui->label);
 
-    /* nere till vänster: typetikett, spel-ID och startknapp */
+    /* nere till vänster: typetikett, spel-ID och startknapp (i linje med knapptipsen på y = 246) */
     const char *type = type_name(e->type);
     float bw = text_width(0.5f, 1, type) + 12;
-    float y = 196;
+    float y = 206;
     gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(LIGHT, 0.92f * fade));
     text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(DARK, fade), ALIGN_CENTER, type);
     if (e->type != ENTRY_HOMEBREW && e->game_id[0])
         text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, fade), ALIGN_LEFT, e->game_id);
 
     if (ui->moving) { /* Flytta: ◀ ▶ Flytta   ✕ Klart i stället för Starta */
-        float hx = MARGIN, hy = 233;
+        float hx = MARGIN, hy = 246;
         float l[6] = { hx, hy, hx + 6, hy - 4.5f, hx + 6, hy + 4.5f };
         float r[6] = { hx + 15, hy, hx + 9, hy - 4.5f, hx + 9, hy + 4.5f };
         gfx_fan(hx + 3, hy, l, 3, with_alpha(LIGHT, 0.9f * fade));
@@ -1798,7 +2010,7 @@ static void draw_details(Ui *ui)
         return;
     }
     const char *go = L(S_LAUNCH);
-    float bx = MARGIN, by = 220, bh = 26;
+    float bx = MARGIN, by = 233, bh = 26;
     float tw = text_width(0.66f, 0, go);
     float w = 8 + 16 + 8 + tw + 14;
     gfx_glow(bx, by + 2, w, bh, 6, RGBA(0, 0, 0, (int)(110 * fade)));
@@ -1806,13 +2018,15 @@ static void draw_details(Ui *ui)
     gfx_button(bx + 8 + 8, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(DARK, fade), with_alpha(LIGHT, fade));
     text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(DARK, fade), ALIGN_LEFT, go);
 
-    /* □ Alternativ (inte för UMD-skivan) */
+    /* □ Alternativ (inte för UMD-skivan) – på samma y = 246 som L R-tipsen till höger */
     if (e->type == ENTRY_UMD)
         return;
     float oa = fade * (1 - smooth(ui->menu_anim));
-    float mx = bx + w + 14, my = by + bh / 2;
-    gfx_button(mx + 6.5f, my, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.7f * oa), with_alpha(DARK, oa));
-    text_draw(mx + 17, my + 4.5f, 0.56f, 0, with_alpha(TEXT_DIM, oa), ALIGN_LEFT, L(S_OPTIONS));
+    float mx = bx + w + 16, my = by + bh / 2;
+    float ow = 13 + 6 + text_width(0.6f, 0, L(S_OPTIONS));
+    gfx_round_rect(mx - 9, my - 11, ow + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * oa)));
+    gfx_button(mx + 6.5f, my, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.9f * oa), with_alpha(DARK, oa));
+    text_draw(mx + 19, my + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, oa), ALIGN_LEFT, L(S_OPTIONS));
 }
 
 /* Alternativmenyn (□): en panel nere till vänster, över Starta-knappen, med kortets namn,
@@ -2166,6 +2380,111 @@ static void draw_music(Ui *ui)
     text_draw(x + 20, y + 4.5f, tsize, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_TRACK));
 }
 
+/* Bildfliken: bildlista till vänster, förhandsvisning med upplösning till höger, helskärm med ✕ */
+static void draw_pictures(Ui *ui)
+{
+    ensure_pics();
+    float a = ui->intro * smooth(ui->tab_anim);
+    float slide = (1 - smooth(ui->tab_anim)) * 10;
+    int n = s_npics;
+
+    /* --- förhandsvisning till höger --- */
+    float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
+    gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
+    float bx = px + 10, by = py + 10, bw = pw - 20, bh = ph - 44;
+    gfx_round_rect(bx, by, bw, bh, 7, RGBA(18, 19, 24, (int)(200 * a)));
+
+    if (n > 0 && ui->pic_tex && ui->pic_tex_for == ui->pic_sel) {
+        Texture *tx = ui->pic_tex;
+        float pa = smooth(ui->pic_fade);
+        float s = fminf(bw / tx->w, bh / tx->h);
+        float iw = tx->w * s, ih = tx->h * s;
+        float ix = bx + (bw - iw) / 2, iy = by + (bh - ih) / 2;
+        gfx_glow(ix, iy + 2, iw, ih, 6, RGBA(0, 0, 0, (int)(120 * a * pa)));
+        gfx_tex(tx, ix, iy, iw, ih, RGBA(255, 255, 255, (int)(255 * a * pa)));
+        char info[96];
+        snprintf(info, sizeof(info), "%d × %d  ·  %d / %d", tx->w, tx->h, ui->pic_sel + 1, n);
+        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, info);
+    } else if (n > 0) {
+        char info[48];
+        snprintf(info, sizeof(info), "%d / %d", ui->pic_sel + 1, n);
+        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, info);
+    }
+
+    if (!n) {
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_PICTURES));
+        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_PICTURES)));
+        return;
+    }
+
+    /* --- bildlistan till vänster --- */
+    float lw = PANEL_X - 14 - MARGIN;
+    gfx_clip(0, MLIST_Y - 2, PANEL_X - 6, MROWS * MROW_H + 2);
+    int first = (int)floorf(ui->pic_scroll), last = first + MROWS;
+    for (int i = first; i <= last && i < n; i++) {
+        if (i < 0)
+            continue;
+        float y = MLIST_Y + (i - ui->pic_scroll) * MROW_H + slide;
+        int selected = i == ui->pic_sel;
+        if (selected)
+            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
+        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
+        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
+
+        /* liten bildikon till vänster */
+        int is_wall = g_wallpaper[0] && !strcmp(g_wallpaper, s_pics[i].path);
+        u32 ic = is_wall ? with_alpha(theme_cur()->accent, a) : dim;
+        gfx_round_rect(MARGIN + 1, y + 7, 13, 10, 2, ic);
+        gfx_circle(MARGIN + 5, y + 10.5f, 1.3f, selected ? with_alpha(LIGHT, a) : RGBA(24, 25, 30, (int)(255 * a)));
+
+        char title[100], sub[72];
+        text_ellipsis(title, sizeof(title), s_pics[i].title, 0.6f, lw - 30);
+        text_ellipsis(sub, sizeof(sub), s_pics[i].sub, 0.46f, lw - 30);
+        text_draw(MARGIN + 20, y + 11.5f, 0.6f, 0, main, ALIGN_LEFT, title);
+        text_draw(MARGIN + 20, y + 22, 0.46f, 0, dim, ALIGN_LEFT, sub);
+    }
+    gfx_clip_reset();
+
+    /* knapptips nere till vänster: ✕ Öppna  □ Som bakgrundsbild */
+    float x = MARGIN, y = 246;
+    const char *open = L(S_F_OPEN), *wall = L(S_SET_WALLPAPER);
+    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    x += 17;
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, open);
+    x += text_width(0.56f, 0, open) + 12;
+    gfx_button(x + 6.5f, y, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    x += 17;
+    float wsize = text_fit(0.56f, 0.4f, 0, SCREEN_W - MARGIN - hints_width() - 22 - x, wall);
+    text_draw(x, y + 4.5f, wsize, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, wall);
+}
+
+static void draw_pic_fullscreen(Ui *ui)
+{
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 248));
+    if (ui->pic_tex) {
+        Texture *tx = ui->pic_tex;
+        float s = fminf((float)SCREEN_W / tx->w, (float)SCREEN_H / tx->h);
+        float w = tx->w * s, h = tx->h * s;
+        gfx_tex(tx, (SCREEN_W - w) / 2, (SCREEN_H - h) / 2, w, h, RGBA(255, 255, 255, 255));
+    }
+    /* liten knapprad längst ner: ○ Tillbaka  □ Som bakgrundsbild  ◀ ▶ */
+    const char *back = L(S_BACK), *wall = L(S_SET_WALLPAPER);
+    char cnt[32];
+    snprintf(cnt, sizeof(cnt), "%d / %d", ui->pic_sel + 1, s_npics);
+    float w = 17 + text_width(0.52f, 0, back) + 14 + 17 + text_width(0.52f, 0, wall) + 14 + text_width(0.52f, 0, cnt);
+    float x = MARGIN, y = 248;
+    gfx_round_rect(x - 8, y - 10, w + 16, 20, 10, RGBA(0, 0, 0, 165));
+    gfx_button(x + 6, y, 6, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, LIGHT, DARK);
+    x += 16;
+    text_draw(x, y + 4, 0.52f, 0, TEXT_MAIN, ALIGN_LEFT, back);
+    x += text_width(0.52f, 0, back) + 14;
+    gfx_button(x + 6, y, 6, BTN_SQUARE, LIGHT, DARK);
+    x += 16;
+    text_draw(x, y + 4, 0.52f, 0, TEXT_MAIN, ALIGN_LEFT, wall);
+    x += text_width(0.52f, 0, wall) + 14;
+    text_draw(x, y + 4, 0.52f, 0, TEXT_DIM, ALIGN_LEFT, cnt);
+}
+
 static void draw_toast(Ui *ui)
 {
     if (ui->toast_time <= 0)
@@ -2241,6 +2560,12 @@ static void draw_cc_glyph(int item, float cx, float cy, u32 c, u32 bg)
     case CC_FILES: /* mapp */
         gfx_round_rect(cx - 9, cy - 7.5f, 8, 5, 1.5f, c);
         gfx_round_rect(cx - 9, cy - 5, 18, 12, 2, c);
+        break;
+    case CC_SCREENSHOT: /* kamera */
+        gfx_round_rect(cx - 4, cy - 8, 8, 4, 1.5f, c);
+        gfx_round_rect(cx - 9.5f, cy - 5.5f, 19, 13, 2.5f, c);
+        gfx_circle(cx, cy + 1, 4.2f, bg);
+        gfx_circle(cx, cy + 1, 2.4f, c);
         break;
     case CC_SETTINGS: /* kugghjul */
         for (int k = 0; k < 8; k++)
@@ -2338,7 +2663,7 @@ static void draw_cc(Ui *ui)
     cc_colors(&top, &bottom);
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * e)));
 
-    const float ph = 84, step = 50;
+    const float ph = 84, step = 48;
     float py = SCREEN_H - ph * e;
     draw_cc_music(ui, MARGIN, py - 56, e, top);
     gfx_glow(0, py, SCREEN_W, ph + 20, 12, RGBA(0, 0, 0, (int)(150 * e)));
@@ -2348,8 +2673,8 @@ static void draw_cc(Ui *ui)
 
     float x0 = SCREEN_W / 2 - (CC_COUNT - 1) * step / 2, cy = py + 52;
     float hx = x0 + ui->cc_pos * step;
-    gfx_glow(hx - 21, cy - 19, 42, 42, 6, RGBA(0, 0, 0, (int)(90 * e)));
-    gfx_round_rect(hx - 21, cy - 21, 42, 42, 11, with_alpha(LIGHT, e));
+    gfx_glow(hx - 20, cy - 18, 40, 40, 6, RGBA(0, 0, 0, (int)(90 * e)));
+    gfx_round_rect(hx - 20, cy - 20, 40, 40, 10, with_alpha(LIGHT, e));
 
     u32 hole = mix(top, bottom, 0.6f); /* panelens färg vid ikonerna – för "hålen" i ikonerna */
     for (int k = 0; k < CC_COUNT; k++) {
@@ -2381,15 +2706,17 @@ void ui_draw(Ui *ui)
 {
     gfx_begin(CLEAR_COLOR);
     draw_background(ui);
-    /* Bibliotek och Musik: mörkare yta än i raden – valt spels bild skymtar bara svagt.
+    /* Bibliotek, Musik och Bilder: mörkare yta än i raden – valt spels bild skymtar bara svagt.
      * Före toppraden, så att den är lika ljus i alla flikar. */
     if (ui->tab == TAB_LIBRARY && view(ui)->count)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 165));
-    else if (ui->tab == TAB_MUSIC)
+    else if (ui->tab == TAB_MUSIC || ui->tab == TAB_PICTURES)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 150));
     draw_top_bar(ui);
     if (ui->tab == TAB_MUSIC) {
         draw_music(ui);
+    } else if (ui->tab == TAB_PICTURES) {
+        draw_pictures(ui);
     } else if (view(ui)->count && ui->tab == TAB_LIBRARY) {
         draw_library(ui);
     } else if (view(ui)->count) {
@@ -2399,6 +2726,8 @@ void ui_draw(Ui *ui)
         draw_empty(ui);
     }
     draw_hints(ui);
+    if (ui->tab == TAB_PICTURES && ui->pic_viewing)
+        draw_pic_fullscreen(ui);
     if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS)
         draw_menu(ui);
     draw_categories(ui);

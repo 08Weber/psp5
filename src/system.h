@@ -57,4 +57,11 @@ void sys_usb_stop(void);
 /* 0 = av, 1 = aktiv men ingen kabel, 2 = ansluten till dator */
 int sys_usb_state(void);
 
+/* USBNet (chriopter/pspkit-usbnet): >0 om usbnet.prx är laddad i kärnan. */
+int sys_usbnet_version(void);
+/* Bitmask från usbnet: 1 = kabel i, 2 = på USB-bussen, 4 = ansluten, 8 = gateway hörd */
+int sys_usbnet_state(void);
+/* Väck usbnet på USB-bussen och sök efter PC-gatewayen (0 = svarade). */
+int sys_usbnet_probe(u32 timeout_ms);
+
 #endif

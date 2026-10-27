@@ -55,6 +55,7 @@ static volatile int s_q_head, s_q_tail; /* head skrivs bara av UI, tail bara av 
 static volatile int s_state = MUSIC_STOPPED;
 static volatile int s_current = -1;
 static volatile float s_elapsed, s_duration;
+static char s_want_path[256]; /* MP3-fil att spela direkt när skanningen är klar */
 
 /* --- tråd och avkodare --- */
 
@@ -456,6 +457,17 @@ static void scan_library(void)
         if (!sys_ms_is_ef())
             scan_dir("ms0:/MUSIC", NULL, 0, buf);
         scan_dir("ef0:/MUSIC", NULL, 0, buf); /* PSP Go:s internminne */
+        if (s_want_path[0]) {
+            int found = 0;
+            for (int i = 0; i < s_scan_count; i++)
+                if (!strcasecmp(s_scan_items[i].t.path, s_want_path))
+                    found = 1;
+            if (!found) {
+                const char *base = strrchr(s_want_path, '/');
+                base = base ? base + 1 : s_want_path;
+                add_track(s_want_path, base, NULL, buf);
+            }
+        }
         free(buf);
     }
     if (s_quit) { /* avbruten av music_term */
@@ -880,6 +892,14 @@ static int player_thread(SceSize args, void *argp)
     s_scanning = 0;
     sceKernelChangeThreadPriority(0, 0x14);
     s_q_tail = s_q_head; /* kommandon från innan listan fanns gäller inte */
+    if (s_want_path[0]) {
+        for (int i = 0; i < s_count; i++)
+            if (!strcasecmp(s_items[i].t.path, s_want_path)) {
+                start_at(i);
+                break;
+            }
+        s_want_path[0] = 0;
+    }
     int failures = 0;
     while (!s_quit) {
         while (s_q_tail != s_q_head) {
@@ -1005,6 +1025,18 @@ void music_play(int index)
 {
     if (index >= 0 && index < s_count)
         push(CMD_PLAY, index);
+}
+
+void music_play_path(const char *path)
+{
+    if (!path || !path[0])
+        return;
+    for (int i = 0; !s_scanning && i < s_count; i++)
+        if (!strcasecmp(s_items[i].t.path, path)) {
+            push(CMD_PLAY, i);
+            return;
+        }
+    snprintf(s_want_path, sizeof(s_want_path), "%s", path);
 }
 
 void music_toggle_pause(void) { push(CMD_PAUSE, 0); }

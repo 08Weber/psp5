@@ -7,7 +7,7 @@
 #include "loader.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */ };
-enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_COUNT };
+enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_PICTURES, TAB_COUNT };
 
 typedef struct {
     u32 pressed; /* nedtryckta denna bildruta */
@@ -66,6 +66,16 @@ typedef struct {
     Texture *cover;
     int cover_for;       /* låtens index, -1 = inget */
     float cover_fade;
+
+    /* bilder (TAB_PICTURES) */
+    int pic_sel;
+    float pic_scroll;
+    int pic_target;
+    float pic_still;
+    Texture *pic_tex;
+    int pic_tex_for;     /* bildens index, -1 = ingen */
+    float pic_fade;
+    int pic_viewing;     /* 1 = helskärmsvisning i Bild-fliken */
 
     /* spelets video i valt kort (preview.c): tonas in när första bilden finns */
     float preview_anim;

@@ -186,6 +186,9 @@ void sys_init(const char *self_path)
         if (r >= 0)
             sceUtilityUnloadModule(PSP_MODULE_AV_AVCODEC);
     }
+    /* Om usbnet.prx är laddad (t.ex. på PSP Street), väck den på USB-bussen direkt vid start */
+    if (sys_usbnet_version() > 0 && !(sys_usbnet_state() & 2))
+        sys_usbnet_probe(80);
 }
 
 int sys_has_ark(void) { return s_has_ark; }
@@ -372,6 +375,12 @@ void sys_usb_stop(void)
     if (s_model == 4)
         sceUsbStop(USBSTOR_EF_DRIVERNAME, 0, 0);
     sceUsbStop(PSP_USBSTOR_DRIVERNAME, 0, 0);
+    /* Om usbnet.prx är laddad ska USB-bussen inte stängas ner, utan lämnas tillbaka till usbnet */
+    if (sys_usbnet_version() > 0) {
+        s_usb_on = 0;
+        sys_usbnet_probe(100);
+        return;
+    }
     sceUsbStop(PSP_USBBUS_DRIVERNAME, 0, 0);
     s_usb_on = 0;
 }
@@ -381,6 +390,23 @@ int sys_usb_state(void)
     if (!s_usb_on)
         return 0;
     return (sceUsbGetState() & PSP_USB_CONNECTION_ESTABLISHED) ? 2 : 1;
+}
+
+int sys_usbnet_version(void)
+{
+    int r = sceIoDevctl("usbnet:", 1, NULL, 0, NULL, 0);
+    return r > 0 ? r : 0;
+}
+
+int sys_usbnet_state(void)
+{
+    int r = sceIoDevctl("usbnet:", 2, NULL, 0, NULL, 0);
+    return r >= 0 ? r : 0;
+}
+
+int sys_usbnet_probe(u32 timeout_ms)
+{
+    return sceIoDevctl("usbnet:", 3, &timeout_ms, sizeof(timeout_ms), NULL, 0);
 }
 
 /* --- HOME som Control Center, och skärmen av/på ---
@@ -449,13 +475,14 @@ u32 sys_home_buttons(void)
     memset(&pad, 0, sizeof(pad));
     if (kcall(s_peek, (u32)&pad, 1) < 0)
         return 0;
+    u32 note = pad.Buttons & PSP_CTRL_NOTE;
     if (!s_popup_off) {
         /* ta inte över mitt i ett tryck – då skulle både systemets dialog och vår meny öppnas */
         if (!(pad.Buttons & HOME_BIT))
             set_popup(0);
-        return 0;
+        return note;
     }
-    return pad.Buttons & HOME_BIT;
+    return (pad.Buttons & HOME_BIT) | note;
 }
 
 void sys_home_release(void)

@@ -33,4 +33,7 @@ Texture *img_to_texture(const Image *img, int psm);
 Texture *ntx_load(const char *path);
 int ntx_save(const char *path, const Texture *t);
 
+/* Sparar en 8888-bildbuffert (t.ex. skärmens VRAM, med radsteget `stride`) som PNG. */
+int img_save_png(const char *path, const u32 *px, int w, int h, int stride);
+
 #endif

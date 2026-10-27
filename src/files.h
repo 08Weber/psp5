@@ -13,4 +13,8 @@ void files_draw(void);
 /* Avbryter en pågående åtgärd och frigör allt */
 void files_close(void);
 
+enum { FO_NONE, FO_MUSIC, FO_GAME };
+/* Hämtar en fil som användaren valde att öppna i filhanteraren (t.ex. MP3 eller spel). */
+int files_take_open(char *out, int size);
+
 #endif

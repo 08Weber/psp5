@@ -33,6 +33,7 @@ void *music_cover_data(const char *path, u32 *size);
 const Track *music_track(int index);
 
 void music_play(int index);   /* börjar om från början */
+void music_play_path(const char *path); /* spelar en viss MP3-fil (t.ex. öppnad från filhanteraren) */
 void music_toggle_pause(void);
 void music_stop(void);
 void music_next(void);
