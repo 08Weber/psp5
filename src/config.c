@@ -9,7 +9,6 @@
 
 unsigned char g_boot_anim = 1;
 unsigned char g_control_center = 1;
-unsigned char g_sort;
 unsigned char g_hide_dupes = 1;
 unsigned char g_battery;
 unsigned char g_previews;
@@ -38,8 +37,6 @@ void config_load(const char *data_dir)
             g_theme = theme_from_code(p + 6);
         if ((p = strstr(buf, "themeart=")))
             g_theme_art = p[9] != '0';
-        if ((p = strstr(buf, "sortxmb=")))
-            g_sort = p[8] >= '0' && p[8] < '0' + SORT_COUNT ? p[8] - '0' : 0;
         if ((p = strstr(buf, "hidedupes=")))
             g_hide_dupes = p[10] != '0';
         if ((p = strstr(buf, "battery=")) && p[8] >= '0' && p[8] <= '2')
@@ -68,10 +65,10 @@ void config_save(const char *data_dir)
     char path[200], buf[640];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
     int n = snprintf(buf, sizeof(buf),
-                     "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nsortxmb=%d\nhidedupes=%d\nbattery=%d\n"
+                     "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nhidedupes=%d\nbattery=%d\n"
                      "previews=%d\nshuffle=%d\nscreenoff=%d\nautosleep=%d\ncontrol_center=%d\nwallpaper=%s\n",
                      g_sound_on ? 1 : 0, g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code,
-                     g_theme_art ? 1 : 0, g_sort, g_hide_dupes ? 1 : 0, g_battery, g_previews ? 1 : 0,
+                     g_theme_art ? 1 : 0, g_hide_dupes ? 1 : 0, g_battery, g_previews ? 1 : 0,
                      g_shuffle ? 1 : 0, g_screen_off, g_auto_sleep, g_control_center ? 1 : 0,
                      g_wallpaper);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
