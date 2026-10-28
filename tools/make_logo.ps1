@@ -1,7 +1,7 @@
 # psp5 - made by 08Weber
 # Ritar psp5-loggan kantutjamnad och sparar den i src/logo.h (ABGR per bildpunkt, som GU vill ha).
 # Loggan: bla rundad ruta med PlayStations knappformer (triangel, cirkel, kryss, fyrkant) och "psp5"
-# bredvid (tunt "psp", halvfett "5", typsnittet Bahnschrift som finns i Windows 10/11).
+# bredvid (tunt "psp", halvfett "5", typsnittet Segoe UI som finns i Windows 10/11).
 # Kors i Windows: powershell -ExecutionPolicy Bypass -File tools\make_logo.ps1
 Add-Type -AssemblyName System.Drawing
 $project = Split-Path $PSScriptRoot -Parent
@@ -36,12 +36,12 @@ $g.DrawRectangle($pen, [float]($cx2 - $r * 0.9), [float]($cy2 - $r * 0.9), [floa
 
 # ordbilden
 $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(238, 238, 242))
-$light = New-Object System.Drawing.Font('Bahnschrift SemiLight', [float]30, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
-$bold = New-Object System.Drawing.Font('Bahnschrift SemiBold', [float]30, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
+$light = New-Object System.Drawing.Font('Segoe UI Semilight', [float]30, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
+$bold = New-Object System.Drawing.Font('Segoe UI Semibold', [float]30, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
 $x = $sx + $s + 11
 foreach ($c in @(@('p', $light), @('s', $light), @('p', $light), @('5', $bold))) {
-    $g.DrawString($c[0], $c[1], $white, [float]$x, [float]($sy + 4), $fmt)
-    $x += $g.MeasureString($c[0], $c[1], 1000, $fmt).Width + 2
+    $g.DrawString($c[0], $c[1], $white, [float]$x, [float]($sy - 3), $fmt)
+    $x += $g.MeasureString($c[0], $c[1], 1000, $fmt).Width + 1
 }
 
 # beskar till det som syns, med en bildpunkts marginal
