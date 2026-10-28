@@ -949,16 +949,63 @@ static void update_cover(Ui *ui, float dt)
         ui->cover_fade = clampf(ui->cover_fade + dt * 4, 0, 1);
 }
 
-/* Musikfliken: ↑↓ väljer, ✕ spelar eller pausar, □ blanda, ← → föregående/nästa låt */
-static void update_music(Ui *ui, const UiInput *in, float dt)
+/* Album: låtlistan är sorterad efter artist och album, så ett album är en följd låtar med
+ * samma albumnamn. shortcut: samlingsskivor med flera artister blir flera album – slå ihop
+ * dem om någon saknar det. s_alb_first[k] = första låten i album k, s_alb_first[s_nalb] = antalet. */
+#define MAX_ALBUMS 300
+static int s_alb_first[MAX_ALBUMS + 1], s_nalb, s_alb_gen = -1, s_alb_count = -1;
+
+static void ensure_albums(void)
 {
     int n = music_count();
+    if (s_alb_gen == music_generation() && s_alb_count == n)
+        return;
+    s_alb_gen = music_generation();
+    s_alb_count = n;
+    s_nalb = 0;
+    const Track *prev = NULL;
+    for (int i = 0; i < n && s_nalb < MAX_ALBUMS; i++) {
+        const Track *t = music_track(i);
+        if (t && (!prev || strcmp(t->album, prev->album)))
+            s_alb_first[s_nalb++] = i;
+        prev = t;
+    }
+    s_alb_first[s_nalb] = n;
+}
+
+/* Låtarna som visas: [lo, hi) – alla, eller det valda albumet (music_album 1..s_nalb) */
+static void music_range(const Ui *ui, int *lo, int *hi)
+{
+    ensure_albums();
+    int k = ui->music_album;
+    *lo = k >= 1 && k <= s_nalb ? s_alb_first[k - 1] : 0;
+    *hi = k >= 1 && k <= s_nalb ? s_alb_first[k] : music_count();
+}
+
+/* Musikfliken: ↑↓ väljer, ✕ spelar eller pausar, □ blanda, ← → föregående/nästa låt,
+ * △ albumlistan (✕ väljer album, ○ tillbaka) */
+static void update_music(Ui *ui, const UiInput *in, float dt)
+{
+    int n = music_count(), lo, hi;
+    music_range(ui, &lo, &hi);
+    if (ui->music_album > s_nalb) /* listan har lästs om */
+        ui->music_album = 0;
+    if (ui->album_sel > s_nalb)
+        ui->album_sel = 0;
+    if (ui->music_sel < lo || ui->music_sel >= hi)
+        ui->music_sel = lo;
     UiInput vert = *in; /* ← → ska inte upprepas när de hålls in */
     vert.held &= ~(PSP_CTRL_LEFT | PSP_CTRL_RIGHT);
     vert.lx = 128;
-    int move = step_input(ui, &vert, dt, 1);
-    if (move && n) {
-        int next = (ui->music_sel + move / 2 + n) % n;
+    int move = step_input(ui, &vert, dt, 1) / 2;
+    if (move && ui->music_view) {
+        int next = (ui->album_sel + move + s_nalb + 1) % (s_nalb + 1);
+        if (next != ui->album_sel) {
+            ui->album_sel = next;
+            sound_play(SND_MOVE);
+        }
+    } else if (move && hi > lo) {
+        int next = lo + (ui->music_sel - lo + move + (hi - lo)) % (hi - lo);
         if (next != ui->music_sel) {
             ui->music_sel = next;
             sound_play(SND_MOVE);
@@ -968,12 +1015,24 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
         return;
     u32 back_btn = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
     if (in->pressed & back_btn) {
-        switch_tab(ui, TAB_MEDIA);
+        if (ui->music_view) { /* albumlistan → låtlistan */
+            ui->music_view = 0;
+        } else if (ui->music_album) { /* ett album → albumlistan */
+            ui->music_view = 1;
+            ui->album_sel = ui->music_album;
+        } else {
+            switch_tab(ui, TAB_MEDIA);
+        }
         sound_play(SND_BACK);
         return;
     }
     if (!n)
         return;
+    if (in->pressed & PSP_CTRL_TRIANGLE) {
+        ui->music_view ^= 1;
+        ui->album_sel = ui->music_album;
+        sound_play(SND_TOGGLE);
+    }
     int playing = music_current() >= 0 && music_state() != MUSIC_STOPPED;
     /* ← →: kort tryck byter låt (när knappen släpps), håll för att spola – fortare ju längre */
     int dir = (in->held & PSP_CTRL_RIGHT) ? 1 : (in->held & PSP_CTRL_LEFT) ? -1 : 0;
@@ -1017,7 +1076,14 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
     }
     u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
     if (in->pressed & confirm) {
-        if (playing && ui->music_sel == music_current())
+        if (ui->music_view) { /* öppnar albumet (0 = alla låtar) */
+            ui->music_album = ui->album_sel;
+            ui->music_view = 0;
+            music_range(ui, &lo, &hi);
+            ui->music_sel = ui->music_target = lo;
+            ui->music_scroll = lo;
+            sound_play(SND_SELECT);
+        } else if (playing && ui->music_sel == music_current())
             music_toggle_pause();
         else
             music_play(ui->music_sel);
@@ -1027,6 +1093,11 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
     if (ui->music_sel > ui->music_target + MROWS - 1)
         ui->music_target = ui->music_sel - (MROWS - 1);
     ui->music_scroll = approach(ui->music_scroll, ui->music_target, 14.0f, dt);
+    if (ui->album_sel < ui->album_target)
+        ui->album_target = ui->album_sel;
+    if (ui->album_sel > ui->album_target + MROWS - 1)
+        ui->album_target = ui->album_sel - (MROWS - 1);
+    ui->album_scroll = approach(ui->album_scroll, ui->album_target, 14.0f, dt);
 }
 
 /* --- bildfliken (TAB_PICTURES) --- */
@@ -2676,6 +2747,48 @@ static void draw_shuffle(float cx, float cy, u32 c)
     gfx_fan(cx + 5.7f, cy + 5, dn, 3, c);
 }
 
+/* Albumlistan i musikfliken: först "Alla låtar", sedan ett album per rad (namn, artist · antal) */
+static void draw_album_rows(Ui *ui, float a, float slide, float lw)
+{
+    static RowCache cache[MROWS + 3];
+    static int cache_gen = -1, cache_n = -1;
+    static const char *cache_lang;
+    if (cache_gen != s_alb_gen || cache_n != s_alb_count || cache_lang != L(S_ALL_TRACKS)) {
+        for (int i = 0; i < MROWS + 3; i++)
+            cache[i].idx = -1;
+        cache_gen = s_alb_gen;
+        cache_n = s_alb_count;
+        cache_lang = L(S_ALL_TRACKS);
+    }
+    int first = (int)floorf(ui->album_scroll), last = first + MROWS;
+    for (int i = first < 0 ? 0 : first; i <= last && i <= s_nalb; i++) {
+        float y = MLIST_Y + (i - ui->album_scroll) * MROW_H + slide;
+        RowCache *c = &cache[i % (MROWS + 3)];
+        if (c->idx != i) {
+            const Track *t = i ? music_track(s_alb_first[i - 1]) : NULL;
+            int cnt = i ? s_alb_first[i] - s_alb_first[i - 1] : s_alb_count;
+            char sub[96];
+            if (t)
+                snprintf(sub, sizeof(sub), "%s  ·  %d", t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST), cnt);
+            else
+                snprintf(sub, sizeof(sub), "%d", cnt);
+            /* låtar direkt i MUSIC-mappen har inget album */
+            text_ellipsis(c->title, sizeof(c->title), !t ? L(S_ALL_TRACKS) : t->album[0] ? t->album : L(S_TAB_MUSIC),
+                          0.6f, lw - 30);
+            text_ellipsis(c->sub, sizeof(c->sub), sub, 0.46f, lw - 30);
+            c->idx = i;
+        }
+        int selected = i == ui->album_sel;
+        if (selected)
+            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
+        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
+        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
+        draw_note(MARGIN + 7, y + 12, 13, i == ui->music_album ? with_alpha(theme_cur()->accent, a) : dim);
+        text_draw(MARGIN + 20, y + 11.5f, 0.6f, 0, main, ALIGN_LEFT, c->title);
+        text_draw(MARGIN + 20, y + 22, 0.46f, 0, dim, ALIGN_LEFT, c->sub);
+    }
+}
+
 static void draw_music(Ui *ui)
 {
     float a = ui->intro * smooth(ui->tab_anim);
@@ -2762,9 +2875,13 @@ static void draw_music(Ui *ui)
     }
     float lw = PANEL_X - 14 - MARGIN;
     gfx_clip(0, MLIST_Y - 2, PANEL_X - 6, MROWS * MROW_H + 2);
+    int lo, hi;
+    music_range(ui, &lo, &hi);
+    if (ui->music_view)
+        draw_album_rows(ui, a, slide, lw);
     int first = (int)floorf(ui->music_scroll), last = first + MROWS;
-    for (int i = first; i <= last && i < n; i++) {
-        if (i < 0)
+    for (int i = first; !ui->music_view && i <= last && i < hi; i++) {
+        if (i < lo)
             continue;
         float y = MLIST_Y + (i - ui->music_scroll) * MROW_H + slide;
         RowCache *c = &cache[i % (MROWS + 3)];
@@ -2795,7 +2912,7 @@ static void draw_music(Ui *ui)
 
     /* knapptips nere till vänster: ✕ Spela/Paus  □ Blanda  ◀ ▶ Spår */
     float x = MARGIN, y = 246;
-    const char *play = L(ui->music_sel == cur && state == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
+    const char *play = L(ui->music_view ? S_SELECT : ui->music_sel == cur && state == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
     gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
     text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, play);
@@ -2805,6 +2922,10 @@ static void draw_music(Ui *ui)
     text_draw(x, y + 4.5f, 0.56f, 0, g_shuffle ? with_alpha(theme_cur()->accent, a) : with_alpha(TEXT_MAIN, a),
               ALIGN_LEFT, L(S_SHUFFLE));
     x += text_width(0.56f, 0, L(S_SHUFFLE)) + 12;
+    gfx_button(x + 6.5f, y, 6.5f, BTN_TRIANGLE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    x += 17;
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_ALBUMS));
+    x += text_width(0.56f, 0, L(S_ALBUMS)) + 12;
     float l[6] = { x, y, x + 6, y - 4.5f, x + 6, y + 4.5f };
     gfx_fan(x + 3, y, l, 3, with_alpha(LIGHT, 0.9f * a));
     float r[6] = { x + 15, y, x + 9, y - 4.5f, x + 9, y + 4.5f };

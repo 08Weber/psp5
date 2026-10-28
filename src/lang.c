@@ -465,6 +465,10 @@ static const char *const T[S_COUNT][NL] = {
     [S_NO_RESULTS] = { "No matches found", "Inga träffar", "Keine Treffer", "Aucun résultat",
                        "Sin resultados", "Nessun risultato", "Geen resultaten",
                        "Sem resultados", "Ничего не найдено", "一致する項目がありません" },
+    [S_ALBUMS] = { "Albums", "Album", "Alben", "Albums", "Álbumes", "Album",
+                   "Albums", "Álbuns", "Альбомы", "アルバム" },
+    [S_ALL_TRACKS] = { "All tracks", "Alla låtar", "Alle Titel", "Tous les titres", "Todas las pistas", "Tutti i brani",
+                       "Alle nummers", "Todas as faixas", "Все треки", "すべての曲" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",
