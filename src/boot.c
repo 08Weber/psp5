@@ -1,10 +1,10 @@
 /* psp5 – made by 08Weber */
-/* Startskärm i samma stil och ordning som en PS5:s uppstart:
- *   1. psp5-loggan, liten och ljusgrå mitt på svart (egen – inte Sonys)
- *   2. svart, sedan en liten grå hälsovarning
- *   3. stora, mörkt marinblå bokeh-cirklar som glider långsamt
- *   4. små ljusa bokeh-cirklar och gyllene damm som virvlar upp
- *   5. en varm ljuskägla uppifrån vänster med svävande damm och golvsken
+/* Startskärm i samma ordning som en PS5:s uppstart:
+ *   1. psp5-loggan (blå symbol + psp5) mitt på svart, med ett mjukt blått sken
+ *   2. hälsovarningen, centrerad, över djupblå botten med glidande ljusfläckar
+ *   3. små ljusa bokeh-cirklar och gyllene damm som virvlar upp
+ *   4. en varm ljuskägla uppifrån vänster med svävande damm och golvsken
+ *   5. loggan och "Välkommen tillbaka" i ljuset
  * och därefter tonar launchern in. Allt ritas här, valfri knapp hoppar över. */
 #include <pspkernel.h>
 #include <pspctrl.h>
@@ -28,8 +28,9 @@
 #define T_BOKEH      2.75f
 #define T_DUST       4.55f /* dammet virvlar upp */
 #define T_SPOT       5.50f /* ljuskäglan tänds */
-#define T_FADE       7.40f
-#define T_END        7.95f
+#define T_WELCOME    6.00f /* loggan och "Välkommen tillbaka" i ljuset */
+#define T_FADE       7.70f
+#define T_END        8.25f
 
 #define BIG_BOKEH   4
 #define SMALL_BOKEH 9
@@ -68,8 +69,7 @@ Texture *logo_texture(void)
         return NULL;
     u32 *px = t->data;
     for (int y = 0; y < LOGO_H; y++)
-        for (int x = 0; x < LOGO_W; x++)
-            px[y * t->stride + x] = RGBA(255, 255, 255, LOGO_ALPHA[y * LOGO_W + x]);
+        memcpy(px + y * t->stride, LOGO_PX + y * LOGO_W, LOGO_W * 4);
     tex_flush(t);
     return t;
 }
@@ -81,16 +81,25 @@ void logo_draw(float cx, float cy, u32 color)
         gfx_tex(t, floorf(cx - LOGO_W / 2.0f), floorf(cy - LOGO_H / 2.0f), LOGO_W, LOGO_H, color);
 }
 
-/* liten och ljusgrå mitt på svart, glider upp en aning när den tonas in – som konsolens egen startlogga */
+/* loggan med ett mjukt blått sken bakom symbolen (den blå rutan längst till vänster) */
+static void draw_logo_glow(float cx, float cy, float a)
+{
+    gfx_blend_add(1);
+    gfx_dot(cx - LOGO_W / 2.0f + 21, cy, 46, RGBA(40, 110, 255, (int)(70 * a)), 1);
+    gfx_blend_add(0);
+    logo_draw(cx, cy, RGBA(255, 255, 255, (int)(255 * a)));
+}
+
+/* mitt på svart, glider upp en aning när den tonas in – som konsolens egen startlogga */
 static void draw_logo(float t, float alpha)
 {
     if (alpha <= 0.01f)
         return;
-    float rise = (1 - smooth((t - T_LOGO_IN) / 0.9f)) * 4;
-    logo_draw(SCREEN_W / 2, SCREEN_H / 2 + rise, RGBA(206, 206, 210, (int)(255 * alpha)));
+    float rise = (1 - smooth((t - T_LOGO_IN) / 0.9f)) * 5;
+    draw_logo_glow(SCREEN_W / 2, SCREEN_H / 2 + rise, alpha);
 }
 
-/* --- hälsovarningen --- */
+/* --- hälsovarningen: rubrik + text, centrerad --- */
 
 static void draw_warning(float alpha)
 {
@@ -98,17 +107,36 @@ static void draw_warning(float alpha)
         return;
     char buf[400];
     snprintf(buf, sizeof(buf), "%s", L(S_HEALTH));
-    float y = SCREEN_H * 0.455f;
+    int lines = 1;
+    for (const char *p = buf; *p; p++)
+        lines += *p == '\n';
+    float y = SCREEN_H / 2 - (lines - 1) * 13 / 2.0f;
     char *line = buf;
-    while (line) {
+    for (int i = 0; line; i++) {
         char *nl = strchr(line, '\n');
         if (nl)
             *nl = 0;
-        float size = text_fit(0.38f, 0.30f, 0, SCREEN_W * 0.80f, line);
-        text_draw(SCREEN_W * 0.16f, y, size, 0, RGBA(150, 152, 158, (int)(220 * alpha)), ALIGN_LEFT, line);
-        y += 10;
+        if (i == 0) /* rubriken: ljusare, med lite luft under */
+            text_draw(SCREEN_W / 2, y - 6, text_fit(0.52f, 0.36f, 0, SCREEN_W * 0.86f, line), 0,
+                      RGBA(226, 228, 234, (int)(255 * alpha)), ALIGN_CENTER, line);
+        else
+            text_draw(SCREEN_W / 2, y, text_fit(0.40f, 0.30f, 0, SCREEN_W * 0.86f, line), 0,
+                      RGBA(160, 164, 176, (int)(235 * alpha)), ALIGN_CENTER, line);
+        y += 13;
         line = nl ? nl + 1 : NULL;
     }
+}
+
+/* --- välkomstbilden i ljuset, sist --- */
+
+static void draw_welcome(float t)
+{
+    float a = smooth((t - T_WELCOME) / 0.8f);
+    if (a <= 0.01f)
+        return;
+    float rise = (1 - a) * 6;
+    draw_logo_glow(SCREEN_W / 2, 116 + rise, a);
+    text_draw(SCREEN_W / 2, 158 + rise, 0.58f, 0, RGBA(214, 216, 224, (int)(230 * a)), ALIGN_CENTER, L(S_WELCOME));
 }
 
 /* --- bokeh och damm --- */
@@ -148,16 +176,19 @@ static void init_scene(void)
 
 static void draw_bokeh(float t)
 {
-    /* stora, mjuka och mycket mörka – ljuset bygger upp sig i lager */
+    /* djupblå botten och stora, mjuka ljusfläckar som glider – ljuset bygger upp sig i lager */
     float big = window(t, T_BOKEH, T_BOKEH + 1.3f, T_SPOT - 0.6f, T_SPOT + 0.5f);
     if (big > 0.01f) {
+        gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, RGBA(6, 14, 32, (int)(255 * big)), RGBA(2, 4, 12, (int)(255 * big)));
         float dt = t - T_BOKEH;
+        gfx_blend_add(1);
         for (int i = 0; i < BIG_BOKEH; i++) {
             Bokeh *b = &s_big[i];
             float x = b->x + b->vx * dt, y = b->y + b->vy * dt;
-            gfx_dot(x, y, b->r * 1.12f, RGBA(14, 30, 52, (int)(70 * big * b->a)), 1);
-            gfx_dot(x, y, b->r, RGBA(12, 26, 46, (int)(120 * big * b->a)), 0);
+            gfx_dot(x, y, b->r * 1.15f, RGBA(18, 46, 96, (int)(80 * big * b->a)), 1);
+            gfx_dot(x, y, b->r * 0.7f, RGBA(24, 60, 120, (int)(60 * big * b->a)), 1);
         }
+        gfx_blend_add(0);
     }
     /* små ljusa cirklar strax innan dammet */
     float small = window(t, T_DUST - 0.7f, T_DUST - 0.1f, T_DUST + 0.5f, T_DUST + 1.3f);
@@ -240,6 +271,7 @@ static void draw_frame(float t, float out)
         draw_bokeh(t);
         draw_spotlight(t);
         draw_dust(t);
+        draw_welcome(t);
         draw_warning(window(t, T_WARN, T_WARN + 0.25f, T_WARN_OUT - 0.4f, T_WARN_OUT));
         if (out < 1)
             gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - out))));

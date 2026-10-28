@@ -262,12 +262,14 @@ static const char *const T[S_COUNT][NL] = {
                       "Animación de inicio", "Animazione di avvio", "Opstartanimatie", "Animação de arranque",
                       "Заставка при запуске", "起動アニメーション" },
     /* hälsovarningen på startskärmen – rader skiljs med \n */
-    [S_HEALTH] = { "PHOTOSENSITIVITY WARNING: SOME PEOPLE MAY HAVE SEIZURES WHEN EXPOSED TO FLASHING LIGHTS\n"
-                   "OR PATTERNS, EVEN WITHOUT ANY HISTORY OF EPILEPSY. IF YOU FEEL UNWELL WHILE PLAYING,\n"
-                   "STOP IMMEDIATELY AND CONSULT A DOCTOR. TAKE REGULAR BREAKS.",
-                   "VARNING FÖR LJUSKÄNSLIGHET: VISSA PERSONER KAN FÅ ANFALL AV BLINKANDE LJUS ELLER MÖNSTER,\n"
-                   "ÄVEN UTAN TIDIGARE EPILEPSI. OM DU MÅR DÅLIGT NÄR DU SPELAR, SLUTA GENAST OCH\n"
-                   "KONTAKTA EN LÄKARE. TA REGELBUNDNA PAUSER." },
+    [S_HEALTH] = { "Photosensitivity warning\n"
+                   "Some people may have seizures when exposed to flashing lights or patterns,\n"
+                   "even without any history of epilepsy. If you feel unwell while playing,\n"
+                   "stop immediately and consult a doctor. Take regular breaks.",
+                   "Varning för ljuskänslighet\n"
+                   "Vissa personer kan få anfall av blinkande ljus eller mönster, även utan\n"
+                   "tidigare epilepsi. Om du mår dåligt när du spelar, sluta genast\n"
+                   "och kontakta en läkare. Ta regelbundna pauser." },
     [S_TAB_MUSIC] = { "Music", "Musik", "Musik", "Musique", "Música", "Musica", "Muziek", "Música", "Музыка",
                       "ミュージック" },
     [S_NO_MUSIC] = { "No music found", "Ingen musik hittades", "Keine Musik gefunden", "Aucune musique trouvée",
@@ -469,6 +471,8 @@ static const char *const T[S_COUNT][NL] = {
                    "Albums", "Álbuns", "Альбомы", "アルバム" },
     [S_ALL_TRACKS] = { "All tracks", "Alla låtar", "Alle Titel", "Tous les titres", "Todas las pistas", "Tutti i brani",
                        "Alle nummers", "Todas as faixas", "Все треки", "すべての曲" },
+    [S_WELCOME] = { "Welcome back", "Välkommen tillbaka", "Willkommen zurück", "Bon retour", "Bienvenido de nuevo",
+                    "Bentornato", "Welkom terug", "Bem-vindo de volta", "С возвращением", "おかえりなさい" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",
