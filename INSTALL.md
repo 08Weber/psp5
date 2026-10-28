@@ -10,10 +10,10 @@ Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK
 
 | Your PSP | Download this |
 |---|---|
-| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-v2.0.0-ARK5.zip` |
-| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-v2.0.0-ARK4.zip` |
-| **PSP Go** with **ARK-5** | `psp5-v2.0.0-PSPGo-ARK5.zip` |
-| **PSP Go** with **ARK-4** | `psp5-v2.0.0-PSPGo-ARK4.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-v2.2.0-ARK5.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-v2.2.0-ARK4.zip` |
+| **PSP Go** with **ARK-5** | `psp5-v2.2.0-PSPGo-ARK5.zip` |
+| **PSP Go** with **ARK-4** | `psp5-v2.2.0-PSPGo-ARK4.zip` |
 
 You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 
@@ -57,13 +57,13 @@ On a PSP Go, psp5 looks in these folders on both the internal storage and a Memo
 | Button | What it does |
 |---|---|
 | ✕ or START | Start the game (in Music: play / pause) |
-| L / R | Switch between Games, Apps, Library and Music |
-| □ | Games / Apps: options (pin, move, sort, move to the other tab) · Library: sort · Music: shuffle |
+| L / R | Switch between Games, Media, Search and Settings |
+| □ | Options: pin to front · Library: also sort · Music: shuffle · Search: delete a letter |
+| △ | Library: go to Search · Music: albums |
 | ← → in Music | Previous / next track · hold to seek |
-| △ | Settings |
 | ○ | Back |
 | SELECT | Categories (folders in ISO and PSP/GAME) |
-| HOME | Control Center: sleep, USB, files, settings, XMB, restart, power off |
+| HOME | Control Center: sleep, USB, files, screenshot, settings, XMB, restart, power off |
 
 ## File manager
 
