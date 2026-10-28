@@ -26,6 +26,7 @@
 #include "testrun.h"
 #include "settings.h" /* SA_* för Control Center */
 #include "boot.h"      /* psp5-loggan */
+#include "icons.h"     /* sök- och inställningsikonerna */
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -2034,22 +2035,30 @@ static u32 mix(u32 a, u32 b, float t)
     return out;
 }
 
-/* Sök- och inställningsikoner uppe till höger i toppraden (som på PS5) */
+/* Sök- och inställningsikoner uppe till höger i toppraden (som på PS5): förrenderade och
+ * kantutjämnade i 16 × 16 (tools/make_icons.ps1 → icons.h), ritade pixel för pixel */
+static void draw_icon(const unsigned char *alpha, Texture **tex, float cx, float cy, u32 c)
+{
+    if (!*tex && (*tex = tex_create(ICON_N, ICON_N, GU_PSM_8888))) {
+        u32 *px = (*tex)->data;
+        for (int y = 0; y < ICON_N; y++)
+            for (int x = 0; x < ICON_N; x++)
+                px[y * (*tex)->stride + x] = RGBA(255, 255, 255, alpha[y * ICON_N + x]);
+        tex_flush(*tex);
+    }
+    gfx_tex_1to1(*tex, cx - ICON_N / 2.0f, cy - ICON_N / 2.0f, c);
+}
+
 static void draw_search_icon(float cx, float cy, u32 c)
 {
-    gfx_ring(cx - 5.2f, cy - 5.2f, 8.8f, 8.8f, 4.4f, c);
-    gfx_ring(cx - 4.4f, cy - 4.4f, 7.2f, 7.2f, 3.6f, c);
-    float h[4] = { cx + 1.8f, cy + 1.8f, cx + 5.2f, cy + 5.2f };
-    u32 hc[2] = { c, c };
-    gfx_stroke(h, hc, 2.0f, 2);
+    static Texture *t;
+    draw_icon(ICON_SEARCH, &t, cx, cy, c);
 }
 
 static void draw_gear_icon(float cx, float cy, u32 c)
 {
-    for (int k = 0; k < 8; k++)
-        gfx_circle(cx + cosf(k * 0.785398f) * 4.8f, cy + sinf(k * 0.785398f) * 4.8f, 1.5f, c);
-    for (float r = 2.2f; r <= 4.3f; r += 0.7f)
-        gfx_ring(cx - r, cy - r, r * 2, r * 2, r, c);
+    static Texture *t;
+    draw_icon(ICON_GEAR, &t, cx, cy, c);
 }
 
 static void draw_top_bar(Ui *ui)
