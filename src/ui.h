@@ -57,6 +57,11 @@ typedef struct {
     int music_sel;
     float music_scroll;
     int music_target;
+    int music_view;      /* 0 = låtlista, 1 = albumlista */
+    int music_album;     /* 0 = alla låtar, >0 = valt album */
+    int album_sel;
+    float album_scroll;
+    int album_target;
     int seek_dir;        /* ← / → som hålls i musikfliken: -1/1, 0 = ingen */
     int seeking;         /* hållen länge nog: spolar i stället för att byta låt */
     float seek_held, seek_pos;
