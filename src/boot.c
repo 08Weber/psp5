@@ -4,7 +4,7 @@
  *   2. hälsovarningen, centrerad, över djupblå botten med glidande ljusfläckar
  *   3. små ljusa bokeh-cirklar och gyllene damm som virvlar upp
  *   4. en varm ljuskägla uppifrån vänster med svävande damm och golvsken
- *   5. loggan och "Välkommen tillbaka" i ljuset
+ *   5. "Välkommen tillbaka" i ljuset
  * och därefter tonar launchern in. Allt ritas här, valfri knapp hoppar över. */
 #include <pspkernel.h>
 #include <pspctrl.h>
@@ -28,7 +28,7 @@
 #define T_BOKEH      2.75f
 #define T_DUST       4.55f /* dammet virvlar upp */
 #define T_SPOT       5.50f /* ljuskäglan tänds */
-#define T_WELCOME    6.00f /* loggan och "Välkommen tillbaka" i ljuset */
+#define T_WELCOME    6.00f /* "Välkommen tillbaka" i ljuset */
 #define T_FADE       7.70f
 #define T_END        8.25f
 
@@ -127,7 +127,7 @@ static void draw_warning(float alpha)
     }
 }
 
-/* --- välkomstbilden i ljuset, sist --- */
+/* --- "Välkommen tillbaka" i ljuset, sist (loggan visas bara i början) --- */
 
 static void draw_welcome(float t)
 {
@@ -135,8 +135,7 @@ static void draw_welcome(float t)
     if (a <= 0.01f)
         return;
     float rise = (1 - a) * 6;
-    draw_logo_glow(SCREEN_W / 2, 116 + rise, a);
-    text_draw(SCREEN_W / 2, 158 + rise, 0.58f, 0, RGBA(214, 216, 224, (int)(230 * a)), ALIGN_CENTER, L(S_WELCOME));
+    text_draw(SCREEN_W / 2, 142 + rise, 0.9f, 0, RGBA(226, 228, 236, (int)(240 * a)), ALIGN_CENTER, L(S_WELCOME));
 }
 
 /* --- bokeh och damm --- */
