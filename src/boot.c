@@ -1,6 +1,6 @@
 /* psp5 – made by 08Weber */
 /* Startskärm i samma stil och ordning som en PS5:s uppstart:
- *   1. en liten grå logga mitt på svart (psp5:s egen symbol – inte Sonys)
+ *   1. psp5-loggan, liten och ljusgrå mitt på svart (egen – inte Sonys)
  *   2. svart, sedan en liten grå hälsovarning
  *   3. stora, mörkt marinblå bokeh-cirklar som glider långsamt
  *   4. små ljusa bokeh-cirklar och gyllene damm som virvlar upp
@@ -16,6 +16,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "testrun.h"
+#include "logo.h"
 
 #define PI 3.14159265f
 
@@ -34,17 +35,9 @@
 #define SMALL_BOKEH 9
 #define DUST        110
 
-/* loggans mått (pixlar vid skala 1) */
-#define LOGO_W 137.0f
-#define LOGO_H 34.0f
-#define MAX_PTS 48
-
-typedef struct { float xy[MAX_PTS * 2]; int n; } Path;
 typedef struct { float x, y, r, vx, vy, a; } Bokeh;
 typedef struct { float x, y, size, warm, phase, speed, swirl; } Dust;
 
-static Path s_paths[8];
-static int s_path_count;
 static Bokeh s_big[BIG_BOKEH], s_small[SMALL_BOKEH];
 static Dust s_dust[DUST];
 
@@ -63,76 +56,38 @@ static float rnd(void)
     return (s_seed >> 8) / 16777216.0f;
 }
 
-/* --- psp5-symbolen: bokstäverna som linjer --- */
+/* --- psp5-loggan: förrenderad och kantutjämnad (tools/make_logo.ps1 → logo.h) --- */
 
-static Path *new_path(void)
+Texture *logo_texture(void)
 {
-    Path *p = &s_paths[s_path_count++];
-    p->n = 0;
-    return p;
+    static Texture *t;
+    if (t)
+        return t;
+    t = tex_create(LOGO_W, LOGO_H, GU_PSM_8888);
+    if (!t)
+        return NULL;
+    u32 *px = t->data;
+    for (int y = 0; y < LOGO_H; y++)
+        for (int x = 0; x < LOGO_W; x++)
+            px[y * t->stride + x] = RGBA(255, 255, 255, LOGO_ALPHA[y * LOGO_W + x]);
+    tex_flush(t);
+    return t;
 }
 
-static void add_pt(Path *p, float x, float y)
+void logo_draw(float cx, float cy, u32 color)
 {
-    if (p->n < MAX_PTS) {
-        p->xy[p->n * 2] = x;
-        p->xy[p->n * 2 + 1] = y;
-        p->n++;
-    }
+    Texture *t = logo_texture();
+    if (t) /* hela bildpunkter: 1:1 utan suddighet */
+        gfx_tex(t, floorf(cx - LOGO_W / 2.0f), floorf(cy - LOGO_H / 2.0f), LOGO_W, LOGO_H, color);
 }
 
-/* båge runt (cx, cy) från vinkel a0 till a1 (grader, y nedåt: -90 = upp) */
-static void add_arc(Path *p, float cx, float cy, float r, float a0, float a1, int steps)
+/* liten och ljusgrå mitt på svart, glider upp en aning när den tonas in – som konsolens egen startlogga */
+static void draw_logo(float t, float alpha)
 {
-    for (int i = 0; i <= steps; i++) {
-        float a = (a0 + (a1 - a0) * i / steps) * PI / 180;
-        add_pt(p, cx + r * cosf(a), cy + r * sinf(a));
-    }
-}
-
-static void build_p(float x)
-{
-    Path *stem = new_path();
-    add_pt(stem, x + 3, 0);
-    add_pt(stem, x + 3, 50);
-    add_arc(new_path(), x + 18, 17, 15, -180, 180, 40);
-}
-
-static void build_logo(void)
-{
-    s_path_count = 0;
-    build_p(0);
-    Path *s = new_path();
-    add_arc(s, 53, 8.5f, 8.5f, -30, -270, 22);
-    add_arc(s, 53, 25.5f, 8.5f, -90, 150, 22);
-    build_p(70);
-    Path *five = new_path();
-    add_pt(five, 135, 0);
-    add_pt(five, 116, 0);
-    add_pt(five, 115.5f, 17);
-    add_arc(five, 125, 22.5f, 11.5f, -150, 145, 30);
-}
-
-/* liten, matt grå och utan glöd – som konsolens egen startlogga */
-static void draw_logo(float alpha)
-{
-    static u32 col[MAX_PTS];
-    const float scale = 0.36f, width = 10.5f * scale;
-    float ox = SCREEN_W / 2 - LOGO_W / 2 * scale, oy = SCREEN_H / 2 - (LOGO_H / 2 + 6) * scale;
-    for (int pass = 0; pass < 2; pass++) {
-        float w = pass ? width : width + 1.2f;
-        u32 c = RGBA(178, 178, 180, (int)(255 * alpha * (pass ? 1.0f : 0.35f)));
-        for (int k = 0; k < s_path_count; k++) {
-            Path *p = &s_paths[k];
-            float pts[MAX_PTS * 2];
-            for (int i = 0; i < p->n; i++) {
-                pts[i * 2] = ox + p->xy[i * 2] * scale;
-                pts[i * 2 + 1] = oy + p->xy[i * 2 + 1] * scale;
-                col[i] = c;
-            }
-            gfx_stroke(pts, col, p->n, w);
-        }
-    }
+    if (alpha <= 0.01f)
+        return;
+    float rise = (1 - smooth((t - T_LOGO_IN) / 0.9f)) * 4;
+    logo_draw(SCREEN_W / 2, SCREEN_H / 2 + rise, RGBA(206, 206, 210, (int)(255 * alpha)));
 }
 
 /* --- hälsovarningen --- */
@@ -280,7 +235,7 @@ static void draw_frame(float t, float out)
 {
     gfx_begin(RGBA(0, 0, 0, 255));
     if (t < T_WARN) {
-        draw_logo(window(t, T_LOGO_IN, T_LOGO_IN + 0.35f, T_LOGO_OUT, T_LOGO_OUT + 0.3f) * out);
+        draw_logo(t, window(t, T_LOGO_IN, T_LOGO_IN + 0.5f, T_LOGO_OUT, T_LOGO_OUT + 0.3f) * out);
     } else {
         draw_bokeh(t);
         draw_spotlight(t);
@@ -294,7 +249,6 @@ static void draw_frame(float t, float out)
 
 void boot_run(volatile int *running)
 {
-    build_logo();
     init_scene();
 
     u64 start = sceKernelGetSystemTimeWide();
