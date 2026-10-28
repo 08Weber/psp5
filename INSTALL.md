@@ -10,10 +10,10 @@ Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK
 
 | Your PSP | Download this |
 |---|---|
-| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-v2.2.0-ARK5.zip` |
-| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-v2.2.0-ARK4.zip` |
-| **PSP Go** with **ARK-5** | `psp5-v2.2.0-PSPGo-ARK5.zip` |
-| **PSP Go** with **ARK-4** | `psp5-v2.2.0-PSPGo-ARK4.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-v2.1.0-ARK5.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-v2.1.0-ARK4.zip` |
+| **PSP Go** with **ARK-5** | `psp5-v2.1.0-PSPGo-ARK5.zip` |
+| **PSP Go** with **ARK-4** | `psp5-v2.1.0-PSPGo-ARK4.zip` |
 
 You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 
