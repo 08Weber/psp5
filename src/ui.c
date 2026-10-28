@@ -25,6 +25,7 @@
 #include "osd.h"
 #include "testrun.h"
 #include "settings.h" /* SA_* för Control Center */
+#include "boot.h"      /* psp5-loggan */
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -1771,6 +1772,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     }
 
     int overlay = in == &none; /* en panel är öppen: knapprepetitionen tillhör den */
+    int tab_before = ui->tab;
     if (ui->tab == TAB_MUSIC && !overlay)
         update_music(ui, in, dt);
     if (ui->tab == TAB_PICTURES && !overlay)
@@ -1779,6 +1781,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         update_videos(ui, in, dt);
     if (ui->tab == TAB_SEARCH && !overlay)
         update_search(ui, in, dt);
+    if (ui->tab != tab_before) /* t.ex. ○ i sökningen: samma tryck ska inte gälla i fliken man kom till */
+        in = &none;
 
     u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
     u32 back_btn = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
@@ -3387,7 +3391,7 @@ void ui_draw(Ui *ui)
         draw_pic_fullscreen(ui);
     if (ui->tab == TAB_VIDEO && ui->vid_viewing)
         draw_vid_fullscreen(ui);
-    if (ui->tab == TAB_GAMES)
+    if (ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY)
         draw_menu(ui);
     draw_categories(ui);
     draw_cc(ui);
@@ -3410,15 +3414,24 @@ void ui_draw_scanning(int done, const char *name, float time)
     static const float neutral[3] = { 120, 120, 120 };
     gfx_begin(CLEAR_COLOR);
     draw_spotlight(neutral, time);
-    text_draw(MARGIN, 120, 0.9f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_LOADING));
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 90)); /* lugnare bakgrund bakom loggan */
 
-    /* tre punkter som pulserar i tur och ordning */
-    for (int i = 0; i < 3; i++) {
-        float p = 0.5f + 0.5f * sinf(time * 6.0f - i * 0.9f);
-        gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)(90 + 165 * p)));
-    }
-    char line[96];
-    snprintf(line, sizeof(line), "%d  ·  %.60s", done, name);
-    text_draw(MARGIN, 170, 0.6f, 0, TEXT_DIM, ALIGN_LEFT, line);
+    /* loggan i mitten, en tunn list där en ljus bit glider fram och tillbaka, texten under */
+    float cx = SCREEN_W / 2;
+    logo_draw(cx, 108, RGBA(236, 236, 240, 255));
+    float bw = 120, bx = cx - bw / 2, by = 146, seg = 34;
+    gfx_round_rect(bx, by, bw, 2, 1, RGBA(255, 255, 255, 38));
+    float p = 0.5f - 0.5f * cosf(time * 2.4f);
+    gfx_round_rect(bx + p * (bw - seg), by, seg, 2, 1, COLOR_ALPHA(theme_cur()->accent, 255));
+    text_draw(cx, 172, 0.56f, 0, TEXT_DIM, ALIGN_CENTER, L(S_LOADING));
+    char line[96], fit[96];
+    snprintf(line, sizeof(line), "%d  ·  %.60s", done, name ? name : "");
+    text_ellipsis(fit, sizeof(fit), line, 0.46f, 300);
+    text_draw(cx, 188, 0.46f, 0, COLOR_ALPHA(TEXT_DIM, 150), ALIGN_CENTER, fit);
+
+    /* tonas in från startskärmens svarta slut */
+    float in = clampf(time / 0.4f, 0, 1);
+    if (in < 1)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - in))));
     gfx_end();
 }
