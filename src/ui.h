@@ -97,15 +97,15 @@ typedef struct {
     float search_scroll;
     int search_target;
     int search_launch_idx; /* >= 0 när ett sökresultat startas */
+    int search_from;     /* fliken man kom från – ○ går tillbaka dit */
 
     /* spelets video i valt kort (preview.c): tonas in när första bilden finns */
     float preview_anim;
 
-    /* □ i Spel/Appar: en liten alternativmeny för valt kort */
+    /* □ i Spel och Spelbiblioteket: en liten alternativmeny för valt kort */
     int menu_open;
     float menu_anim;     /* 0→1 in-/uttoning */
     int menu_sel;        /* valt alternativ i menyn */
-    int moving;          /* Flytta: ← → flyttar valt kort i raden (egen ordning) */
 
     /* spelets logga (PIC0) – laddas och tonas in med bakgrunden */
     Texture *logo_cur;
