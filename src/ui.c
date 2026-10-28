@@ -1295,6 +1295,7 @@ static void update_pictures(Ui *ui, const UiInput *in, float dt)
 /* --- videofliken (TAB_VIDEO) och sökfliken (TAB_SEARCH) --- */
 
 #define MAX_VIDS 300
+#define VID_PREVIEW 10000 /* förhandsvisningens index för video i (spelen har 0..antal-1) */
 typedef struct {
     Entry entry;
     char title[72];
@@ -1450,9 +1451,10 @@ static void update_videos(Ui *ui, const UiInput *in, float dt)
     ui->vid_still += dt;
 }
 
-/* Sök: enkel teckenrad + direktfiltrerade spel och appar */
-#define SEARCH_KEYS "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 <"
+/* Sök: tangentbord i rutnät (7 per rad: A–Z, mellanslag, ⌫, siffror) + direktfiltrerade spel och appar */
+#define SEARCH_KEYS "ABCDEFGHIJKLMNOPQRSTUVWXYZ <1234567890"
 #define SEARCH_KEY_COUNT 38
+#define SEARCH_COLS 7
 #define SEARCH_ROWS 5
 
 static int match_ci(const char *hay, const char *needle)
@@ -1487,15 +1489,25 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
 
     int move = step_input(ui, in, dt, 1);
     if (ui->search_focus == 0) {
-        if (move == -1 || move == 1) {
-            ui->search_key = (ui->search_key + move + SEARCH_KEY_COUNT) % SEARCH_KEY_COUNT;
-            sound_play(SND_MOVE);
-        } else if (move == 2 && n > 0) {
+        /* ← → ↑ ↓ i rutnätet; → från högerkanten går till träffarna */
+        int k = ui->search_key, col = k % SEARCH_COLS, next = k;
+        if (move == -1 && col > 0)
+            next = k - 1;
+        else if (move == 1 && col < SEARCH_COLS - 1 && k + 1 < SEARCH_KEY_COUNT)
+            next = k + 1;
+        else if (move == 1 && n > 0) {
             ui->search_focus = 1;
+            sound_play(SND_MOVE);
+        } else if (move == -2 && k >= SEARCH_COLS)
+            next = k - SEARCH_COLS;
+        else if (move == 2 && k / SEARCH_COLS < (SEARCH_KEY_COUNT - 1) / SEARCH_COLS)
+            next = k + SEARCH_COLS < SEARCH_KEY_COUNT ? k + SEARCH_COLS : SEARCH_KEY_COUNT - 1; /* kortare sista rad */
+        if (next != k) {
+            ui->search_key = next;
             sound_play(SND_MOVE);
         }
     } else {
-        if (move == -2 && ui->search_sel == 0) {
+        if (move == -1) {
             ui->search_focus = 0;
             sound_play(SND_MOVE);
         } else if ((move == -2 || move == 2) && n > 0) {
@@ -1957,7 +1969,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     int pv = -1;
     const Entry *pv_entry = NULL;
     if (ui->tab == TAB_VIDEO && s_nvids > 0 && ui->vid_still >= 0.14f && !ui->cc_open) {
-        pv = 10000 + ui->vid_sel;
+        pv = VID_PREVIEW + ui->vid_sel;
         pv_entry = &s_vids[ui->vid_sel].entry;
     } else if (g_previews && ui->tab == TAB_GAMES && !overlay && ui->cat_anim <= 0 &&
                ui->cc_anim <= 0 && ui->intro >= 1 && ui->still >= PREVIEW_DELAY) {
@@ -3055,7 +3067,7 @@ static void draw_videos(Ui *ui)
     gfx_round_rect(bx, by, bw, bh, 7, RGBA(18, 19, 24, (int)(210 * a)));
 
     if (n > 0 && ui->vid_sel < n) {
-        Texture *vt = ui->preview_anim > 0 ? preview_frame(9000 + ui->vid_sel) : NULL;
+        Texture *vt = ui->preview_anim > 0 ? preview_frame(VID_PREVIEW + ui->vid_sel) : NULL;
         if (vt) {
             float va = smooth(ui->preview_anim);
             float s = fminf(bw / vt->w, bh / vt->h);
@@ -3122,7 +3134,7 @@ static void draw_videos(Ui *ui)
 static void draw_vid_fullscreen(Ui *ui)
 {
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(6, 6, 10, 252));
-    Texture *vt = preview_frame(9000 + ui->vid_sel);
+    Texture *vt = preview_frame(VID_PREVIEW + ui->vid_sel);
     if (vt) {
         float s = fminf((float)SCREEN_W / vt->w, (float)SCREEN_H / vt->h);
         float w = vt->w * s, h = vt->h * s;
@@ -3184,15 +3196,10 @@ static void draw_search(Ui *ui)
     snprintf(cnt, sizeof(cnt), "%d", n);
     text_draw(sx + sw - 12, sy + 16.5f, 0.54f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, cnt);
 
-    /* tangentrad: 19 synliga tecken centrerat kring markeringen */
-    const int vis = 19;
-    float kw = (sw - (vis - 1) * 2.0f) / vis, ky = sy + 30, kh = 19;
-    int k0 = ui->search_key - vis / 2;
-    if (k0 > SEARCH_KEY_COUNT - vis) k0 = SEARCH_KEY_COUNT - vis;
-    if (k0 < 0) k0 = 0;
-    for (int i = 0; i < vis && k0 + i < SEARCH_KEY_COUNT; i++) {
-        int k = k0 + i;
-        float kx = sx + i * (kw + 2.0f);
+    /* tangentbordet till vänster: 7 tangenter per rad */
+    float kw = 22, kh = 20, kgap = 3, ky0 = sy + 34;
+    for (int k = 0; k < SEARCH_KEY_COUNT; k++) {
+        float kx = sx + (k % SEARCH_COLS) * (kw + kgap), ky = ky0 + (k / SEARCH_COLS) * (kh + kgap);
         int sel = k == ui->search_key;
         if (sel) {
             u32 kc = ui->search_focus == 0 ? with_alpha(LIGHT, 0.95f * a) : RGBA(255, 255, 255, (int)(55 * a));
@@ -3214,24 +3221,24 @@ static void draw_search(Ui *ui)
         }
     }
 
-    /* resultatlista (upp till 4 rader) */
-    float ry0 = ky + 26, rh = 31;
+    /* träffarna till höger om tangentbordet */
+    float rx = sx + SEARCH_COLS * (kw + kgap) + 9, rw = sx + sw - rx, ry0 = ky0, rh = 31;
     if (!n) {
-        text_draw(SCREEN_W / 2, ry0 + 52, 0.72f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, L(S_NO_RESULTS));
+        text_draw(rx + rw / 2, ry0 + 60, 0.72f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, L(S_NO_RESULTS));
     } else {
-        gfx_clip(0, (int)ry0 - 2, SCREEN_W, (int)(4 * rh + 4));
-        int first = (int)floorf(ui->search_scroll), last = first + 4;
+        gfx_clip((int)rx - 2, (int)ry0 - 2, (int)rw + 4, (int)(SEARCH_ROWS * rh + 2));
+        int first = (int)floorf(ui->search_scroll), last = first + SEARCH_ROWS;
         for (int r = first; r <= last && r < n; r++) {
             if (r < 0)
                 continue;
             float y = ry0 + (r - ui->search_scroll) * rh;
             int sel = ui->search_focus == 1 && r == ui->search_sel;
             if (sel)
-                gfx_round_rect(sx, y, sw, rh - 3, 7, with_alpha(LIGHT, 0.94f * a));
+                gfx_round_rect(rx, y, rw, rh - 3, 7, with_alpha(LIGHT, 0.94f * a));
             int idx = hits[r];
             const Entry *e = &ui->list->items[idx];
             IconSlot *slot = loader_icon(idx);
-            float ix = sx + 6, iy = y + 3.5f, iw = 38, ih = 21;
+            float ix = rx + 6, iy = y + 3.5f, iw = 38, ih = 21;
             if (slot && slot->state == SLOT_READY)
                 gfx_tex(slot->tex, ix, iy, iw, ih, RGBA(255, 255, 255, (int)(255 * a)));
             else
@@ -3240,9 +3247,9 @@ static void draw_search(Ui *ui)
             u32 main = sel ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
             u32 dim = sel ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
             char title[120];
-            text_ellipsis(title, sizeof(title), e->title, 0.6f, sw - 110);
+            text_ellipsis(title, sizeof(title), e->title, 0.6f, rw - 110);
             text_draw(ix + iw + 10, y + 18.5f, 0.6f, 0, main, ALIGN_LEFT, title);
-            text_draw(sx + sw - 10, y + 18.0f, 0.48f, 1, dim, ALIGN_RIGHT, type_name(e->type));
+            text_draw(rx + rw - 10, y + 18.0f, 0.48f, 1, dim, ALIGN_RIGHT, type_name(e->type));
         }
         gfx_clip_reset();
     }
