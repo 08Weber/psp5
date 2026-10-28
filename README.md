@@ -18,42 +18,47 @@ it's my own take on that style.
 | ![Settings](docs/screenshots/settings.png) | ![Performance settings](docs/screenshots/settings-performance.png) |
 | ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
 | ![Startup screen](docs/screenshots/boot.png) | ![Volume](docs/screenshots/volume.png) |
-| ![Music](docs/screenshots/music.png) | ![Startup screen – golden dust](docs/screenshots/boot-dust.png) |
+| ![Music](docs/screenshots/music.png) | ![Startup screen – welcome back](docs/screenshots/boot-dust.png) |
 | ![Themes](docs/screenshots/theme.png) | ![PS3 theme](docs/screenshots/theme-ps3.png) |
 | ![PS4 theme](docs/screenshots/theme-ps4.png) | ![PS1 theme](docs/screenshots/theme-ps1.png) |
 
 ## What it does
 
-psp5 starts the way a PS5 does: a small grey logo on black, a short health notice over large, dark blue
-out-of-focus circles, then golden dust that swirls up and a warm spotlight from the top left before your games
-fade in – with a soft, airy sound underneath. It plays when the PSP starts and when it wakes up from sleep, but not
-when you come back from a game. Any button skips it, and you can turn it off in settings. The
-logo is psp5's own and everything is drawn and synthesized in code – no borrowed logos or sounds.
+psp5 starts the way a PS5 does: the psp5 logo on black, a short health notice over deep blue light, then golden
+dust that swirls up and a warm spotlight from the top left with "Welcome back" before your games fade in – with a
+soft, airy sound underneath. It plays when the PSP starts and when it wakes up from sleep, but not when you come
+back from a game. Any button skips it, and you can turn it off in settings. The logo is psp5's own and everything
+is drawn and synthesized in code – no borrowed logos or sounds.
 
-Then you get your games in a row along the top. The selected one is large with a thin light
-frame around it, and its artwork fades in behind everything. Your PSP games (ISO, CSO, ZSO and DAX) live under
-**Games** together with PSN and PS1 titles, and homebrew sits under **Apps** – flip between them with L and R.
-Is a homebrew game sitting under Apps? Press □ on it for its options and choose *Move to Games* (and back again), and psp5 remembers it.
-A UMD in the drive shows up first under Games, and it appears or disappears as soon as you put a disc in or take it out.
-Games and Apps are sorted by name. Press □ on a game to change the order: *Sort* switches between name, *Like the
-XMB* (including an order you set with Homebrew Sorter), *Recently played* and *Custom*. *Move* lifts the game so you
-can move it left or right with ← → (✕ when you are done), and *Pin to front* keeps a game first in the row.
-Next to them is the **Library**: everything you have, games and apps together, in a grid that's easy to scan
-through. Press □ there to sort by name or by what you added most recently.
+The top bar works like the PS5's: **Games** and **Media** on the left, **Search** and **Settings** as icons on the
+right – L and R step through them.
 
-The last tab is **Music**, like the music player in the XMB: it lists the MP3 files in `ms0:/MUSIC` (folders
-too) with their titles and artists, and keeps playing while you browse your games. The track that's playing
-shows up as a little note at the top of the other tabs. "Now playing" shows the album art – from the MP3 itself
-or a `cover.jpg` / `folder.jpg` in the album folder – and holding ← or → seeks through the track (the longer you
-hold, the faster it goes).
+**Games** shows your pinned games and the ones you played most recently in a row. The selected one is large with
+a thin light frame around it, and its artwork fades in behind everything. A UMD in the drive shows up first, and it
+appears or disappears as soon as you put a disc in or take it out. Press □ on a game to *Pin to front* so it always
+stays in the row. The last tile opens the **Game Library**: everything you have – PSP games (ISO, CSO, ZSO and
+DAX), PSN and PS1 titles and homebrew – in a grid that's easy to scan through. Press □ there to pin a game to the
+Games row or to sort by name or by what you added most recently, and △ to jump straight to Search.
+
+**Search** has an on-screen keyboard on the left and the matching games on the right. They update as you type.
+
+**Media** has three tiles:
+
+- **Music**, like the music player in the XMB: it lists the MP3 files in `ms0:/MUSIC` (folders too) with their
+  titles and artists, and keeps playing while you browse your games. △ opens the album list. The track that's
+  playing shows up as a little note at the top of the other tabs. "Now playing" shows the album art – from the
+  MP3 itself or a `cover.jpg` / `folder.jpg` in the album folder – and holding ← or → seeks through the track
+  (the longer you hold, the faster it goes).
+- **Pictures**: your JPEG and PNG pictures with a preview, and ✕ to view them full screen.
+- **Videos**: PMF videos in `VIDEO` and the short preview videos (ICON1.PMF) of your games.
 
 Pressing ✕ (or START) starts the game the same way ARK's own menu does, so updates, patched ISOs and
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
 so the game gets the whole PSP.
 
-Press △ for the settings, laid out like the PS5's settings pages. From there you can change ARK's CFW
-options (CPU speed, extra memory, caches, USB charging and so on), turn plugins on and off, connect over
-USB, restart, shut down, jump to the XMB or open ARK's recovery menu.
+**Settings** is laid out like the PS5's settings pages. From there you can change ARK's CFW options (CPU speed,
+extra memory, caches, USB charging and so on), turn plugins on and off, connect over USB, restart, shut down,
+jump to the XMB or open ARK's recovery menu.
 
 A few other things I cared about:
 
@@ -87,10 +92,10 @@ A few other things I cared about:
   or make a new folder from the △ menu. Copying shows a progress bar and can be cancelled with ○, and deleting
   always asks first.
 - **It has categories.** Put games in folders – `ISO/<folder>/` or `PSP/GAME/<folder>/<game>/` – and press
-  SELECT to pick one. Start a folder name with `g_` to put everything in it under Games (for example
-  `PSP/GAME/g_GBA` for GBA games packed as EBOOTs) or with `s_` for Apps; the prefix isn't shown. A `bg.png` in the
-  folder is shown behind it in the picker. The active category shows up in the tab name ("Games · GBA"). A folder
-  with a single game (one folder per game) is not a category unless it has one of the prefixes.
+  SELECT to pick one (for example `PSP/GAME/GBA` for GBA games packed as EBOOTs). A `bg.png` in the folder is
+  shown behind it in the picker. The active category shows up in the tab name ("Games · GBA"). A folder with a
+  single game (one folder per game) is not a category unless its name starts with `g_` or `s_` (the prefix
+  isn't shown).
 - **It has a Control Center.** HOME opens a PS5-style panel with sleep, USB, the file manager, settings, the XMB,
   restart and power off. *Settings → Power and USB* can also turn the screen off and put the PSP to sleep after a
   while without a button press (not while music is playing).
@@ -111,16 +116,17 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 |---|---|
 | ← → or the analog stick | move between games (hold to go faster) |
 | ↑ ↓ | move between rows in the Library |
-| L / R | switch between Games, Apps, Library and Music |
-| □ | options: pin, move, sort, move to Games / Apps · sort the Library (name / recently added) · shuffle in Music |
+| L / R | switch between Games, Media, Search and Settings |
+| □ | options: pin to front · in the Library also sort (name / recently added) · shuffle in Music · delete a letter in Search |
+| △ | Search from the Library · albums in Music |
 | ✕ in Music | play the selected track (or pause it) |
 | ← → in Music | previous / next track · hold to seek |
 | ✕ or START | start the selected game |
-| △ | settings |
 | any button | skip the startup screen |
 | ○ | back |
 | SELECT | categories (folders in ISO and PSP/GAME) |
-| HOME | Control Center: sleep, USB, files, settings, XMB, restart, power off |
+| HOME | Control Center: sleep, USB, files, screenshot, settings, XMB, restart, power off |
+| ♪ or L + R + START | take a screenshot (PNG in `PICTURE/PSP5`) |
 
 If something ever goes wrong, hold **SELECT** while the PSP boots – ARK then skips its settings and you land
 in the normal XMB. psp5 also looks after itself. If a start doesn't finish (the PSP froze or was switched off
