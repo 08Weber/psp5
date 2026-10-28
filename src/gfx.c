@@ -252,6 +252,22 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
 }
 
+/* Bilden pixel för pixel (1:1, närmaste texel) – förrenderade ikoner och loggan blir skarpa */
+void gfx_tex_1to1(const Texture *t, float x, float y, u32 tint)
+{
+    if (!t)
+        return;
+    x = floorf(x);
+    y = floorf(y);
+    TVert *v = sceGuGetMemory(2 * sizeof(TVert));
+    v[0] = (TVert){ 0, 0, tint, x, y, 0 };
+    v[1] = (TVert){ t->w, t->h, tint, x + t->w, y + t->h, 0 };
+    bind(t);
+    sceGuTexFilter(GU_NEAREST, GU_NEAREST);
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2, 0, v);
+    sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+}
+
 /* 9-slice av en form-textur: hörnen får radien r, mitten sträcks ut. */
 static void nine_slice(const Texture *t, float x, float y, float w, float h, float r, u32 color)
 {

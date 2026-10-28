@@ -34,6 +34,8 @@ void gfx_gradient_v(float x, float y, float w, float h, u32 top, u32 bottom);
 void gfx_gradient_h(float x, float y, float w, float h, u32 left, u32 right);
 void gfx_line(float x0, float y0, float x1, float y1, u32 color);
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint);
+/* Bilden i sin egen storlek, pixel för pixel utan filtrering (övre vänstra hörnet i hela pixlar) */
+void gfx_tex_1to1(const Texture *t, float x, float y, u32 tint);
 /* Rundad rektangel med kantutjämning */
 void gfx_round_rect(float x, float y, float w, float h, float r, u32 color);
 /* Mjuk skugga/glöd: rektangeln utökas med `spread` åt alla håll */

@@ -77,8 +77,7 @@ Texture *logo_texture(void)
 void logo_draw(float cx, float cy, u32 color)
 {
     Texture *t = logo_texture();
-    if (t) /* hela bildpunkter: 1:1 utan suddighet */
-        gfx_tex(t, floorf(cx - LOGO_W / 2.0f), floorf(cy - LOGO_H / 2.0f), LOGO_W, LOGO_H, color);
+    gfx_tex_1to1(t, cx - LOGO_W / 2.0f, cy - LOGO_H / 2.0f, color);
 }
 
 /* loggan med ett mjukt blått sken bakom symbolen (den blå rutan längst till vänster) */
