@@ -9,7 +9,8 @@
  *   theme=ps5        (se theme.c)
  *   themeart=1       (spelens bilder bakom korten)
  *   hidedupes=1      (samma spel-ID och titel två gånger: visa bara det första)
- *   battery=0        (bredvid batteriet: 0 = inget, 1 = procent, 2 = tid kvar)
+ *   allgames=0       (Spel-raden: 0 = fästa + senast spelade, 1 = alla spel, issue #30)
+ *   battery=0      (bredvid batteriet: 0 = inget, 1 = procent, 2 = tid kvar)
  *   previews=0       (spelets video ICON1.PMF och musik SND0.AT3 på valt kort, som i XMB)
  *   shuffle=0        (musiken spelar låtarna i slumpad ordning)
  *   screenoff=0      (skärmen släcks efter 0 = aldrig, 1/2/3/4 = 1/3/5/10 min utan knapptryck)
@@ -22,6 +23,7 @@ extern unsigned char g_auto_sleep;
 extern unsigned char g_boot_anim;
 extern unsigned char g_control_center;
 extern unsigned char g_hide_dupes;
+extern unsigned char g_all_games;
 extern unsigned char g_battery;
 extern unsigned char g_previews;
 extern char g_wallpaper[192];

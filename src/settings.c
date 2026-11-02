@@ -282,6 +282,8 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_HIDE_DUPES), &g_hide_dupes);
     c->items[c->count - 1].own = 1;
+    toggle(c, L(S_ALL_GAMES), &g_all_games); /* av: fästa + senast spelade, resten i biblioteket (issue #30) */
+    c->items[c->count - 1].own = 1;
     choice(c, L(S_BATTERY), &g_battery, OPT_BATTERY, 3);
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_PREVIEWS), &g_previews); /* ICON1.PMF och SND0.AT3, som i XMB */
@@ -289,9 +291,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "2.1.0 (ARK-4)");
+    info(c, L(S_VERSION), "2.1.1 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "2.1.0 (ARK-5)");
+    info(c, L(S_VERSION), "2.1.1 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 

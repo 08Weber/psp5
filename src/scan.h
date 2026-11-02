@@ -34,6 +34,9 @@ typedef struct {
     /* kategorimappen spelet ligger i (ISO/<kategori>/, PSP/GAME/<kategori>/), "" = ingen.
      * Prefixet g_ eller s_ lägger kategorin under Spel respektive Appar. */
     char category[40];
+    /* 1 = bilderna (offseten ovan) ligger i PBOOT.PBP bredvid EBOOT.PBP, som XMB visar
+     * (uppdateringar, TempGBA Single Game – issue #37) */
+    u32 art_pboot;
 } Entry;
 
 typedef struct {

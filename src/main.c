@@ -493,7 +493,7 @@ int main(int argc, char *argv[])
 
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
-    unsigned char hide_dupes = 0; /* hur flikarna byggdes när inställningarna öppnades */
+    unsigned char hide_dupes = 0, all_games = 0; /* hur flikarna byggdes när inställningarna öppnades */
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
     float idle = 0; /* sekunder utan knapptryck – för skärm av och viloläge */
@@ -574,7 +574,7 @@ int main(int argc, char *argv[])
                 preview_pause(0);
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
-                if (g_hide_dupes != hide_dupes)
+                if (g_hide_dupes != hide_dupes || g_all_games != all_games)
                     ui_relist(&ui, 0, 0); /* bygg om Spel och Spelbiblioteket */
                 if (home) {
                     ui_open_cc(&ui);
@@ -610,6 +610,7 @@ int main(int argc, char *argv[])
              * det, annars visas "Boot psp5" som av tills första spelstarten (issue #8) */
             start_confirmed();
             hide_dupes = g_hide_dupes;
+            all_games = g_all_games;
             preview_pause(1); /* spelets musik ska inte spela bakom inställningarna */
             settings_open();
             /* efter inläsningen (typsnitt från flash0, ARK:s filer): tung läsning medan ljudet

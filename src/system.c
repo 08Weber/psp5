@@ -11,6 +11,7 @@
 #include <systemctrl.h>
 #include <systemctrl_ark.h>
 #include <systemctrl_se.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -327,42 +328,81 @@ static int kcall(void *f, u32 a1, u32 a2)
     return kuKernelCall(f, &a) < 0 ? -1 : (int)a.ret1;
 }
 
+/* USB-logg (issue #29): hålls i minnet medan datorn äger minneskortet – en skrivning då kan
+ * förstöra FAT – och läggs till i <data>/usb.log först när USB-läget är avslutat. */
+static char s_ulog[2048];
+static int s_ulog_len;
+static void usb_log(const char *fmt, ...)
+{
+    int room = sizeof(s_ulog) - s_ulog_len - 1;
+    if (room < 2)
+        return;
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(s_ulog + s_ulog_len, room, fmt, ap);
+    va_end(ap);
+    if (n < 0)
+        return;
+    s_ulog_len += n < room - 1 ? n : room - 1;
+    s_ulog[s_ulog_len++] = '\n';
+}
+#define ULOG(call)                                                                 \
+    do {                                                                           \
+        int r_ = (call);                                                           \
+        usb_log("%08X st=%03X %s", r_, sceUsbGetState(), #call);                   \
+    } while (0)
+
+static void usb_log_flush(void)
+{
+    char path[32];
+    snprintf(path, sizeof(path), "%s/usb.log", g_data_dir);
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
+    if (fd >= 0) {
+        sceIoWrite(fd, s_ulog, s_ulog_len);
+        sceIoClose(fd);
+    }
+    s_ulog_len = 0;
+}
+
+static int s_usb_last;    /* senaste sceUsbGetState() – loggas när det ändras */
+static u32 s_cable_since; /* ms när kabeln syntes utan att datorn anslöt, 0 = inte nu */
+static int s_usb_retried;
+
+/* Som arkMenu i ARK-4 och ARK-5: inga anrop till USB-laddningen (ARK:s egen laddtimer slår på
+ * den igen inom sekunder), ingen usb.prx (redan laddad av systemet) och ingen
+ * sceUsbstorBootSetCapacity – de lades till i 2.0.1 och fick USB-läget att hänga (issue #29). */
 int sys_usb_start(void)
 {
     static const char *mods[] = {
-        "flash0:/kd/usb.prx",        "flash0:/kd/semawm.prx",       "flash0:/kd/usbstor.prx",
-        "flash0:/kd/usbstormgr.prx", "flash0:/kd/usbstorms.prx",    "flash0:/kd/usbstoreflash.prx",
-        "flash0:/kd/usbstorboot.prx",
+        "flash0:/kd/semawm.prx",     "flash0:/kd/usbstor.prx",        "flash0:/kd/usbstormgr.prx",
+        "flash0:/kd/usbstorms.prx",  "flash0:/kd/usbstoreflash.prx", "flash0:/kd/usbstorboot.prx",
     };
     static int loaded;
     if (s_usb_on || !s_has_ark)
         return s_usb_on;
-    /* ARK:s USB-laddning kan låsa USB-anslutningen på PSP Go om kabeln redan sitter i –
-     * stäng av USB-laddningen innan drivrutinerna aktiveras (issue #20). */
-    void *disable_charge = (void *)sctrlHENFindFunction("scePower_Service", "scePower_driver", 0x90285886);
-    if (disable_charge)
-        kcall(disable_charge, 0, 0);
+    s_usb_last = -1;
+    s_cable_since = 0;
+    s_usb_retried = 0;
+    usb_log("--- psp5 USB: model=%d ark=%d apitype=%X st=%03X usbnet=%d", s_model, s_ark, kuKernelInitApitype(),
+            sceUsbGetState(), sys_usbnet_version());
     if (!loaded) {
         for (unsigned i = 0; i < sizeof(mods) / sizeof(mods[0]); i++) {
             if (s_model != 4 && strstr(mods[i], "usbstoreflash"))
                 continue;
             SceUID mid = kuKernelLoadModule(mods[i], 0, NULL);
-            if (mid >= 0)
-                sceKernelStartModule(mid, 0, NULL, NULL, NULL);
+            int r = mid >= 0 ? sceKernelStartModule(mid, 0, NULL, NULL, NULL) : mid;
+            usb_log("%08X %08X %s", mid, r, mods[i] + 10);
         }
         loaded = 1;
     }
-    if (sceUsbGetState() & PSP_USB_ACTIVATED) {
-        sceUsbDeactivate(0x1c8);
-        sceKernelDelayThread(10000);
-    }
-    sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0);
-    sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0);
+    if (sceUsbGetState() & PSP_USB_ACTIVATED) /* t.ex. usbnet eller ett tidigare USB-läge */
+        ULOG(sceUsbDeactivate(0x1c8));
+    ULOG(sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0));
+    ULOG(sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0));
     if (s_model == 4)
-        sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0);
-    sceUsbstorBootSetCapacity(0x800000);
+        ULOG(sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0));
     /* som arkMenu: resultatet ignoreras – ett fel här stängde USB-läget direkt (issue #10) */
-    sceUsbActivate(0x1c8);
+    ULOG(sceUsbActivate(0x1c8));
     s_usb_on = 1;
     return s_usb_on;
 }
@@ -371,25 +411,44 @@ void sys_usb_stop(void)
 {
     if (!s_usb_on)
         return;
-    sceUsbDeactivate(0x1c8);
+    ULOG(sceUsbDeactivate(0x1c8));
     if (s_model == 4)
-        sceUsbStop(USBSTOR_EF_DRIVERNAME, 0, 0);
-    sceUsbStop(PSP_USBSTOR_DRIVERNAME, 0, 0);
-    /* Om usbnet.prx är laddad ska USB-bussen inte stängas ner, utan lämnas tillbaka till usbnet */
-    if (sys_usbnet_version() > 0) {
-        s_usb_on = 0;
-        sys_usbnet_probe(100);
-        return;
-    }
-    sceUsbStop(PSP_USBBUS_DRIVERNAME, 0, 0);
+        ULOG(sceUsbStop(USBSTOR_EF_DRIVERNAME, 0, 0));
+    ULOG(sceUsbStop(PSP_USBSTOR_DRIVERNAME, 0, 0));
     s_usb_on = 0;
+    /* Om usbnet.prx är laddad ska USB-bussen inte stängas ner, utan lämnas tillbaka till usbnet */
+    if (sys_usbnet_version() > 0)
+        ULOG(sys_usbnet_probe(100));
+    else
+        ULOG(sceUsbStop(PSP_USBBUS_DRIVERNAME, 0, 0));
+    usb_log_flush(); /* först nu: datorn har släppt minneskortet */
 }
 
 int sys_usb_state(void)
 {
     if (!s_usb_on)
         return 0;
-    return (sceUsbGetState() & PSP_USB_CONNECTION_ESTABLISHED) ? 2 : 1;
+    int st = sceUsbGetState();
+    u32 now = sceKernelGetSystemTimeLow() / 1000;
+    if (st != s_usb_last) {
+        usb_log("t=%u st=%03X", now, st);
+        s_usb_last = st;
+    }
+    /* Kabeln syns men datorn ansluter aldrig: aktivera om en gång – samma sak som att ansluta i
+     * XMB och gå tillbaka, som fick USB att fungera i issue #20 */
+    if ((st & PSP_USB_CABLE_CONNECTED) && !(st & PSP_USB_CONNECTION_ESTABLISHED)) {
+        if (!s_cable_since)
+            s_cable_since = now ? now : 1;
+        else if (!s_usb_retried && now - s_cable_since > 5000) {
+            s_usb_retried = 1;
+            ULOG(sceUsbDeactivate(0x1c8));
+            sceKernelDelayThread(50000);
+            ULOG(sceUsbActivate(0x1c8));
+        }
+    } else {
+        s_cable_since = 0;
+    }
+    return (st & PSP_USB_CONNECTION_ESTABLISHED) ? 2 : 1;
 }
 
 int sys_usbnet_version(void)
