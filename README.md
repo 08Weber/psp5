@@ -36,9 +36,10 @@ right – L and R step through them.
 **Games** shows your pinned games and the ones you played most recently in a row. The selected one is large with
 a thin light frame around it, and its artwork fades in behind everything. A UMD in the drive shows up first, and it
 appears or disappears as soon as you put a disc in or take it out. Press □ on a game to *Pin to front* so it always
-stays in the row. The last tile opens the **Game Library**: everything you have – PSP games (ISO, CSO, ZSO and
+stays in the row, and *Move* to put your pinned games in your own order. Want every game in the row?
+Turn on *Settings → psp5 → All games on Games screen* (then *Move* works on every game). The last tile opens the **Game Library**: everything you have – PSP games (ISO, CSO, ZSO and
 DAX), PSN and PS1 titles and homebrew – in a grid that's easy to scan through. Press □ there to pin a game to the
-Games row or to sort by name or by what you added most recently, and △ to jump straight to Search.
+Games row or to sort by name or by what you added most recently. △ opens Settings from Games, Media and the Library.
 
 **Search** has an on-screen keyboard on the left and the matching games on the right. They update as you type.
 
@@ -114,11 +115,11 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 
 | Button | What it does |
 |---|---|
-| ← → or the analog stick | move between games (hold to go faster) |
+| ← → or the analog stick | move between games (hold to go faster – holding stops at the end, a new press wraps around) |
 | ↑ ↓ | move between rows in the Library |
 | L / R | switch between Games, Media, Search and Settings |
-| □ | options: pin to front · in the Library also sort (name / recently added) · shuffle in Music · delete a letter in Search |
-| △ | Search from the Library · albums in Music |
+| □ | options: pin to front · move (pinned games) · in the Library also sort (name / recently added) · shuffle in Music · delete a letter in Search |
+| △ | Settings · albums in Music |
 | ✕ in Music | play the selected track (or pause it) |
 | ← → in Music | previous / next track · hold to seek |
 | ✕ or START | start the selected game |

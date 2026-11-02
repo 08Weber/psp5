@@ -356,7 +356,9 @@ static void usb_log_flush(void)
 {
     char path[32];
     snprintf(path, sizeof(path), "%s/usb.log", g_data_dir);
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
+    SceIoStat st; /* börja om när loggen blivit stor – bara de senaste försöken behövs */
+    int big = sceIoGetstat(path, &st) >= 0 && st.st_size > 32 * 1024;
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | (big ? PSP_O_TRUNC : PSP_O_APPEND), 0777);
     if (fd >= 0) {
         sceIoWrite(fd, s_ulog, s_ulog_len);
         sceIoClose(fd);
@@ -365,7 +367,7 @@ static void usb_log_flush(void)
 }
 
 static int s_usb_last;    /* senaste sceUsbGetState() – loggas när det ändras */
-static u32 s_cable_since; /* ms när kabeln syntes utan att datorn anslöt, 0 = inte nu */
+static u32 s_cable_since; /* µs när kabeln syntes utan att datorn anslöt, 0 = inte nu */
 static int s_usb_retried;
 
 /* Som arkMenu i ARK-4 och ARK-5: inga anrop till USB-laddningen (ARK:s egen laddtimer slår på
@@ -429,9 +431,9 @@ int sys_usb_state(void)
     if (!s_usb_on)
         return 0;
     int st = sceUsbGetState();
-    u32 now = sceKernelGetSystemTimeLow() / 1000;
+    u32 now = sceKernelGetSystemTimeLow(); /* µs, går runt efter 71 min – skillnaden blir ändå rätt */
     if (st != s_usb_last) {
-        usb_log("t=%u st=%03X", now, st);
+        usb_log("t=%u ms st=%03X", now / 1000, st);
         s_usb_last = st;
     }
     /* Kabeln syns men datorn ansluter aldrig: aktivera om en gång – samma sak som att ansluta i
@@ -439,7 +441,7 @@ int sys_usb_state(void)
     if ((st & PSP_USB_CABLE_CONNECTED) && !(st & PSP_USB_CONNECTION_ESTABLISHED)) {
         if (!s_cable_since)
             s_cable_since = now ? now : 1;
-        else if (!s_usb_retried && now - s_cable_since > 5000) {
+        else if (!s_usb_retried && now - s_cable_since > 5000000u) {
             s_usb_retried = 1;
             ULOG(sceUsbDeactivate(0x1c8));
             sceKernelDelayThread(50000);
