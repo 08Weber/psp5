@@ -101,7 +101,10 @@ void *art_read_part(const Entry *e, u32 offset, u32 size, const char *umd_name, 
             iso_close(&r);
         }
     } else {
-        SceUID fd = sceIoOpen(e->path, PSP_O_RDONLY, 0);
+        char pboot[256]; /* bilderna kan ligga i PBOOT.PBP bredvid (scan.c, issue #37) */
+        const char *slash = strrchr(e->path, '/');
+        snprintf(pboot, sizeof(pboot), "%.*sPBOOT.PBP", slash ? (int)(slash + 1 - e->path) : 0, e->path);
+        SceUID fd = sceIoOpen(e->art_pboot ? pboot : e->path, PSP_O_RDONLY, 0);
         if (fd >= 0) {
             sceIoLseek32(fd, offset, PSP_SEEK_SET);
             got = sceIoRead(fd, buf, size);

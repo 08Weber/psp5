@@ -106,6 +106,7 @@ typedef struct {
     int menu_open;
     float menu_anim;     /* 0→1 in-/uttoning */
     int menu_sel;        /* valt alternativ i menyn */
+    int moving;          /* Flytta: ← → flyttar valt kort i raden (egen ordning, issue #31) */
 
     /* spelets logga (PIC0) – laddas och tonas in med bakgrunden */
     Texture *logo_cur;

@@ -473,6 +473,10 @@ static const char *const T[S_COUNT][NL] = {
                        "Alle nummers", "Todas as faixas", "Все треки", "すべての曲" },
     [S_WELCOME] = { "Welcome back", "Välkommen tillbaka", "Willkommen zurück", "Bon retour", "Bienvenido de nuevo",
                     "Bentornato", "Welkom terug", "Bem-vindo de volta", "С возвращением", "おかえりなさい" },
+    [S_ALL_GAMES] = { "All games on Games screen", "Alla spel på Spel-skärmen", "Alle Spiele im Spiele-Bildschirm",
+                      "Tous les jeux sur l'écran Jeux", "Todos los juegos en Juegos", "Tutti i giochi in Giochi",
+                      "Alle games op Games-scherm", "Todos os jogos em Jogos", "Все игры на экране «Игры»",
+                      "ゲーム画面にすべて表示" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

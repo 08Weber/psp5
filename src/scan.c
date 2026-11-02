@@ -106,10 +106,19 @@ static void strip_marks(char *s)
     }
 }
 
+/* Titeln ur en PARAM.SFO – en tom TITLE behåller den titel posten redan har (mappnamnet) */
+static void read_title(Entry *e, const u8 *sfo, u32 size)
+{
+    char t[sizeof(e->title)];
+    if (sfo_get_string(sfo, size, "TITLE", t, sizeof(t)) && t[strspn(t, " ")]) {
+        strcpy(e->title, t);
+        strip_marks(e->title);
+    }
+}
+
 void entry_read_sfo(Entry *e, const u8 *sfo, u32 size)
 {
-    sfo_get_string(sfo, size, "TITLE", e->title, sizeof(e->title));
-    strip_marks(e->title);
+    read_title(e, sfo, size);
     sfo_get_string(sfo, size, "DISC_ID", e->game_id, sizeof(e->game_id));
 }
 
@@ -205,6 +214,13 @@ static int add_eboot(ScanState *s, const char *path, const char *folder, u32 fol
     if (sceIoGetstat(path, &st) < 0)
         return 0;
     u32 size = (u32)st.st_size, time = pack_time(&st.sce_st_mtime);
+    /* PBOOT.PBP bredvid (uppdatering, TempGBA Single Game): XMB visar dess titel och bilder.
+     * Dess storlek och tid blandas in så att cacharna läser om när den ändras (issue #37). */
+    char pboot[256];
+    snprintf(pboot, sizeof(pboot), "%.*sPBOOT.PBP", (int)(strrchr(path, '/') + 1 - path), path);
+    int has_pboot = sceIoGetstat(pboot, &st) >= 0;
+    if (has_pboot)
+        size ^= (u32)st.st_size ^ (pack_time(&st.sce_st_mtime) * 2654435761u);
     if (from_cache(s, path, size, time, folder_time))
         return 1;
     report(s, folder);
@@ -261,6 +277,34 @@ static int add_eboot(ScanState *s, const char *path, const char *folder, u32 fol
     e->snd_size = h.psp_offset - h.snd0_offset;
     e->snd_offset = e->snd_size ? h.snd0_offset : 0;
     sceIoClose(fd);
+
+    SceUID pf = has_pboot ? sceIoOpen(pboot, PSP_O_RDONLY, 0) : -1;
+    if (pf >= 0) {
+        if (sceIoRead(pf, &h, sizeof(h)) == sizeof(h) && h.magic == PBP_MAGIC) {
+            u32 ps = h.icon0_offset - h.param_offset;
+            u8 *sfo = ps > 0 && ps <= MAX_SFO_SIZE ? malloc(ps) : NULL;
+            if (sfo) {
+                sceIoLseek32(pf, h.param_offset, PSP_SEEK_SET);
+                if (sceIoRead(pf, sfo, ps) == (int)ps)
+                    read_title(e, sfo, ps); /* bara titeln: typ och spel-ID kommer från EBOOT.PBP */
+                free(sfo);
+            }
+            if (h.icon1_offset > h.icon0_offset) { /* har PBOOT en ikon gäller alla dess bilder */
+                e->art_pboot = 1;
+                e->icon_offset = h.icon0_offset;
+                e->icon_size = h.icon1_offset - h.icon0_offset;
+                e->vid_size = h.pic0_offset - h.icon1_offset;
+                e->vid_offset = e->vid_size ? h.icon1_offset : 0;
+                e->pic0_size = h.pic1_offset - h.pic0_offset;
+                e->pic0_offset = e->pic0_size ? h.pic0_offset : 0;
+                e->pic_size = h.snd0_offset - h.pic1_offset;
+                e->pic_offset = e->pic_size ? h.pic1_offset : 0;
+                e->snd_size = h.psp_offset - h.snd0_offset;
+                e->snd_offset = e->snd_size ? h.snd0_offset : 0;
+            }
+        }
+        sceIoClose(pf);
+    }
     return 1;
 }
 

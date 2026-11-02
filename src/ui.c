@@ -82,12 +82,14 @@ static u32 with_alpha(u32 c, float a)
     return COLOR_ALPHA(c, (int)(((c >> 24) & 0xFF) * clampf(a, 0, 1)));
 }
 
-/* --- senast spelat och fästa spel ---
- * <data>/played.txt (senast spelat först) och pins.txt: en nyckel (entry_cover_key) per rad.
+/* --- senast spelat, egen ordning och fästa spel ---
+ * <data>/played.txt (senast spelat först), order.txt (egen ordning, Flytta) och pins.txt: en nyckel
+ * (entry_cover_key) per rad.
  * I minnet ligger de i s_meta, parallellt med spellistan. */
 
 typedef struct {
     u32 played; /* högre = spelat senare, 0 = aldrig */
+    int rank;   /* plats i egen ordning (1 = först), 0 = ingen */
     u8 pinned;
 } Meta;
 
@@ -183,6 +185,11 @@ static void set_played(int i, int line, int lines)
     if (s_meta[i].played > s_played_max)
         s_played_max = s_meta[i].played;
 }
+static void set_rank(int i, int line, int lines)
+{
+    if (!s_meta[i].rank)
+        s_meta[i].rank = line + 1;
+}
 static void set_pinned(int i, int line, int lines) { s_meta[i].pinned = 1; }
 
 static void meta_load(const EntryList *l)
@@ -194,6 +201,7 @@ static void meta_load(const EntryList *l)
     if (!s_meta)
         return;
     keyfile_apply(l, "played.txt", set_played);
+    keyfile_apply(l, "order.txt", set_rank);
     keyfile_apply(l, "pins.txt", set_pinned);
 }
 
@@ -224,8 +232,14 @@ static int cmp_played_desc(const void *a, const void *b)
     u32 x = s_meta[*(const int *)a].played, y = s_meta[*(const int *)b].played;
     return x > y ? -1 : x < y;
 }
-/* Sparar played.txt eller pins.txt ur s_meta. UMD-skivan sparas aldrig. */
-enum { META_PLAYED, META_PINS };
+static int cmp_rank(const void *a, const void *b)
+{
+    int x = s_meta[*(const int *)a].rank, y = s_meta[*(const int *)b].rank;
+    return x != y ? x - y : *(const int *)a - *(const int *)b;
+}
+
+/* Sparar played.txt, order.txt eller pins.txt ur s_meta. UMD-skivan sparas aldrig. */
+enum { META_PLAYED, META_ORDER, META_PINS };
 static void meta_save(const EntryList *l, int which)
 {
     int *idx = s_meta ? malloc((l->count ? l->count : 1) * sizeof(int)) : NULL;
@@ -235,15 +249,17 @@ static void meta_save(const EntryList *l, int which)
     for (int i = 0; i < l->count; i++) {
         const Meta *m = &s_meta[i];
         if (l->items[i].type != ENTRY_UMD &&
-            (which == META_PLAYED ? m->played > 0 : m->pinned))
+            (which == META_PLAYED ? m->played > 0 : which == META_ORDER ? m->rank > 0 : m->pinned))
             idx[n++] = i;
     }
     if (which == META_PLAYED) {
         qsort(idx, n, sizeof(int), cmp_played_desc);
         if (n > MAX_PLAYED)
             n = MAX_PLAYED;
+    } else if (which == META_ORDER) {
+        qsort(idx, n, sizeof(int), cmp_rank);
     }
-    keyfile_write(l, which == META_PLAYED ? "played.txt" : "pins.txt", idx, n);
+    keyfile_write(l, which == META_PLAYED ? "played.txt" : which == META_ORDER ? "order.txt" : "pins.txt", idx, n);
     free(idx);
 }
 
@@ -341,7 +357,8 @@ static int cmp_recent(const void *a, const void *b)
 }
 
 /* Spel-raden: UMD-skivan, fästa spel, sedan senast spelat. Aldrig spelade: nyaste mappen först
- * (som XMB). Lika: listans ordning (A–Ö). */
+ * (som XMB). Lika: listans ordning (A–Ö). Flyttade kort (egen ordning) går före: bland fästa
+ * alltid, bland ofästa bara när raden visar alla spel – annars styr senast spelat. */
 #define RECENT_GAMES 8 /* ofästa spel i raden – resten finns i Spelbiblioteket */
 static int cmp_row(const void *a, const void *b)
 {
@@ -352,6 +369,8 @@ static int cmp_row(const void *a, const void *b)
         return x->type == ENTRY_UMD ? -1 : 1;
     if (mx->pinned != my->pinned)
         return mx->pinned ? -1 : 1;
+    if ((mx->pinned || g_all_games) && mx->rank != my->rank) /* utan plats (nya spel) sist */
+        return (u32)(mx->rank - 1) < (u32)(my->rank - 1) ? -1 : 1;
     if (mx->played != my->played)
         return mx->played > my->played ? -1 : 1;
     if (x->sort_time != y->sort_time)
@@ -420,7 +439,7 @@ static void build_views(Ui *ui)
         int keep = 0; /* skivan och fästa spel står alltid kvar */
         while (keep < g->count && (ui->list->items[g->idx[keep]].type == ENTRY_UMD || meta(g->idx[keep])->pinned))
             keep++;
-        if (g->count > keep + RECENT_GAMES)
+        if (!g_all_games && g->count > keep + RECENT_GAMES)
             g->count = keep + RECENT_GAMES;
     }
     sort_library(ui);
@@ -666,7 +685,7 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
         if (t < TAB_MUSIC && v->count && v->idx && ui->sel[t] < v->count)
             chosen[t] = remap_index(v->idx[ui->sel[t]], removed_front, added_front);
         /* står man först i fliken blir en nyinsatt skiva markerad */
-        if (added_front && (t == TAB_GAMES || t == TAB_LIBRARY) && ui->sel[t] == 0)
+        if (added_front && !ui->moving && (t == TAB_GAMES || t == TAB_LIBRARY) && ui->sel[t] == 0)
             chosen[t] = 0;
         free(v->idx);
         v->idx = NULL;
@@ -693,18 +712,35 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
         loader_set_view(view(ui));
 }
 
-/* □-menyn för valt kort: Fäst (i Spel-raden) – i biblioteket även sorteringen */
-enum { MI_PIN, MI_SORT };
+/* □-menyn för valt kort: Fäst, Flytta (i Spel-raden: fästa kort, eller alla när raden visar
+ * alla spel – issue #31) och i biblioteket sorteringen */
+enum { MI_PIN, MI_MOVE, MI_SORT };
+
+static int menu_items(const Ui *ui, int out[3])
+{
+    int n = 0;
+    out[n++] = MI_PIN;
+    if (ui->tab == TAB_GAMES && s_meta && (g_all_games || meta(ui_selected(ui))->pinned))
+        out[n++] = MI_MOVE;
+    if (ui->tab == TAB_LIBRARY)
+        out[n++] = MI_SORT;
+    return n;
+}
 
 static int menu_count(const Ui *ui)
 {
-    return ui->tab == TAB_LIBRARY ? 2 : 1;
+    int items[3];
+    return menu_items(ui, items);
 }
 
-static const char *menu_label(const Ui *ui, int item, char *buf, int size)
+static const char *menu_label(const Ui *ui, int k, char *buf, int size)
 {
-    if (item == MI_PIN)
-        return L(meta(ui_selected(ui))->pinned ? S_UNPIN : S_PIN);
+    int items[3];
+    menu_items(ui, items);
+    switch (items[k]) {
+    case MI_PIN:  return L(meta(ui_selected(ui))->pinned ? S_UNPIN : S_PIN);
+    case MI_MOVE: return L(S_F_MOVE);
+    }
     snprintf(buf, size, "%s: %s", L(S_SORT), L(ui->lib_sort ? S_SORT_RECENT : S_SORT_NAME));
     return buf;
 }
@@ -717,10 +753,63 @@ static void resort(Ui *ui)
     ui->pos = pos;
 }
 
+/* Flytta: ger alla kort en egen, unik plats i den ordning de syns nu, så att inget hoppar */
+static void start_arrange(Ui *ui)
+{
+    int *idx = s_meta ? malloc((s_meta_n ? s_meta_n : 1) * sizeof(int)) : NULL;
+    if (!idx) {
+        sound_play(SND_ERROR);
+        return;
+    }
+    for (int i = 0; i < s_meta_n; i++)
+        idx[i] = i;
+    s_sort_list = ui->list;
+    qsort(idx, s_meta_n, sizeof(int), cmp_row);
+    for (int k = 0; k < s_meta_n; k++) /* ofästa bara när raden visar alla – annars styr senast spelat */
+        if (s_meta[idx[k]].pinned || g_all_games)
+            s_meta[idx[k]].rank = k + 1;
+    free(idx);
+    resort(ui);
+    ui->moving = 1;
+}
+
+static void stop_arrange(Ui *ui)
+{
+    if (!ui->moving)
+        return;
+    ui->moving = 0;
+    meta_save(ui->list, META_ORDER);
+}
+
+/* ← →: byter plats med grannen i raden (bara bland fästa eller bland ofästa) */
+static void arrange_step(Ui *ui, int dir)
+{
+    LoaderView *v = &ui->views[ui->tab];
+    int *sel = &ui->sel[ui->tab], nb = *sel + dir;
+    if (nb < 0 || nb >= v->count)
+        return;
+    int a = v->idx[*sel], b = v->idx[nb];
+    if (meta(a)->pinned != meta(b)->pinned || ui->list->items[a].type == ENTRY_UMD ||
+        ui->list->items[b].type == ENTRY_UMD) {
+        if (ui->repeat_held == 0) /* bara första trycket, inte när knappen hålls */
+            sound_play(SND_ERROR);
+        return;
+    }
+    int r = meta(a)->rank;
+    meta(a)->rank = meta(b)->rank;
+    meta(b)->rank = r;
+    v->idx[*sel] = b;
+    v->idx[nb] = a;
+    *sel = nb;
+    ui->still = 0;
+    sound_play(SND_MOVE);
+}
+
 static void menu_choose(Ui *ui)
 {
-    int i = ui_selected(ui);
-    switch (ui->menu_sel) {
+    int i = ui_selected(ui), items[3];
+    menu_items(ui, items);
+    switch (items[ui->menu_sel]) {
     case MI_PIN:
         if (!s_meta) { /* inget minne för listan – då går det inte att fästa */
             sound_play(SND_ERROR);
@@ -732,6 +821,11 @@ static void menu_choose(Ui *ui)
         resort(ui);
         sound_play(SND_TOGGLE);
         break;
+    case MI_MOVE:
+        ui->menu_open = 0;
+        start_arrange(ui);
+        sound_play(SND_SELECT);
+        break;
     case MI_SORT: /* menyn står kvar – nästa tryck nästa sortering */
         toggle_sort(ui);
         break;
@@ -741,6 +835,7 @@ static void menu_choose(Ui *ui)
 void ui_free(Ui *ui)
 {
     if (ui->list) {
+        stop_arrange(ui); /* en påbörjad flytt sparas */
         last_save(ui);
     }
     tex_free(ui->bg_old);
@@ -811,6 +906,18 @@ static int step_input(Ui *ui, const UiInput *in, float dt, int vertical)
         return dir;
     }
     return 0;
+}
+
+/* Nästa plats bland n poster: ett nytt tryck i kanten går runt till andra änden, en hållen
+ * knapp stannar i kanten – så att man inte råkar rulla förbi sista spelet (issue #32) */
+static int step_wrap(const Ui *ui, int cur, int delta, int n)
+{
+    int next = cur + delta;
+    if (next >= 0 && next < n)
+        return next;
+    if (ui->repeat_held > 0 || n <= 0)
+        return cur;
+    return (next % n + n) % n;
 }
 
 static void update_background(Ui *ui, float dt)
@@ -926,13 +1033,13 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
     vert.lx = 128;
     int move = step_input(ui, &vert, dt, 1) / 2;
     if (move && ui->music_view) {
-        int next = (ui->album_sel + move + s_nalb + 1) % (s_nalb + 1);
+        int next = step_wrap(ui, ui->album_sel, move, s_nalb + 1);
         if (next != ui->album_sel) {
             ui->album_sel = next;
             sound_play(SND_MOVE);
         }
     } else if (move && hi > lo) {
-        int next = lo + (ui->music_sel - lo + move + (hi - lo)) % (hi - lo);
+        int next = lo + step_wrap(ui, ui->music_sel - lo, move, hi - lo);
         if (next != ui->music_sel) {
             ui->music_sel = next;
             sound_play(SND_MOVE);
@@ -1183,7 +1290,7 @@ static void update_pictures(Ui *ui, const UiInput *in, float dt)
         vert.lx = 128;
         int move = step_input(ui, &vert, dt, 1);
         if (move) {
-            int next = (ui->pic_sel + move / 2 + n) % n;
+            int next = step_wrap(ui, ui->pic_sel, move / 2, n);
             if (next != ui->pic_sel) {
                 ui->pic_sel = next;
                 ui->pic_still = 0;
@@ -1355,7 +1462,7 @@ static void update_videos(Ui *ui, const UiInput *in, float dt)
         vert.lx = 128;
         int move = step_input(ui, &vert, dt, 1);
         if (move) {
-            int next = (ui->vid_sel + move / 2 + n) % n;
+            int next = step_wrap(ui, ui->vid_sel, move / 2, n);
             if (next != ui->vid_sel) {
                 ui->vid_sel = next;
                 ui->vid_still = 0;
@@ -1438,7 +1545,7 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
             ui->search_focus = 0;
             sound_play(SND_MOVE);
         } else if ((move == -2 || move == 2) && n > 0) {
-            int next = (ui->search_sel + move / 2 + n) % n;
+            int next = step_wrap(ui, ui->search_sel, move / 2, n);
             if (next != ui->search_sel) {
                 ui->search_sel = next;
                 sound_play(SND_MOVE);
@@ -1541,7 +1648,7 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
     }
     int move = step_input(ui, in, dt, 1);
     if ((move == 2 || move == -2) && s_npick > 0) {
-        int next = (ui->cat_sel + move / 2 + s_npick) % s_npick;
+        int next = step_wrap(ui, ui->cat_sel, move / 2, s_npick);
         if (next != ui->cat_sel) {
             ui->cat_sel = next;
             ui->cat_still = 0;
@@ -1617,6 +1724,7 @@ void ui_open_cc(Ui *ui)
     ui->cc_pos = ui->cc_sel; /* markeringen står där den stod sist, utan att glida dit */
     ui->cc_label = 0;
     ui->menu_open = ui->cat_open = 0;
+    stop_arrange(ui); /* en påbörjad flytt sparas som den står */
     sound_play(SND_OPEN);
 }
 
@@ -1731,6 +1839,17 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         }
         in = &none;
     }
+    /* Flytta: ← → flyttar kortet, ✕ / ○ / □ klart */
+    if (ui->moving) {
+        int move = step_input(ui, in, dt, 0);
+        if (move)
+            arrange_step(ui, move);
+        if (in->pressed & (PSP_CTRL_CROSS | PSP_CTRL_CIRCLE | PSP_CTRL_SQUARE)) {
+            stop_arrange(ui);
+            sound_play(SND_SELECT);
+        }
+        in = &none;
+    }
     int cc_was_open = ui->cc_open;
     int cc = update_cc(ui, in, dt);
     if (cc != UI_NONE)
@@ -1818,8 +1937,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         switch_tab(ui, TAB_GAMES);
         sound_play(SND_BACK);
     }
-    if (grid && (in->pressed & PSP_CTRL_TRIANGLE) && ui->intro >= 1 && ui->launch < 0)
-        switch_tab(ui, TAB_SEARCH); /* △: snabbt till sökningen */
+    /* △ öppnar inställningarna, som före 2.1.0 (issue #34) – musikfliken har △ för album */
+    if ((ui->tab == TAB_GAMES || ui->tab == TAB_MEDIA || grid) && (in->pressed & PSP_CTRL_TRIANGLE) &&
+        ui->intro >= 1 && ui->launch < 0)
+        return UI_SETTINGS;
     if ((ui->tab == TAB_GAMES || grid) && (in->pressed & PSP_CTRL_SQUARE) && ui_selected(ui) >= 0 &&
         ui->intro >= 1 && ui->launch < 0 && ui->list->items[ui_selected(ui)].type != ENTRY_UMD) {
         ui->menu_open = 1;
@@ -1832,12 +1953,12 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         if (move == 2 || move == -2) {
             int rows = (row_count + GRID_COLS - 1) / GRID_COLS;
             int r = *sel / GRID_COLS, c = *sel % GRID_COLS;
-            r = (r + (move > 0 ? 1 : -1) + rows) % rows;
+            r = step_wrap(ui, r, move > 0 ? 1 : -1, rows);
             next = r * GRID_COLS + c;
             if (next >= row_count)
                 next = row_count - 1;
         } else {
-            next = (*sel + move + row_count) % row_count;
+            next = step_wrap(ui, *sel, move, row_count);
         }
         if (next != *sel) {
             int wrapped = !grid && abs(next - *sel) > 1;
@@ -2290,6 +2411,14 @@ static void draw_row(Ui *ui)
                 draw_library_card(ui, x, y, w, h, focus, alpha);
                 continue;
             }
+            if (ui->moving && p == ui->sel[ui->tab]) { /* Flytta: kortet lyfts, med pilar åt båda hållen */
+                y -= 5;
+                float ay = y + h / 2, pa = alpha * (0.6f + 0.4f * sinf(ui->time * 5));
+                float l[6] = { x - 13, ay, x - 7, ay - 6, x - 7, ay + 6 };
+                float r[6] = { x + w + 13, ay, x + w + 7, ay - 6, x + w + 7, ay + 6 };
+                gfx_fan(x - 9, ay, l, 3, with_alpha(LIGHT, pa));
+                gfx_fan(x + w + 9, ay, r, 3, with_alpha(LIGHT, pa));
+            }
             draw_card(ui, v->idx[p], x, y, w, h, focus, alpha);
         }
     }
@@ -2365,6 +2494,20 @@ static void draw_details(Ui *ui)
     if (e->type != ENTRY_HOMEBREW && e->game_id[0])
         text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, fade), ALIGN_LEFT, e->game_id);
 
+    if (ui->moving) { /* Flytta: ◀ ▶ Flytta   ✕ Klart i stället för Starta */
+        float hx = MARGIN, hy = 246;
+        float l[6] = { hx, hy, hx + 6, hy - 4.5f, hx + 6, hy + 4.5f };
+        float r[6] = { hx + 15, hy, hx + 9, hy - 4.5f, hx + 9, hy + 4.5f };
+        gfx_fan(hx + 3, hy, l, 3, with_alpha(LIGHT, 0.9f * fade));
+        gfx_fan(hx + 12, hy, r, 3, with_alpha(LIGHT, 0.9f * fade));
+        hx += 21;
+        text_draw(hx, hy + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, fade), ALIGN_LEFT, L(S_F_MOVE));
+        hx += text_width(0.6f, 0, L(S_F_MOVE)) + 14;
+        gfx_button(hx + 6.5f, hy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * fade),
+                   with_alpha(DARK, fade));
+        text_draw(hx + 17, hy + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, fade), ALIGN_LEFT, L(S_F_DONE));
+        return;
+    }
     const char *go = L(S_LAUNCH);
     float bx = MARGIN, by = 233, bh = 26;
     float tw = text_width(0.66f, 0, go);
@@ -2559,14 +2702,14 @@ static void draw_library(Ui *ui)
         text_draw(kx, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, L(S_CATEGORIES));
     }
 
-    /* till höger: △ Sök   □ Alternativ (fäst, sortering) */
+    /* till höger: △ Inställningar   □ Alternativ (fäst, sortering) */
     float rx = SCREEN_W - MARGIN;
     text_draw(rx, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_RIGHT, L(S_OPTIONS));
     rx -= text_width(0.56f, 0, L(S_OPTIONS)) + 11;
     gfx_button(rx, 49, 6, BTN_SQUARE, with_alpha(LIGHT, 0.85f * ui_a), with_alpha(DARK, ui_a));
     rx -= 16;
-    text_draw(rx, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_RIGHT, L(S_SEARCH));
-    rx -= text_width(0.56f, 0, L(S_SEARCH)) + 11;
+    text_draw(rx, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_RIGHT, L(S_SETTINGS));
+    rx -= text_width(0.56f, 0, L(S_SETTINGS)) + 11;
     gfx_button(rx, 49, 6, BTN_TRIANGLE, with_alpha(LIGHT, 0.85f * ui_a), with_alpha(DARK, ui_a));
 
     /* korten – klipps under rubriken */
