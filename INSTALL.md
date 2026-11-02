@@ -58,8 +58,8 @@ On a PSP Go, psp5 looks in these folders on both the internal storage and a Memo
 |---|---|
 | ✕ or START | Start the game (in Music: play / pause) |
 | L / R | Switch between Games, Media, Search and Settings |
-| □ | Options: pin to front · Library: also sort · Music: shuffle · Search: delete a letter |
-| △ | Library: go to Search · Music: albums |
+| □ | Options: pin to front · move (pinned games) · Library: also sort · Music: shuffle · Search: delete a letter |
+| △ | Settings · Music: albums |
 | ← → in Music | Previous / next track · hold to seek |
 | ○ | Back |
 | SELECT | Categories (folders in ISO and PSP/GAME) |

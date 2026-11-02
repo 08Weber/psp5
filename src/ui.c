@@ -736,7 +736,8 @@ static int menu_count(const Ui *ui)
 static const char *menu_label(const Ui *ui, int k, char *buf, int size)
 {
     int items[3];
-    menu_items(ui, items);
+    if (k >= menu_items(ui, items)) /* menyn tonas ut och har just tappat en rad */
+        return "";
     switch (items[k]) {
     case MI_PIN:  return L(meta(ui_selected(ui))->pinned ? S_UNPIN : S_PIN);
     case MI_MOVE: return L(S_F_MOVE);
@@ -1827,6 +1828,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE;
         int move = step_input(ui, in, dt, 1);
         int items = menu_count(ui);
+        ui->menu_rows = items;
         if ((move == 2 || move == -2) && items > 1) {
             ui->menu_sel = (ui->menu_sel + move / 2 + items) % items;
             sound_play(SND_MOVE);
@@ -1945,6 +1947,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->intro >= 1 && ui->launch < 0 && ui->list->items[ui_selected(ui)].type != ENTRY_UMD) {
         ui->menu_open = 1;
         ui->menu_sel = 0;
+        ui->menu_rows = menu_count(ui);
         sound_play(SND_OPEN);
     }
     int move = ui->tab >= TAB_MUSIC || overlay ? 0 : step_input(ui, in, dt, grid);
@@ -2613,7 +2616,7 @@ static void draw_menu(Ui *ui)
         return;
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * a)));
     const float row = 26;
-    float w = 214, h = 26 + menu_count(ui) * row + 34, x = MARGIN - 6, y = 258 - h + (1 - a) * 10;
+    float w = 214, h = 26 + ui->menu_rows * row + 34, x = MARGIN - 6, y = 258 - h + (1 - a) * 10;
     gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, (int)(150 * a)));
     gfx_round_rect(x, y, w, h, 9, RGBA(40, 41, 47, (int)(255 * a)));
 
@@ -2621,7 +2624,7 @@ static void draw_menu(Ui *ui)
     text_ellipsis(title, sizeof(title), ui->list->items[i].title, 0.5f, w - 24);
     text_draw(x + 12, y + 18, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, title);
 
-    for (int k = 0; k < menu_count(ui); k++) {
+    for (int k = 0; k < ui->menu_rows; k++) {
         char buf[64];
         const char *item = menu_label(ui, k, buf, sizeof(buf));
         float ry = y + 26 + k * row;

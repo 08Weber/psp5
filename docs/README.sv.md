@@ -15,6 +15,25 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 2.1.1
+
+Buggfixar efter 2.1.0 (issues #29–#34, #37).
+
+- **USB-läget (#29):** `sys_usb_start` gör nu exakt som arkMenu i ARK-4 och ARK-5 – ingen
+  `scePowerBatteryDisableUsbCharging` (ARK:s laddtimer slår på laddningen igen inom sekunder), ingen
+  `usb.prx` och ingen `sceUsbstorBootSetCapacity`. Syns kabeln (0x020) i 5 s utan att datorn ansluter (0x002)
+  aktiveras USB om en gång. Varje anrop och varje ändrat `sceUsbGetState()` loggas i minnet och läggs till i
+  `<data>/usb.log` först när USB-läget stängs (en skrivning medan datorn har minneskortet kan förstöra FAT).
+- **Runtgående navigering (#32):** `step_wrap` i `ui.c` – ett nytt tryck i kanten går runt, en hållen knapp
+  stannar. Gäller Spel, biblioteket, musik, bilder, video, sökning och kategorier.
+- **△ = Inställningar (#34)** i Spel, Media och biblioteket, som före 2.1.0. Sökningen nås med L/R.
+- **Alla spel på Spel-skärmen (#30):** `allgames=1` i psp5.cfg tar bort gränsen på 8 senast spelade.
+- **Flytta (#31):** □-menyn i Spel. Egen ordning i `<data>/order.txt`; gäller bland fästa kort, och bland alla
+  när `allgames=1`. `start_arrange` ger korten täta platser i den ordning de syns, så inget hoppar.
+- **PBOOT.PBP (#37):** finns `PBOOT.PBP` bredvid `EBOOT.PBP` (uppdateringar, TempGBA Single Game) tas titel och
+  bilder därifrån, som i XMB (`Entry.art_pboot`, läses i `art_read_part`). Typ och spel-ID kommer från EBOOT.
+  En tom `TITLE` behåller mapp-/filnamnet. `Entry` blev större, så listcachen byggs om en gång.
+
 ## Version 1.6.0
 
 Önskemål från Reddit. Det som inte alla vill ha är av som standard.
