@@ -397,6 +397,12 @@ int sys_usb_start(void)
         }
         loaded = 1;
     }
+    /* Det systemet ännu har i sina cacheminnen ska ligga på lagringen innan datorn tar över den –
+     * Linux gör minnet skrivskyddat när FAT-tabellen ser trasig ut (issue #40) */
+    if (!s_ms_is_ef)
+        ULOG(sceIoSync("ms0:", 0));
+    if (s_model == 4)
+        ULOG(sceIoSync("ef0:", 0));
     if (sceUsbGetState() & PSP_USB_ACTIVATED) /* t.ex. usbnet eller ett tidigare USB-läge */
         ULOG(sceUsbDeactivate(0x1c8));
     ULOG(sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0));

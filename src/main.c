@@ -275,6 +275,8 @@ static void umd_refresh(EntryList *list, Ui *ui)
         font_ensure_cjk();
 }
 
+static int s_usb_mode; /* 1 = datorn äger minneskortet */
+
 /* home = 1: HOME läses i kärnläge och går till psp5 (Control Center) i stället för systemet */
 static void read_pad(UiInput *in, u32 *old, int home)
 {
@@ -289,9 +291,10 @@ static void read_pad(UiInput *in, u32 *old, int home)
     in->held = pad.Buttons;
     in->lx = pad.Lx;
     in->ly = pad.Ly;
-    /* ♪ (NOTE) eller L + R + START tar en skärmbild (PNG) i ms0:/PICTURE/PSP5 */
+    /* ♪ (NOTE) eller L + R + START tar en skärmbild (PNG) i ms0:/PICTURE/PSP5 – inte i USB-läget,
+     * där datorn äger minnet och en skrivning från PSP:n kan förstöra FAT (issue #40) */
     u32 combo = PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER | PSP_CTRL_START;
-    if ((in->pressed & PSP_CTRL_NOTE) || ((pad.Buttons & combo) == combo && (*old & combo) != combo)) {
+    if (!s_usb_mode && ((in->pressed & PSP_CTRL_NOTE) || ((pad.Buttons & combo) == combo && (*old & combo) != combo))) {
         osd_request_screenshot();
         in->pressed &= ~(PSP_CTRL_NOTE | combo);
     }
@@ -310,6 +313,7 @@ static void usb_mode(void)
     }
     u32 old = ~0u; /* ignorera knappen som startade läget (✕ eller ○), issue #10 */
     float t = 0;
+    s_usb_mode = 1;
     while (s_running) {
         UiInput in;
         read_pad(&in, &old, 0);
@@ -337,6 +341,7 @@ static void usb_mode(void)
             gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - t / 0.25f))));
         gfx_end();
     }
+    s_usb_mode = 0;
     sys_usb_stop();
     s_sleeping = s_resumed = 0; /* viloläge under USB-läget: ingen startskärm efteråt */
     font_term();

@@ -51,7 +51,8 @@ Games row or to sort by name or by what you added most recently. △ opens Setti
   MP3 itself or a `cover.jpg` / `folder.jpg` in the album folder – and holding ← or → seeks through the track
   (the longer you hold, the faster it goes).
 - **Pictures**: your JPEG and PNG pictures with a preview, and ✕ to view them full screen.
-- **Videos**: PMF videos in `VIDEO` and the short preview videos (ICON1.PMF) of your games.
+- **Videos**: PMF videos in `VIDEO` and the short preview videos (ICON1.PMF) of your games. MP4 videos (in `VIDEO`
+  or `MP_ROOT`) are listed with their thumbnail too, but they play in the XMB's Video column – psp5 can't play MP4 yet.
 
 Pressing ✕ (or START) starts the game the same way ARK's own menu does, so updates, patched ISOs and
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,

@@ -15,6 +15,21 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 2.1.2
+
+Buggfixar efter 2.1.1 (issues #38, #40, #41).
+
+- **Flikbytet hängde (#41):** PSP Go med ARK 5.2.0 frös vid L/R till Media (och Inställningar) direkt efter
+  start. Båda läste PICTURE (och VIDEO) på huvudtråden. Nu läser `media_thread` i `ui.c` bilder och videor i
+  bakgrunden, efter musikskanningen (en katalogläsning i taget), och `media_poll` byter in listorna i
+  huvudtråden. Tills dess visas "Läser in...". Bakgrundsbilderna i inställningarna tar listan från Bilder
+  (`ui_pic_count`/`ui_pic_path`) i stället för att läsa PICTURE själva. Listorna läses om efter USB-läget.
+- **MP4 i Videor (#38):** `.mp4` i `VIDEO`, `PSP/VIDEO` och `MP_ROOT` listas med sin `.THM`-bild. psp5 kan inte
+  spela MP4 (bara PMF via sceMpeg) – ✕ säger att den spelas i XMB → Video. Riktig uppspelning: 2.2.0.
+- **Skrivskyddat USB på Linux (#40):** `sceIoSync` på ms0:/ef0: innan USB aktiveras, och ingen skärmbild
+  (♪) i USB-läget – en skrivning medan datorn äger minnet kan förstöra FAT, och då monterar Linux det
+  skrivskyddat.
+
 ## Version 2.1.1
 
 Buggfixar efter 2.1.0 (issues #29–#34, #37).

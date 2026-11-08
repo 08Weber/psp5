@@ -17,6 +17,7 @@
 #include "config.h"
 #include "theme.h"
 #include "osd.h"
+#include "ui.h" /* bilderna i PICTURE */
 
 #define TITLE_Y     34.0f
 #define LEFT_X      32.0f
@@ -141,37 +142,14 @@ static void add_wall(const char *path)
     s_nwall++;
 }
 
-static void scan_walls(const char *dir, int depth)
-{
-    SceUID d = sceIoDopen(dir);
-    if (d < 0)
-        return;
-    SceIoDirent ent;
-    char path[sizeof(g_wallpaper)];
-    memset(&ent, 0, sizeof(ent));
-    while (sceIoDread(d, &ent) > 0 && s_nwall < MAX_WALLS) {
-        const char *dot = strrchr(ent.d_name, '.');
-        if (ent.d_name[0] != '.' && snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name) < (int)sizeof(path)) {
-            if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
-                if (depth == 0)
-                    scan_walls(path, 1);
-            } else if (dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg") || !strcasecmp(dot, ".png") ||
-                               !strcasecmp(dot, ".bmp"))) {
-                add_wall(path);
-            }
-        }
-        memset(&ent, 0, sizeof(ent));
-    }
-    sceIoDclose(d);
-}
-
-/* Bilderna i PICTURE och vilken som är vald nu */
+/* Bilderna i PICTURE och vilken som är vald nu. Listan kommer från Bilder-fliken, som läses in i
+ * bakgrunden – en egen katalogläsning här fick inställningarna att hänga på PSP Go (issue #41). */
 static void load_walls(void)
 {
     s_nwall = 0;
-    if (!sys_ms_is_ef())
-        scan_walls("ms0:/PICTURE", 0);
-    scan_walls("ef0:/PICTURE", 0); /* PSP Go:s internminne */
+    for (int i = 0; i < ui_pic_count() && s_nwall < MAX_WALLS; i++)
+        if (strstr(ui_pic_path(i), "/PICTURE/"))
+            add_wall(ui_pic_path(i));
     s_wall_sel = 0;
     for (int i = 0; i < s_nwall; i++)
         if (!strcmp(s_wall_path[i], g_wallpaper))
@@ -291,9 +269,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "2.1.1 (ARK-4)");
+    info(c, L(S_VERSION), "2.1.2 (ARK-4)");
 #else
-    info(c, L(S_VERSION), "2.1.1 (ARK-5)");
+    info(c, L(S_VERSION), "2.1.2 (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 

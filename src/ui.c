@@ -628,6 +628,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->lib_label_for = -2;
     ui->cover_for = -2;
     ui->pic_tex_for = -1;
+    ui->vid_thumb_for = -1;
     ui->search_launch_idx = -1;
     ui->tab_anim = 1;
     ui->accent[0] = ui->accent[1] = ui->accent[2] = 120;
@@ -833,6 +834,8 @@ static void menu_choose(Ui *ui)
     }
 }
 
+static void media_free(void);
+
 void ui_free(Ui *ui)
 {
     if (ui->list) {
@@ -853,6 +856,10 @@ void ui_free(Ui *ui)
     ui->pic_tex = NULL;
     ui->pic_tex_for = -1;
     ui->pic_viewing = 0;
+    tex_free(ui->vid_thumb);
+    ui->vid_thumb = NULL;
+    ui->vid_thumb_for = -1;
+    media_free();
     tex_free(s_wall);
     s_wall = NULL;
     strcpy(s_wall_for, "\1");
@@ -1144,8 +1151,10 @@ typedef struct {
     char sub[64];
 } PicItem;
 
-static PicItem *s_pics;
-static int s_npics, s_pics_cap, s_pics_scanned, s_pics_gen;
+/* Listorna som visas (bara huvudtråden rör dem) och listorna som bakgrundstråden fyller */
+static PicItem *s_pics, *s_scan_pics;
+static int s_npics, s_pics_cap, s_scan_npics, s_scan_pics_cap;
+static volatile int s_media_quit; /* ui_free: bakgrundsskanningen ska sluta */
 
 static int cmp_pic(const void *a, const void *b)
 {
@@ -1156,17 +1165,17 @@ static int cmp_pic(const void *a, const void *b)
 
 static void add_pic(const char *path, const char *name, const char *folder, const char *dot)
 {
-    if (s_npics >= MAX_PICS)
+    if (s_scan_npics >= MAX_PICS)
         return;
-    if (s_npics >= s_pics_cap) {
-        int ncap = s_pics_cap ? s_pics_cap * 2 : 32;
-        PicItem *p = realloc(s_pics, ncap * sizeof(*s_pics));
+    if (s_scan_npics >= s_scan_pics_cap) {
+        int ncap = s_scan_pics_cap ? s_scan_pics_cap * 2 : 32;
+        PicItem *p = realloc(s_scan_pics, ncap * sizeof(*s_scan_pics));
         if (!p)
             return;
-        s_pics = p;
-        s_pics_cap = ncap;
+        s_scan_pics = p;
+        s_scan_pics_cap = ncap;
     }
-    PicItem *it = &s_pics[s_npics++];
+    PicItem *it = &s_scan_pics[s_scan_npics++];
     snprintf(it->path, sizeof(it->path), "%s", path);
     int stem = (int)(dot - name);
     if (stem >= (int)sizeof(it->title))
@@ -1191,7 +1200,7 @@ static void scan_pic_dir(const char *dir, const char *folder, int depth)
     SceIoDirent ent;
     char path[160];
     memset(&ent, 0, sizeof(ent));
-    while (sceIoDread(d, &ent) > 0 && s_npics < MAX_PICS) {
+    while (!s_media_quit && sceIoDread(d, &ent) > 0 && s_scan_npics < MAX_PICS) {
         if (ent.d_name[0] != '.' && snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name) < (int)sizeof(path)) {
             if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
                 if (depth < 2)
@@ -1209,14 +1218,8 @@ static void scan_pic_dir(const char *dir, const char *folder, int depth)
     sceIoDclose(d);
 }
 
-static void ensure_pics(void)
+static void scan_pics(void)
 {
-    if (osd_take_screenshot_done())
-        s_pics_scanned = 0;
-    if (s_pics_scanned)
-        return;
-    s_pics_scanned = 1;
-    s_npics = 0;
     static const char *const dirs[] = { "PICTURE", "PSP/PHOTO", "PSP/SCREENSHOT" };
     for (int d = 0; d < 2; d++) {
         if (d == 0 && sys_ms_is_ef())
@@ -1228,10 +1231,12 @@ static void ensure_pics(void)
             scan_pic_dir(root, k == 0 ? "" : (k == 1 ? "PHOTO" : "SCREENSHOT"), 0);
         }
     }
-    if (s_npics > 1)
-        qsort(s_pics, s_npics, sizeof(*s_pics), cmp_pic);
-    s_pics_gen++;
+    if (s_scan_npics > 1)
+        qsort(s_scan_pics, s_scan_npics, sizeof(*s_scan_pics), cmp_pic);
 }
+
+int ui_pic_count(void) { return s_npics; }
+const char *ui_pic_path(int i) { return i >= 0 && i < s_npics ? s_pics[i].path : ""; }
 
 static void set_pic_wallpaper(Ui *ui, const char *path)
 {
@@ -1247,7 +1252,6 @@ static void set_pic_wallpaper(Ui *ui, const char *path)
 
 static void update_pictures(Ui *ui, const UiInput *in, float dt)
 {
-    ensure_pics();
     int n = s_npics;
     if (ui->pic_sel >= n)
         ui->pic_sel = n > 0 ? n - 1 : 0;
@@ -1335,27 +1339,29 @@ typedef struct {
     Entry entry;
     char title[72];
     char sub[48];
+    u8 mp4; /* MP4 spelas bara i XMB (issue #38) – psp5 visar den med sin .THM-bild */
 } VidItem;
 
-static VidItem *s_vids;
-static int s_nvids, s_vids_cap, s_vids_scanned;
+static VidItem *s_vids, *s_scan_vids;
+static int s_nvids, s_vids_cap, s_scan_nvids, s_scan_vids_cap;
 
-static void add_vid_item(const Entry *e, const char *title, const char *sub)
+static void add_vid_item(const Entry *e, const char *title, const char *sub, int mp4)
 {
-    if (s_nvids >= MAX_VIDS)
+    if (s_scan_nvids >= MAX_VIDS)
         return;
-    if (s_nvids >= s_vids_cap) {
-        int ncap = s_vids_cap ? s_vids_cap * 2 : 32;
-        VidItem *p = realloc(s_vids, ncap * sizeof(*s_vids));
+    if (s_scan_nvids >= s_scan_vids_cap) {
+        int ncap = s_scan_vids_cap ? s_scan_vids_cap * 2 : 32;
+        VidItem *p = realloc(s_scan_vids, ncap * sizeof(*s_scan_vids));
         if (!p)
             return;
-        s_vids = p;
-        s_vids_cap = ncap;
+        s_scan_vids = p;
+        s_scan_vids_cap = ncap;
     }
-    VidItem *it = &s_vids[s_nvids++];
+    VidItem *it = &s_scan_vids[s_scan_nvids++];
     it->entry = *e;
     snprintf(it->title, sizeof(it->title), "%s", title);
     snprintf(it->sub, sizeof(it->sub), "%s", sub);
+    it->mp4 = mp4;
 }
 
 static void scan_vid_dir(const char *dir, const char *folder, int depth)
@@ -1366,27 +1372,28 @@ static void scan_vid_dir(const char *dir, const char *folder, int depth)
     SceIoDirent ent;
     char path[160];
     memset(&ent, 0, sizeof(ent));
-    while (sceIoDread(d, &ent) > 0 && s_nvids < MAX_VIDS) {
+    while (!s_media_quit && sceIoDread(d, &ent) > 0 && s_scan_nvids < MAX_VIDS) {
         if (ent.d_name[0] != '.' && snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name) < (int)sizeof(path)) {
             if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
                 if (depth < 2)
                     scan_vid_dir(path, ent.d_name, depth + 1);
             } else if (ent.d_stat.st_size > 2048) {
                 const char *dot = strrchr(ent.d_name, '.');
-                if (dot && dot != ent.d_name && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".mps"))) {
+                int mp4 = dot && !strcasecmp(dot, ".mp4");
+                if (dot && dot != ent.d_name && (mp4 || !strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".mps"))) {
                     Entry e;
                     memset(&e, 0, sizeof(e));
                     e.type = ENTRY_HOMEBREW;
                     snprintf(e.path, sizeof(e.path), "%s", path);
                     e.vid_offset = 0;
-                    e.vid_size = (u32)ent.d_stat.st_size;
+                    e.vid_size = mp4 ? 0 : (u32)ent.d_stat.st_size; /* 0: förhandsvisningen rör den inte */
                     int stem = (int)(dot - ent.d_name);
                     if (stem >= (int)sizeof(e.title))
                         stem = sizeof(e.title) - 1;
                     snprintf(e.title, sizeof(e.title), "%.*s", stem, ent.d_name);
                     char sub[48];
-                    snprintf(sub, sizeof(sub), "%s  ·  PMF", folder && folder[0] ? folder : "VIDEO");
-                    add_vid_item(&e, e.title, sub);
+                    snprintf(sub, sizeof(sub), "%s  ·  %s", folder && folder[0] ? folder : "VIDEO", mp4 ? "MP4" : "PMF");
+                    add_vid_item(&e, e.title, sub, mp4);
                 }
             }
         }
@@ -1395,39 +1402,109 @@ static void scan_vid_dir(const char *dir, const char *folder, int depth)
     sceIoDclose(d);
 }
 
-static void ensure_videos(const Ui *ui)
+static void scan_videos(void)
 {
-    if (s_vids_scanned)
-        return;
-    s_vids_scanned = 1;
-    s_nvids = 0;
-    static const char *const dirs[] = { "VIDEO", "PSP/VIDEO" };
+    /* som XMB:s Video: VIDEO och MP_ROOT (100MNV01, 101ANV01) */
+    static const char *const dirs[] = { "VIDEO", "PSP/VIDEO", "MP_ROOT" };
     for (int d = 0; d < 2; d++) {
         if (d == 0 && sys_ms_is_ef())
             continue;
         const char *dev = d == 0 ? "ms0:" : "ef0:";
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < 3; k++) {
             char root[64];
             snprintf(root, sizeof(root), "%s/%s", dev, dirs[k]);
             scan_vid_dir(root, "VIDEO", 0);
         }
     }
-    /* Lägg även till spelens egna ICON1.PMF-videor så att videospelaren kan spela dem */
-    if (ui && ui->list) {
-        for (int i = 0; i < ui->list->count && s_nvids < MAX_VIDS; i++) {
+}
+
+/* --- bilder och videor läses in i en egen tråd ---
+ * Katalogläsningen på huvudtråden fick flikbytet med L/R (Media) och inställningarna att hänga
+ * på PSP Go med ARK 5.2.0 (issue #41). Tråden fyller s_scan_* efter musikskanningen – en
+ * katalogläsning i taget – och huvudtråden byter in listorna i media_poll när den är klar. */
+static SceUID s_media_th = -1;
+static volatile int s_media_done; /* tråden är klar: s_scan_* väntar på huvudtråden */
+static int s_media_loaded;        /* listorna har lästs in minst en gång sedan start */
+
+static int media_thread(SceSize args, void *argp)
+{
+    while (!s_media_quit && music_scanning())
+        sceKernelDelayThread(100 * 1000);
+    scan_pics();
+    scan_videos();
+    s_media_done = 1;
+    return 0;
+}
+
+static void media_thread_end(void)
+{
+    if (s_media_th < 0)
+        return;
+    sceKernelWaitThreadEnd(s_media_th, NULL);
+    sceKernelDeleteThread(s_media_th);
+    s_media_th = -1;
+}
+
+/* Varje bildruta: byter in färdiga listor och startar en ny skanning när det behövs */
+static void media_poll(const Ui *ui)
+{
+    if (s_media_done) {
+        media_thread_end();
+        s_media_done = 0;
+        s_media_loaded = 1;
+        /* spelens egna ICON1.PMF-videor, så att videospelaren kan spela dem (listan hör till huvudtråden) */
+        for (int i = 0; ui->list && i < ui->list->count && s_scan_nvids < MAX_VIDS; i++) {
             const Entry *e = &ui->list->items[i];
             if (!is_dupe(ui->list, i) && e->vid_size > 2048) {
                 char sub[48];
                 snprintf(sub, sizeof(sub), "%s  ·  PMF", e->game_id[0] ? e->game_id : "ICON1");
-                add_vid_item(e, e->title, sub);
+                add_vid_item(e, e->title, sub, 0);
             }
         }
+        free(s_pics);
+        s_pics = s_scan_pics;
+        s_npics = s_scan_npics;
+        s_pics_cap = s_scan_pics_cap;
+        free(s_vids);
+        s_vids = s_scan_vids;
+        s_nvids = s_scan_nvids;
+        s_vids_cap = s_scan_vids_cap;
+        s_scan_pics = NULL;
+        s_scan_vids = NULL;
+        s_scan_npics = s_scan_pics_cap = s_scan_nvids = s_scan_vids_cap = 0;
+    }
+    static int again;
+    again |= osd_take_screenshot_done(); /* en ny skärmbild ska synas i Bilder */
+    if (s_media_th < 0 && (!s_media_loaded || again)) {
+        again = 0;
+        s_media_quit = 0;
+        s_media_th = sceKernelCreateThread("psp5_media", media_thread, 0x30, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+        if (s_media_th >= 0 && sceKernelStartThread(s_media_th, 0, NULL) < 0) {
+            sceKernelDeleteThread(s_media_th);
+            s_media_th = -1;
+        }
+        if (s_media_th < 0)
+            s_media_loaded = 1; /* ingen tråd: tomma listor hellre än ett nytt försök varje bildruta */
     }
 }
 
+/* Avslutar skanningen och glömmer listorna – nästa start läser in dem på nytt (t.ex. efter USB) */
+static void media_free(void)
+{
+    s_media_quit = 1;
+    media_thread_end();
+    s_media_done = s_media_loaded = 0;
+    free(s_scan_pics);
+    free(s_scan_vids);
+    s_scan_pics = NULL;
+    s_scan_vids = NULL;
+    s_scan_npics = s_scan_pics_cap = s_scan_nvids = s_scan_vids_cap = 0;
+}
+
+static int media_loading(void) { return !s_media_loaded; }
+
 static void update_videos(Ui *ui, const UiInput *in, float dt)
 {
-    ensure_videos(ui);
     int n = s_nvids;
     if (ui->vid_sel >= n)
         ui->vid_sel = n > 0 ? n - 1 : 0;
@@ -1472,9 +1549,14 @@ static void update_videos(Ui *ui, const UiInput *in, float dt)
         }
         u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
         if (ui->intro >= 1 && (in->pressed & confirm)) {
-            ui->vid_viewing = 1;
-            ui->vid_still = 1.0f;
-            sound_play(SND_SELECT);
+            if (s_vids[ui->vid_sel].mp4) { /* psp5 kan inte spela MP4 – XMB kan */
+                ui_toast(ui, L(S_MP4_IN_XMB));
+                sound_play(SND_ERROR);
+            } else {
+                ui->vid_viewing = 1;
+                ui->vid_still = 1.0f;
+                sound_play(SND_SELECT);
+            }
         }
     }
 
@@ -1484,6 +1566,19 @@ static void update_videos(Ui *ui, const UiInput *in, float dt)
         ui->vid_target = ui->vid_sel - (MROWS - 1);
     ui->vid_scroll = approach(ui->vid_scroll, ui->vid_target, 14.0f, dt);
     ui->vid_still += dt;
+
+    /* MP4: bilden XMB visar, <namn>.THM bredvid filen */
+    if (ui->vid_thumb_for != ui->vid_sel && ui->vid_still >= 0.14f) {
+        tex_free(ui->vid_thumb);
+        ui->vid_thumb = NULL;
+        ui->vid_thumb_for = ui->vid_sel;
+        const char *p = s_vids[ui->vid_sel].entry.path, *dot = strrchr(p, '.');
+        if (s_vids[ui->vid_sel].mp4 && dot) {
+            char thm[sizeof(s_vids[0].entry.path) + 4];
+            snprintf(thm, sizeof(thm), "%.*s.THM", (int)(dot - p), p);
+            ui->vid_thumb = art_load_wallpaper(thm);
+        }
+    }
 }
 
 /* Sök: tangentbord i rutnät (7 per rad: A–Z, mellanslag, ⌫, siffror) + direktfiltrerade spel och appar */
@@ -1808,6 +1903,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->tab_anim = clampf(ui->tab_anim + dt * 4.0f, 0, 1);
     if (ui->toast_time > 0)
         ui->toast_time -= dt;
+    media_poll(ui);
 
     if (ui->launch >= 0) {
         preview_want(NULL, -1); /* spelets musik ska inte spela över startljudet */
@@ -1911,8 +2007,6 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
     /* Media-raden: 3 kort (Music, Pictures, Videos) */
     if (ui->tab == TAB_MEDIA && !overlay) {
-        ensure_pics();
-        ensure_videos(ui);
         int move_m = step_input(ui, in, dt, 0);
         if (move_m) {
             int next = (ui->sel[TAB_MEDIA] + move_m + 3) % 3;
@@ -2563,8 +2657,6 @@ static void draw_media_card(int kind, float x, float y, float w, float h, float 
 
 static void draw_media_row(Ui *ui)
 {
-    ensure_pics();
-    ensure_videos(ui);
     float row_alpha = ui->intro * smooth(ui->tab_anim);
     int nearest = (int)floorf(ui->pos + 0.5f);
     for (int pass = 0; pass < 2; pass++) {
@@ -2584,7 +2676,7 @@ static void draw_media_row(Ui *ui)
     text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * row_alpha),
               ALIGN_LEFT, ui->label);
 
-    static const char *const badges[3] = { "MP3", "IMG", "PMF" };
+    static const char *const badges[3] = { "MP3", "IMG", "VIDEO" };
     int counts[3] = { music_count(), s_npics, s_nvids };
     int sel = clampf(ui->sel[TAB_MEDIA], 0, 2);
     const char *badge = badges[sel];
@@ -2592,7 +2684,10 @@ static void draw_media_row(Ui *ui)
     gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(LIGHT, 0.92f * row_alpha));
     text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(DARK, row_alpha), ALIGN_CENTER, badge);
     char cnt[32];
-    snprintf(cnt, sizeof(cnt), "%d", counts[sel]);
+    if (sel > 0 && media_loading())
+        snprintf(cnt, sizeof(cnt), "...");
+    else
+        snprintf(cnt, sizeof(cnt), "%d", counts[sel]);
     text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, row_alpha), ALIGN_LEFT, cnt);
 
     const char *open = L(S_F_OPEN);
@@ -3010,7 +3105,6 @@ static void draw_music(Ui *ui)
 /* Bildfliken: bildlista till vänster, förhandsvisning med upplösning till höger, helskärm med ✕ */
 static void draw_pictures(Ui *ui)
 {
-    ensure_pics();
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
     int n = s_npics;
@@ -3038,6 +3132,10 @@ static void draw_pictures(Ui *ui)
         text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, info);
     }
 
+    if (!n && media_loading()) {
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MEDIA));
+        return;
+    }
     if (!n) {
         text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_PICTURES));
         text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_PICTURES)));
@@ -3115,7 +3213,6 @@ static void draw_pic_fullscreen(Ui *ui)
 /* Videofliken: videolista till vänster, PMF/MPS-uppspelning till höger, helskärm med ✕ */
 static void draw_videos(Ui *ui)
 {
-    ensure_videos(ui);
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
     int n = s_nvids;
@@ -3128,8 +3225,12 @@ static void draw_videos(Ui *ui)
 
     if (n > 0 && ui->vid_sel < n) {
         Texture *vt = ui->preview_anim > 0 ? preview_frame(VID_PREVIEW + ui->vid_sel) : NULL;
+        float va = smooth(ui->preview_anim);
+        if (!vt && ui->vid_thumb && ui->vid_thumb_for == ui->vid_sel) {
+            vt = ui->vid_thumb; /* MP4: .THM-bilden */
+            va = 1;
+        }
         if (vt) {
-            float va = smooth(ui->preview_anim);
             float s = fminf(bw / vt->w, bh / vt->h);
             float iw = vt->w * s, ih = vt->h * s;
             float ix = bx + (bw - iw) / 2, iy = by + (bh - ih) / 2;
@@ -3140,13 +3241,19 @@ static void draw_videos(Ui *ui)
             draw_play_glyph(bx + bw / 2 + 1, by + bh / 2, 7.5f, 0, with_alpha(LIGHT, 0.9f * a));
         }
         char info[64];
-        if (vt)
+        if (s_vids[ui->vid_sel].mp4) /* bildens storlek är .THM-bildens, inte videons */
+            snprintf(info, sizeof(info), "MP4  ·  %d / %d", ui->vid_sel + 1, n);
+        else if (vt)
             snprintf(info, sizeof(info), "%d × %d  ·  %d / %d", vt->w, vt->h, ui->vid_sel + 1, n);
         else
             snprintf(info, sizeof(info), "%d / %d", ui->vid_sel + 1, n);
         text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, info);
     }
 
+    if (!n && media_loading()) {
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MEDIA));
+        return;
+    }
     if (!n) {
         text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_VIDEOS));
         text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_VIDEOS)));
@@ -3195,6 +3302,8 @@ static void draw_vid_fullscreen(Ui *ui)
 {
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(6, 6, 10, 252));
     Texture *vt = preview_frame(VID_PREVIEW + ui->vid_sel);
+    if (!vt && ui->vid_thumb_for == ui->vid_sel)
+        vt = ui->vid_thumb; /* ← → kan stanna på en MP4: visa dess bild */
     if (vt) {
         float s = fminf((float)SCREEN_W / vt->w, (float)SCREEN_H / vt->h);
         float w = vt->w * s, h = vt->h * s;

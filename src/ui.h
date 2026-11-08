@@ -88,6 +88,8 @@ typedef struct {
     int vid_target;
     float vid_still;
     int vid_viewing;     /* 1 = helskärmsvisning i Video-fliken */
+    Texture *vid_thumb;  /* MP4-filens .THM-bild */
+    int vid_thumb_for;   /* videons index, -1 = ingen */
 
     /* sök (TAB_SEARCH) */
     char search_query[48];
@@ -152,6 +154,9 @@ void ui_replay_intro(Ui *ui);
 /* Index i spellistan för markerad post, eller -1. */
 int ui_selected(const Ui *ui);
 void ui_set_tab(Ui *ui, int tab);
+/* bilderna i PICTURE, PSP/PHOTO och PSP/SCREENSHOT (inläses i bakgrunden) – till bakgrundsbilderna i inställningarna */
+int ui_pic_count(void);
+const char *ui_pic_path(int i);
 
 /* Enkel skärm under första skanningen. */
 void ui_draw_scanning(int done, const char *name, float time);
