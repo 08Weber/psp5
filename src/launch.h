@@ -11,4 +11,9 @@ int launch_supported(void);
  * får frigöra listan innan. Returnerar bara vid fel. */
 int launch_entry(const Entry *e);
 
+/* UMD Video-ISO (ISO/VIDEO, issue #27): ARK monterar den som UMD-skiva i XMB vid nästa
+ * omstart av XMB (sctrlKernelExitVSH, som sys_exit_xmb gör). Returnerar <0 om det inte går
+ * (ingen ARK, eller ISO:n är ingen videoskiva) – då är inget ändrat. */
+int launch_umd_video(const char *iso_path);
+
 #endif

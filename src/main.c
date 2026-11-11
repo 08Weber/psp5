@@ -400,10 +400,20 @@ static int run_action(int action, EntryList *list, Ui *ui)
 {
     /* psp5 fungerar uppenbarligen. Till XMB tas bara startskyddet bort: launcherläget
      * ska vara fortsatt pausat där. */
-    if (action == SA_XMB)
+    if (action == SA_XMB || action == SA_UMD_VIDEO)
         sceIoRemove(START_MARK);
     else
         start_confirmed();
+    if (action == SA_UMD_VIDEO) {
+        /* UMD Video-ISO (issue #27): monteras i XMB. Går det inte står psp5 kvar. */
+        char iso[sizeof(ui->umd_video_path)];
+        snprintf(iso, sizeof(iso), "%s", ui->umd_video_path);
+        if (launch_umd_video(iso) < 0) {
+            start_confirmed(); /* psp5 fortsätter som vanligt */
+            ui_toast(ui, L(S_VIDEO_FAILED));
+            return 0;
+        }
+    }
     switch (action) {
     case SA_SUSPEND:
         sys_suspend();
@@ -444,6 +454,7 @@ static int run_action(int action, EntryList *list, Ui *ui)
     app_stop(list, ui);
     switch (action) {
     case SA_XMB:      sys_exit_xmb(); break;
+    case SA_UMD_VIDEO: sys_exit_xmb(); break; /* ISO:n är monterad – XMB startar med skivan */
     case SA_RESTART:  sys_restart(); break;
     case SA_SHUTDOWN: sys_shutdown(); break;
     case SA_RECOVERY: sys_recovery(); break;

@@ -88,7 +88,7 @@ typedef struct {
     int vid_target;
     float vid_still;
     int vid_viewing;     /* 1 = helskärmsvisning i Video-fliken */
-    Texture *vid_thumb;  /* MP4-filens .THM-bild */
+    Texture *vid_thumb;  /* MP4-filens .THM-bild, UMD Video-skivans ICON0 */
     int vid_thumb_for;   /* videons index, -1 = ingen */
 
     /* sök (TAB_SEARCH) */
@@ -133,6 +133,7 @@ typedef struct {
     float cc_leave;      /* >0: tonar till svart innan åtgärden körs, 1 = klart */
     int cc_confirm;      /* valt alternativ väntar på ett andra tryck */
     int cc_action;       /* SA_* som main.c ska utföra efter UI_ACTION */
+    char umd_video_path[256]; /* SA_UMD_VIDEO: ISO:n i ISO/VIDEO */
 
     char toast[96];
     float toast_time;

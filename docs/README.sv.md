@@ -15,6 +15,34 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 2.1.3
+
+Buggfixar och önskemål efter 2.1.2 (issues #27, #39, #43, #44).
+
+- **M4A i Musik (#44):** `.m4a` (och `.m4b`) i `MUSIC` listas och spelas. `src/m4a.c` läser MP4-boxarna direkt
+  ur filen med sökningar: iTunes-taggarna (`©nam`, `©ART`/`aART`, `©alb`, `trkn`) och omslaget (`covr`) vid
+  skanningen, och ljudspårets tabeller (`stsz`, `stco`/`co64`, `stsc`) när låten startar – 4 byte per bildruta.
+  `moov` får ligga både före och efter `mdat`. Boxarna läses genom ett 4 KB-fönster per anrop (1–4 läsningar per
+  fil vid skanningen i stället för ~50). Under uppspelningen läses 32 KB i förväg (som MP3-bufferten), så att
+  ljudet inte hackar när laddartråden läser spelbilder. Utbuffertarna rymmer 2048 prover, ifall avkodaren gör
+  HE-AAC:s SBR-del själv. Testet `sh tools/tests/m4a/run.sh` kör `m4a.c` på datorn (med AddressSanitizer) mot
+  syntetiska filer från `gen.py`, även avkortade och förstörda. AAC-bildrutorna avkodas en i taget med `sceAudiocodec`
+  (`PSP_CODEC_AAC`, ME:s EDRAM). Går första bildrutan inte att avkoda rå provas den med ett ADTS-huvud, och så
+  fortsätter låten. HE-AAC spelas som sin AAC-LC-kärna. ALAC och andra kodekar i M4A listas inte – PSP:n kan inte
+  avkoda dem.
+- **UMD Video (#27):** `ISO/VIDEO/*.iso` (ms0: och ef0:) med `UMD_VIDEO/PLAYLIST.UMD` (eller `UMD_AUDIO`)
+  listas i Videor med titel ur skivans PARAM.SFO och ICON0 (`scan_umd_video_isos` i mediatråden). ✕ gör som ARK:s
+  `launch_umdvideo_mount` (core/vshctrl/virtual_mp4.c): `sctrlSESetUmdFile`, `sctrlSESetBootConfFileIndex(4)`
+  (`MODE_VSHUMD`) och `sctrlSESetDiscType`, sedan `sys_exit_xmb` – launcherläget pausas och XMB startar med ISO:n
+  som skiva. En UMD Video-skiva i enheten känns igen av `umd.c` (UMD_VIDEO/PLAYLIST.UMD) och listas också; ✕ går
+  till XMB, som spelar skivan. Bara `.iso`, som ARK:s eget stöd i XMB. `find_in_dir` i `iso.c` har nu egen
+  sektorbuffert per anrop – mediatråden och huvudtråden kan läsa ISO:er samtidigt.
+- **Spelvideor i Videor (#43):** spelens ICON1.PMF listas inte längre i Media → Videor, bara egna filer.
+  Förhandsvisningen på korten i Spel finns kvar.
+- **Kategorier (#39):** "Alla" i kategoriväljaren räknar alla spel, även de i kategorier (`s_cat_n[t][0]`
+  räknade bara spel utan kategori). I en vald kategori visar Spel-raden alla dess spel – gränsen på 8 senast
+  spelade gäller bara "Alla". SELECT igen stänger väljaren i stället för att öppna Control Center (HOME gör det).
+
 ## Version 2.1.2
 
 Buggfixar efter 2.1.1 (issues #38, #40, #41).

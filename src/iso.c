@@ -1,6 +1,7 @@
 /* psp5 – made by 08Weber */
 #include <string.h>
 #include <strings.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <zlib.h>
 #include "iso.h"
@@ -79,10 +80,23 @@ static u32 le32(const u8 *p)
     return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
 }
 
-/* Söker efter `name` i en katalog (extent/size). Namn i ISO9660 kan sluta på ";1". */
+/* Söker efter `name` i en katalog (extent/size). Namn i ISO9660 kan sluta på ";1".
+ * Sektorbufferten är egen per anrop: mediatråden (UMD Video i ISO/VIDEO) och huvudtråden
+ * kan läsa ISO:er samtidigt. */
+static int find_dir_sector(IsoReader *r, u8 *sector, u32 dir_lba, u32 dir_size, const char *name, IsoFile *out);
+
 static int find_in_dir(IsoReader *r, u32 dir_lba, u32 dir_size, const char *name, IsoFile *out)
 {
-    static u8 sector[SECTOR];
+    u8 *sector = malloc(SECTOR);
+    if (!sector)
+        return 0;
+    int found = find_dir_sector(r, sector, dir_lba, dir_size, name, out);
+    free(sector);
+    return found;
+}
+
+static int find_dir_sector(IsoReader *r, u8 *sector, u32 dir_lba, u32 dir_size, const char *name, IsoFile *out)
+{
     int name_len = strlen(name);
 
     for (u32 pos = 0; pos < dir_size; pos += SECTOR) {

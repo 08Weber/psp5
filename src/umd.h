@@ -20,4 +20,10 @@ void umd_stop(void);
  * *has = 1 och *e = skivans post, eller *has = 0 om ingen spelskiva sitter i. */
 int umd_poll(Entry *e, int *has);
 
+/* UMD Video-skiva i enheten (issue #27)? 1 och titeln (UMD_VIDEO/PARAM.SFO) i så fall.
+ * Spelas i XMB – psp5 visar den bara i Videor. */
+int umd_video(char *title, int size);
+/* Ökar när en videoskiva sätts i eller tas ut – Videor läses då om */
+int umd_video_generation(void);
+
 #endif

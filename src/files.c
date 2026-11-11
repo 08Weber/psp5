@@ -845,7 +845,7 @@ static int is_image(const FileEntry *e)
 static int is_music(const FileEntry *e)
 {
     const char *dot = file_ext(e);
-    return dot && !strcasecmp(dot, ".mp3");
+    return dot && (!strcasecmp(dot, ".mp3") || !strcasecmp(dot, ".m4a") || !strcasecmp(dot, ".m4b"));
 }
 
 static int is_game(const FileEntry *e)
@@ -1186,7 +1186,7 @@ static u32 type_color(const char *ext)
     static const struct { const char *ext; u32 color; } T[] = {
         { "iso", RGBA(74, 112, 204, 255) }, { "cso", RGBA(74, 112, 204, 255) }, { "zso", RGBA(74, 112, 204, 255) }, { "dax", RGBA(74, 112, 204, 255) },
         { "pbp", RGBA(128, 92, 196, 255) }, { "prx", RGBA(128, 92, 196, 255) },
-        { "mp3", RGBA(52, 156, 110, 255) }, { "at3", RGBA(52, 156, 110, 255) }, { "wav", RGBA(52, 156, 110, 255) },
+        { "mp3", RGBA(52, 156, 110, 255) }, { "m4a", RGBA(52, 156, 110, 255) }, { "at3", RGBA(52, 156, 110, 255) }, { "wav", RGBA(52, 156, 110, 255) },
         { "png", RGBA(206, 128, 62, 255) }, { "jpg", RGBA(206, 128, 62, 255) }, { "bmp", RGBA(206, 128, 62, 255) },
         { "txt", RGBA(96, 126, 150, 255) }, { "ini", RGBA(96, 126, 150, 255) }, { "cfg", RGBA(96, 126, 150, 255) },
     };

@@ -5,6 +5,7 @@
 #include <pspkernel.h>
 #include <pspumd.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include "umd.h"
 #include "system.h"
@@ -25,6 +26,9 @@ static volatile int s_gen; /* ökar när skivan byts */
 static int s_seen;         /* s_gen vid senaste umd_poll */
 static int s_has;
 static Entry s_entry;
+static volatile int s_video_gen; /* ökar när en videoskiva sätts i eller tas ut */
+static int s_video;              /* 1 = UMD Video-skiva i enheten */
+static char s_video_title[128];
 
 static u32 file_size(const char *path)
 {
@@ -73,6 +77,48 @@ static int read_disc(Entry *e)
     return 1;
 }
 
+/* UMD Video (eller UMD Audio): titeln ur skivans PARAM.SFO, annars "UMD Video" */
+static int read_video_disc(char *title, int size)
+{
+    static const char *const dirs[2] = { UMD_ROOT "UMD_VIDEO/", UMD_ROOT "UMD_AUDIO/" };
+    for (int d = 0; d < 2; d++) {
+        char path[64];
+        snprintf(path, sizeof(path), "%sPLAYLIST.UMD", dirs[d]);
+        if (!file_size(path))
+            continue;
+        snprintf(title, size, "UMD Video");
+        snprintf(path, sizeof(path), "%sPARAM.SFO", dirs[d]);
+        u32 sfo_size = file_size(path);
+        u8 *sfo = sfo_size && sfo_size <= MAX_SFO_SIZE ? malloc(sfo_size) : NULL;
+        if (sfo) {
+            SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+            int got = fd >= 0 ? sceIoRead(fd, sfo, sfo_size) : -1;
+            if (fd >= 0)
+                sceIoClose(fd);
+            if (got == (int)sfo_size) {
+                Entry e;
+                memset(&e, 0, sizeof(e));
+                entry_read_sfo(&e, sfo, sfo_size);
+                if (e.title[0])
+                    snprintf(title, size, "%s", e.title);
+            }
+            free(sfo);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static void publish_video(int has, const char *title)
+{
+    sceKernelWaitSema(s_lock, 1, NULL);
+    s_video = has;
+    if (has)
+        snprintf(s_video_title, sizeof(s_video_title), "%s", title);
+    s_video_gen++;
+    sceKernelSignalSema(s_lock, 1);
+}
+
 #ifdef PSP5_TEST
 static int medium_present(void)
 {
@@ -113,20 +159,29 @@ static void publish(int has, const Entry *e)
 
 static int umd_thread(SceSize args, void *argp)
 {
-    int state = 0; /* 0 = ingen skiva, 1 = spelskiva inläst, 2 = skiva som inte går att visa */
+    /* 0 = ingen skiva, 1 = spelskiva inläst, 2 = skiva som inte går att visa, 3 = videoskiva */
+    int state = 0;
     while (!s_quit) {
         int present = medium_present();
         if (present && state == 0) {
             Entry e;
-            if (drive_ready() && read_disc(&e)) {
+            char title[128];
+            if (!drive_ready()) {
+                state = 2;
+            } else if (read_disc(&e)) {
                 publish(1, &e);
                 state = 1;
+            } else if (read_video_disc(title, sizeof(title))) {
+                publish_video(1, title);
+                state = 3;
             } else {
                 state = 2;
             }
         } else if (!present && state != 0) {
             if (state == 1)
                 publish(0, NULL);
+            else if (state == 3)
+                publish_video(0, NULL);
             state = 0;
         }
         sceKernelDelayThread(POLL_US);
@@ -141,6 +196,7 @@ void umd_start(void)
     s_quit = 0;
     s_gen = s_seen = 0;
     s_has = 0;
+    s_video = 0;
     s_lock = sceKernelCreateSema("psp5_umd", 0, 1, 1, NULL);
     if (s_lock < 0)
         return;
@@ -161,6 +217,23 @@ void umd_stop(void)
         sceKernelDeleteSema(s_lock);
         s_lock = -1;
     }
+}
+
+int umd_video(char *title, int size)
+{
+    SceUID lock = s_lock; /* läses från mediatråden – umd_stop kan ta bort semaforen under tiden */
+    if (lock < 0 || sceKernelWaitSema(lock, 1, NULL) < 0)
+        return 0;
+    int has = s_video;
+    if (has)
+        snprintf(title, size, "%s", s_video_title);
+    sceKernelSignalSema(lock, 1);
+    return has;
+}
+
+int umd_video_generation(void)
+{
+    return s_video_gen;
 }
 
 int umd_poll(Entry *e, int *has)

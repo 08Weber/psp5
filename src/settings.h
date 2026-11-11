@@ -8,6 +8,7 @@
 enum {
     SA_NONE, SA_CLOSE, SA_USB, SA_XMB, SA_RESTART, SA_SUSPEND, SA_SHUTDOWN, SA_RECOVERY, SA_CLEAR_CACHE, SA_FILES,
     SA_USBNET,
+    SA_UMD_VIDEO, /* Videor: montera ui->umd_video_path och gå till XMB (issue #27) */
 };
 
 /* Läser ARK-inställningar och plugins och visar första kategorin. */

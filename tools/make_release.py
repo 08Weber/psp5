@@ -30,7 +30,7 @@ Optional - use psp5 as ARK's launcher:
   rename PSP/SAVEDATA/ARK_01234/VBOOT.PBP to VBOOT_ARKMENU.PBP, then copy
   ARK_LAUNCHER/VBOOT.PBP from this zip into PSP/SAVEDATA/ARK_01234/.
 
-Music: put .mp3 files in the MUSIC folder.
+Music: put .mp3 or .m4a files in the MUSIC folder.
 Stuck? Hold SELECT while turning on the PSP - ARK then starts the normal XMB.
 Full guide: https://github.com/08Weber/psp5/blob/main/INSTALL.md
 """
@@ -80,7 +80,7 @@ def make(version, ark, dist, go=False):
 
 
 if __name__ == '__main__':
-    v = sys.argv[1] if len(sys.argv) > 1 else '2.1.2'
+    v = sys.argv[1] if len(sys.argv) > 1 else '2.1.3'
     make(v, 'ARK-5', 'dist')
     make(v, 'ARK-4', 'dist-ark4')
     make(v, 'ARK-5', 'dist', go=True)

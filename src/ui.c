@@ -27,6 +27,8 @@
 #include "settings.h" /* SA_* för Control Center */
 #include "boot.h"      /* psp5-loggan */
 #include "icons.h"     /* sök- och inställningsikonerna */
+#include "iso.h"       /* UMD Video-ISO:er i Videor */
+#include "umd.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -269,7 +271,7 @@ static void meta_save(const EntryList *l, int which)
 static char s_cat_name[MAX_CATS][40]; /* mappnamnet, t.ex. "g_GBA" */
 static char s_cat_dir[MAX_CATS][96];  /* mappen (för bg.png), t.ex. "ms0:/PSP/GAME/g_GBA" */
 static int s_ncat;
-static int s_cat_n[TAB_COUNT][MAX_CATS + 1]; /* antal kort per flik och kategori, [t][0] = alla */
+static int s_cat_n[TAB_COUNT][MAX_CATS + 1]; /* antal kort per flik och kategori, [t][0] = alla (även de i kategorier) */
 static int s_pick[MAX_CATS + 1], s_npick;    /* raderna i väljaren: 0 = alla, annars kategori */
 
 /* 1-baserat index för postens kategori, 0 = ingen */
@@ -412,6 +414,10 @@ static void build_views(Ui *ui)
         int c = cat_of(&ui->list->items[i]);
         s_cat_n[TAB_GAMES][c]++;
         s_cat_n[TAB_LIBRARY][c]++;
+        if (c) { /* "Alla" räknar även spelen i kategorierna (issue #39) */
+            s_cat_n[TAB_GAMES][0]++;
+            s_cat_n[TAB_LIBRARY][0]++;
+        }
     }
     for (int t = 0; t < TAB_COUNT; t++) {
         ui->views[t].idx = malloc((ui->list->count ? ui->list->count : 1) * sizeof(int));
@@ -439,7 +445,8 @@ static void build_views(Ui *ui)
         int keep = 0; /* skivan och fästa spel står alltid kvar */
         while (keep < g->count && (ui->list->items[g->idx[keep]].type == ENTRY_UMD || meta(g->idx[keep])->pinned))
             keep++;
-        if (!g_all_games && g->count > keep + RECENT_GAMES)
+        /* i en vald kategori syns alla dess spel – gränsen gäller bara "Alla" (issue #39) */
+        if (!g_all_games && !ui->cat[TAB_GAMES] && g->count > keep + RECENT_GAMES)
             g->count = keep + RECENT_GAMES;
     }
     sort_library(ui);
@@ -1335,17 +1342,20 @@ static void update_pictures(Ui *ui, const UiInput *in, float dt)
 
 #define MAX_VIDS 300
 #define VID_PREVIEW 10000 /* förhandsvisningens index för video i (spelen har 0..antal-1) */
+/* MP4 spelas bara i XMB (issue #38) – psp5 visar den med sin .THM-bild. UMD Video (issue #27):
+ * ISO:n monteras och spelas i XMB, en skiva i enheten spelas också där. */
+enum { VID_PMF, VID_MP4, VID_UMD_ISO, VID_UMD_DISC };
 typedef struct {
     Entry entry;
     char title[72];
     char sub[48];
-    u8 mp4; /* MP4 spelas bara i XMB (issue #38) – psp5 visar den med sin .THM-bild */
+    u8 kind; /* VID_* */
 } VidItem;
 
 static VidItem *s_vids, *s_scan_vids;
 static int s_nvids, s_vids_cap, s_scan_nvids, s_scan_vids_cap;
 
-static void add_vid_item(const Entry *e, const char *title, const char *sub, int mp4)
+static void add_vid_item(const Entry *e, const char *title, const char *sub, int kind)
 {
     if (s_scan_nvids >= MAX_VIDS)
         return;
@@ -1361,7 +1371,7 @@ static void add_vid_item(const Entry *e, const char *title, const char *sub, int
     it->entry = *e;
     snprintf(it->title, sizeof(it->title), "%s", title);
     snprintf(it->sub, sizeof(it->sub), "%s", sub);
-    it->mp4 = mp4;
+    it->kind = kind;
 }
 
 static void scan_vid_dir(const char *dir, const char *folder, int depth)
@@ -1393,9 +1403,69 @@ static void scan_vid_dir(const char *dir, const char *folder, int depth)
                     snprintf(e.title, sizeof(e.title), "%.*s", stem, ent.d_name);
                     char sub[48];
                     snprintf(sub, sizeof(sub), "%s  ·  %s", folder && folder[0] ? folder : "VIDEO", mp4 ? "MP4" : "PMF");
-                    add_vid_item(&e, e.title, sub, mp4);
+                    add_vid_item(&e, e.title, sub, mp4 ? VID_MP4 : VID_PMF);
                 }
             }
+        }
+        memset(&ent, 0, sizeof(ent));
+    }
+    sceIoDclose(d);
+}
+
+/* UMD Video-ISO:er i <dev>/ISO/VIDEO (som ARK:s XMB-stöd, core/vshctrl/virtual_mp4.c: bara .iso).
+ * Titeln och ikonen ur skivans UMD_VIDEO (eller UMD_AUDIO). ISO:er utan dem hoppas över. */
+static void scan_umd_video_isos(const char *dev)
+{
+    char dir[32];
+    snprintf(dir, sizeof(dir), "%s/ISO/VIDEO", dev);
+    SceUID d = sceIoDopen(dir);
+    if (d < 0)
+        return;
+    SceIoDirent ent;
+    memset(&ent, 0, sizeof(ent));
+    while (!s_media_quit && sceIoDread(d, &ent) > 0 && s_scan_nvids < MAX_VIDS) {
+        const char *dot = strrchr(ent.d_name, '.');
+        Entry e;
+        memset(&e, 0, sizeof(e));
+        if (FIO_S_ISDIR(ent.d_stat.st_mode) || !dot || dot == ent.d_name || strcasecmp(dot, ".iso") ||
+            snprintf(e.path, sizeof(e.path), "%s/%s", dir, ent.d_name) >= (int)sizeof(e.path)) {
+            memset(&ent, 0, sizeof(ent));
+            continue;
+        }
+        IsoReader r;
+        if (iso_open(&r, e.path) >= 0) {
+            static const char *const roots[2] = { "UMD_VIDEO", "UMD_AUDIO" };
+            for (int k = 0; k < 2; k++) {
+                char part[40];
+                IsoFile f;
+                snprintf(part, sizeof(part), "%s/PLAYLIST.UMD", roots[k]);
+                if (!iso_find(&r, part, &f))
+                    continue;
+                e.type = ENTRY_ISO; /* ikonen läses ur ISO:n (art_load_icon) */
+                int stem = (int)(dot - ent.d_name);
+                if (stem >= (int)sizeof(e.title))
+                    stem = sizeof(e.title) - 1;
+                snprintf(e.title, sizeof(e.title), "%.*s", stem, ent.d_name);
+                snprintf(part, sizeof(part), "%s/PARAM.SFO", roots[k]);
+                u32 sfo_size = 0;
+                u8 *sfo = iso_load(&r, part, &sfo_size, 64 * 1024);
+                if (sfo) {
+                    entry_read_sfo(&e, sfo, sfo_size); /* en tom TITLE behåller filnamnet */
+                    free(sfo);
+                }
+                snprintf(part, sizeof(part), "%s/ICON0.PNG", roots[k]);
+                if (iso_find(&r, part, &f)) {
+                    e.icon_offset = f.offset;
+                    e.icon_size = f.size;
+                }
+                const ScePspDateTime *t = &ent.d_stat.sce_st_mtime;
+                e.file_size = (u32)ent.d_stat.st_size;
+                e.file_time = ((t->year - 1980) << 26) | (t->month << 22) | (t->day << 17) | (t->hour << 12) |
+                              (t->minute << 6) | t->second; /* ikonens cache följer filen */
+                add_vid_item(&e, e.title, "ISO/VIDEO  ·  UMD Video", VID_UMD_ISO);
+                break;
+            }
+            iso_close(&r);
         }
         memset(&ent, 0, sizeof(ent));
     }
@@ -1415,6 +1485,17 @@ static void scan_videos(void)
             snprintf(root, sizeof(root), "%s/%s", dev, dirs[k]);
             scan_vid_dir(root, "VIDEO", 0);
         }
+        scan_umd_video_isos(dev);
+    }
+    /* UMD Video-skivan i enheten (umd.c har redan läst titeln) */
+    char title[128];
+    if (s_scan_nvids < MAX_VIDS && umd_video(title, sizeof(title))) {
+        Entry e;
+        memset(&e, 0, sizeof(e));
+        e.type = ENTRY_UMD;
+        snprintf(e.path, sizeof(e.path), "%s", UMD_ROOT);
+        snprintf(e.title, sizeof(e.title), "%s", title);
+        add_vid_item(&e, e.title, "UMD  ·  UMD Video", VID_UMD_DISC);
     }
 }
 
@@ -1452,15 +1533,7 @@ static void media_poll(const Ui *ui)
         media_thread_end();
         s_media_done = 0;
         s_media_loaded = 1;
-        /* spelens egna ICON1.PMF-videor, så att videospelaren kan spela dem (listan hör till huvudtråden) */
-        for (int i = 0; ui->list && i < ui->list->count && s_scan_nvids < MAX_VIDS; i++) {
-            const Entry *e = &ui->list->items[i];
-            if (!is_dupe(ui->list, i) && e->vid_size > 2048) {
-                char sub[48];
-                snprintf(sub, sizeof(sub), "%s  ·  PMF", e->game_id[0] ? e->game_id : "ICON1");
-                add_vid_item(e, e->title, sub, 0);
-            }
-        }
+        /* spelens ICON1.PMF-videor listas inte – Videor är för egna filer (issue #43) */
         free(s_pics);
         s_pics = s_scan_pics;
         s_npics = s_scan_npics;
@@ -1473,8 +1546,13 @@ static void media_poll(const Ui *ui)
         s_scan_vids = NULL;
         s_scan_npics = s_scan_pics_cap = s_scan_nvids = s_scan_vids_cap = 0;
     }
-    static int again;
+    static int again, umd_gen = -1;
     again |= osd_take_screenshot_done(); /* en ny skärmbild ska synas i Bilder */
+    if (umd_gen != umd_video_generation()) { /* UMD Video-skivan sattes i eller togs ut */
+        if (umd_gen >= 0)
+            again = 1;
+        umd_gen = umd_video_generation();
+    }
     if (s_media_th < 0 && (!s_media_loaded || again)) {
         again = 0;
         s_media_quit = 0;
@@ -1548,10 +1626,17 @@ static void update_videos(Ui *ui, const UiInput *in, float dt)
             }
         }
         u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
-        if (ui->intro >= 1 && (in->pressed & confirm)) {
-            if (s_vids[ui->vid_sel].mp4) { /* psp5 kan inte spela MP4 – XMB kan */
+        if (ui->intro >= 1 && (in->pressed & confirm) && ui->cc_leave <= 0) {
+            const VidItem *v = &s_vids[ui->vid_sel];
+            if (v->kind == VID_MP4) { /* psp5 kan inte spela MP4 – XMB kan */
                 ui_toast(ui, L(S_MP4_IN_XMB));
                 sound_play(SND_ERROR);
+            } else if (v->kind == VID_UMD_ISO || v->kind == VID_UMD_DISC) {
+                /* spelas i XMB: ISO:n monteras först (main.c, SA_UMD_VIDEO), skivan sitter redan i */
+                snprintf(ui->umd_video_path, sizeof(ui->umd_video_path), "%s", v->entry.path);
+                ui->cc_action = v->kind == VID_UMD_ISO ? SA_UMD_VIDEO : SA_XMB;
+                ui->cc_leave = 0.001f; /* tona till svart, sedan UI_ACTION (update_cc) */
+                sound_play(SND_SELECT);
             } else {
                 ui->vid_viewing = 1;
                 ui->vid_still = 1.0f;
@@ -1572,11 +1657,16 @@ static void update_videos(Ui *ui, const UiInput *in, float dt)
         tex_free(ui->vid_thumb);
         ui->vid_thumb = NULL;
         ui->vid_thumb_for = ui->vid_sel;
-        const char *p = s_vids[ui->vid_sel].entry.path, *dot = strrchr(p, '.');
-        if (s_vids[ui->vid_sel].mp4 && dot) {
+        const VidItem *v = &s_vids[ui->vid_sel];
+        const char *p = v->entry.path, *dot = strrchr(p, '.');
+        if (v->kind == VID_MP4 && dot) {
             char thm[sizeof(s_vids[0].entry.path) + 4];
             snprintf(thm, sizeof(thm), "%.*s.THM", (int)(dot - p), p);
             ui->vid_thumb = art_load_wallpaper(thm);
+        } else if (v->kind == VID_UMD_ISO && v->entry.icon_size) {
+            ui->vid_thumb = art_load_icon(&v->entry, NULL);
+        } else if (v->kind == VID_UMD_DISC) {
+            ui->vid_thumb = art_load_icon_file(UMD_ROOT "UMD_VIDEO/ICON0.PNG");
         }
     }
 }
@@ -1783,10 +1873,7 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
             ui->tab_anim = 0;
         }
         sound_play(SND_SELECT);
-    } else if (in->pressed & PSP_CTRL_SELECT) {
-        ui->cat_open = 0;
-        ui_open_cc(ui); /* andra trycket på SELECT öppnar Control Center */
-    } else if (in->pressed & back) {
+    } else if (in->pressed & (back | PSP_CTRL_SELECT)) { /* SELECT igen stänger (issue #39) */
         ui->cat_open = 0;
         sound_play(SND_BACK);
     }
@@ -1948,7 +2035,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         }
         in = &none;
     }
-    int cc_was_open = ui->cc_open;
+    int cc_was_open = ui->cc_open || ui->cc_leave > 0; /* på väg ut (t.ex. UMD Video): inga knappar */
     int cc = update_cc(ui, in, dt);
     if (cc != UI_NONE)
         return cc;
@@ -3241,8 +3328,11 @@ static void draw_videos(Ui *ui)
             draw_play_glyph(bx + bw / 2 + 1, by + bh / 2, 7.5f, 0, with_alpha(LIGHT, 0.9f * a));
         }
         char info[64];
-        if (s_vids[ui->vid_sel].mp4) /* bildens storlek är .THM-bildens, inte videons */
+        int kind = s_vids[ui->vid_sel].kind;
+        if (kind == VID_MP4) /* bildens storlek är .THM-bildens, inte videons */
             snprintf(info, sizeof(info), "MP4  ·  %d / %d", ui->vid_sel + 1, n);
+        else if (kind == VID_UMD_ISO || kind == VID_UMD_DISC) /* spelas i XMB */
+            snprintf(info, sizeof(info), "UMD Video  ·  XMB  ·  %d / %d", ui->vid_sel + 1, n);
         else if (vt)
             snprintf(info, sizeof(info), "%d × %d  ·  %d / %d", vt->w, vt->h, ui->vid_sel + 1, n);
         else

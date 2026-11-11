@@ -12,6 +12,7 @@
 #include "iso.h"
 
 #define UMD_DRIVER 0 /* MODE_UMD: den riktiga skivan */
+#define VSHUMD_DRIVER 4 /* MODE_VSHUMD: ISO:n monteras som skiva i XMB (ARK common/include/systemctrl_se.h) */
 #define PSN_DRIVER 0
 #define ISO_DRIVER 3
 
@@ -169,6 +170,40 @@ static void launch_pops(void)
     param.argp = s_path;
     param.args = strlen(s_path) + 1;
     sctrlKernelLoadExecVSHWithApitype(on_ef0() ? POPS_RUNLEVEL_GO : POPS_RUNLEVEL, s_path, &param);
+}
+
+/* Som ARK:s vshDetectDiscType (core/vshctrl/disctype.c): vad skivan innehåller */
+static int iso_disc_type(const char *path)
+{
+    IsoReader r;
+    IsoFile f;
+    if (iso_open(&r, path) < 0)
+        return -1;
+    int type = 0;
+    if (iso_find(&r, "PSP_GAME/SYSDIR/EBOOT.BIN", &f))
+        type |= PSP_UMD_TYPE_GAME;
+    if (iso_find(&r, "UMD_VIDEO/PLAYLIST.UMD", &f))
+        type |= PSP_UMD_TYPE_VIDEO;
+    if (iso_find(&r, "UMD_AUDIO/PLAYLIST.UMD", &f))
+        type |= PSP_UMD_TYPE_AUDIO;
+    iso_close(&r);
+    return type;
+}
+
+int launch_umd_video(const char *iso_path)
+{
+    if (!launch_supported())
+        return -1;
+    int type = iso_disc_type(iso_path);
+    if (type < 0 || !(type & (PSP_UMD_TYPE_VIDEO | PSP_UMD_TYPE_AUDIO)))
+        return -1;
+    /* som ARK:s launch_umdvideo_mount (core/vshctrl/virtual_mp4.c). Anroparen avslutar sedan
+     * med sys_exit_xmb, så att launcherläget pausas och XMB (inte psp5) startar med skivan. */
+    snprintf(s_path, sizeof(s_path), "%s", iso_path);
+    sctrlSESetUmdFile(s_path);
+    sctrlSESetBootConfFileIndex(VSHUMD_DRIVER);
+    sctrlSESetDiscType(type);
+    return 0;
 }
 
 int launch_entry(const Entry *e)

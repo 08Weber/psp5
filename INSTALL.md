@@ -10,10 +10,10 @@ Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK
 
 | Your PSP | Download this |
 |---|---|
-| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-v2.1.2-ARK5.zip` |
-| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-v2.1.2-ARK4.zip` |
-| **PSP Go** with **ARK-5** | `psp5-v2.1.2-PSPGo-ARK5.zip` |
-| **PSP Go** with **ARK-4** | `psp5-v2.1.2-PSPGo-ARK4.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-v2.1.3-ARK5.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-v2.1.3-ARK4.zip` |
+| **PSP Go** with **ARK-5** | `psp5-v2.1.3-PSPGo-ARK5.zip` |
+| **PSP Go** with **ARK-4** | `psp5-v2.1.3-PSPGo-ARK4.zip` |
 
 You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 
@@ -48,7 +48,8 @@ To get to the XMB from there: △ → *Power and USB* → *Exit to XMB*.
 |---|---|
 | PSP games (`.iso`, `.cso`, `.zso`, `.dax`) | `ISO` |
 | Homebrew, PSN and PS1 games | `PSP/GAME` |
-| Music (`.mp3`) | `MUSIC` (sub-folders are fine) |
+| Music (`.mp3`, `.m4a`) | `MUSIC` (sub-folders are fine) |
+| UMD Video movies (`.iso`) | `ISO/VIDEO` |
 
 On a PSP Go, psp5 looks in these folders on both the internal storage and a Memory Stick Micro.
 

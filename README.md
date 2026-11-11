@@ -45,14 +45,16 @@ Games row or to sort by name or by what you added most recently. △ opens Setti
 
 **Media** has three tiles:
 
-- **Music**, like the music player in the XMB: it lists the MP3 files in `ms0:/MUSIC` (folders too) with their
+- **Music**, like the music player in the XMB: it lists the MP3 and M4A (AAC) files in `ms0:/MUSIC` (folders too) with their
   titles and artists, and keeps playing while you browse your games. △ opens the album list. The track that's
   playing shows up as a little note at the top of the other tabs. "Now playing" shows the album art – from the
-  MP3 itself or a `cover.jpg` / `folder.jpg` in the album folder – and holding ← or → seeks through the track
+  file itself or a `cover.jpg` / `folder.jpg` in the album folder – and holding ← or → seeks through the track
   (the longer you hold, the faster it goes).
 - **Pictures**: your JPEG and PNG pictures with a preview, and ✕ to view them full screen.
-- **Videos**: PMF videos in `VIDEO` and the short preview videos (ICON1.PMF) of your games. MP4 videos (in `VIDEO`
+- **Videos**: your PMF videos in `VIDEO`. MP4 videos (in `VIDEO`
   or `MP_ROOT`) are listed with their thumbnail too, but they play in the XMB's Video column – psp5 can't play MP4 yet.
+  UMD Video movies show up here as well: ISOs in `ISO/VIDEO` and a UMD Video disc in the drive. ✕ takes you to the
+  XMB with the movie as the UMD in the Video column (an ISO is mounted first, like ARK does it).
 
 Pressing ✕ (or START) starts the game the same way ARK's own menu does, so updates, patched ISOs and
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
@@ -97,7 +99,8 @@ A few other things I cared about:
   SELECT to pick one (for example `PSP/GAME/GBA` for GBA games packed as EBOOTs). A `bg.png` in the folder is
   shown behind it in the picker. The active category shows up in the tab name ("Games · GBA"). A folder with a
   single game (one folder per game) is not a category unless its name starts with `g_` or `s_` (the prefix
-  isn't shown).
+  isn't shown). In a category the Games row shows all of its games; "All" counts every game, and SELECT again
+  closes the picker.
 - **It has a Control Center.** HOME opens a PS5-style panel with sleep, USB, the file manager, settings, the XMB,
   restart and power off. *Settings → Power and USB* can also turn the screen off and put the PSP to sleep after a
   while without a button press (not while music is playing).

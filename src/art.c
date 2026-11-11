@@ -306,6 +306,34 @@ Texture *art_load_logo(const Entry *e)
     return t;
 }
 
+Texture *art_load_icon_file(const char *file)
+{
+    SceUID fd = sceIoOpen(file, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return NULL;
+    int n = sceIoLseek32(fd, 0, PSP_SEEK_END);
+    void *png = n > 0 && n <= MAX_PNG_SIZE ? malloc(n) : NULL;
+    if (png && (sceIoLseek32(fd, 0, PSP_SEEK_SET) < 0 || sceIoRead(fd, png, n) != n)) {
+        free(png);
+        png = NULL;
+    }
+    sceIoClose(fd);
+    if (!png)
+        return NULL;
+    Image img;
+    Texture *t = NULL;
+    int ok = img_decode_png(png, n, &img);
+    free(png);
+    if (!ok)
+        return NULL;
+    if (fit_icon(&img)) {
+        img_round_corners(&img, ICON_RADIUS);
+        t = img_to_texture(&img, GU_PSM_8888);
+    }
+    img_free(&img);
+    return t;
+}
+
 /* --- omslag till musik --- */
 
 /* Bild som ligger bredvid låtarna i albummappen */

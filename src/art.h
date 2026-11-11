@@ -17,6 +17,9 @@ void art_init(const char *base_dir);
 /* Kortbild (8888, rundade hörn). `accent` får bildens medelfärg. NULL om ingen ikon finns. */
 Texture *art_load_icon(const Entry *e, u32 *accent);
 
+/* Kortbild som ovan ur en PNG-fil (t.ex. disc0:/UMD_VIDEO/ICON0.PNG), utan cache. NULL om den saknas. */
+Texture *art_load_icon_file(const char *file);
+
 /* Bakgrund (5650): PIC1 skarp i 480×272, annars ikonen kraftigt suddad (BG_W×BG_H). */
 Texture *art_load_bg(const Entry *e);
 

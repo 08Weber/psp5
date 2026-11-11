@@ -1,6 +1,7 @@
 /* psp5 – made by 08Weber */
-/* MP3-spelaren: skannar ms0:/MUSIC (läser ID3-taggar) i bakgrunden och spelar upp
- * låtarna i en egen tråd med PSP:ns inbyggda avkodare (sceMp3) via SRC-ljudkanalen,
+/* Musikspelaren: skannar ms0:/MUSIC (läser ID3- och M4A-taggar) i bakgrunden och spelar upp
+ * låtarna i en egen tråd med PSP:ns inbyggda avkodare (sceMp3, och sceAudiocodec för AAC i
+ * M4A, issue #44) via SRC-ljudkanalen,
  * som klarar 44,1 kHz, 48 kHz m.fl. Gränssnittet styr tråden med en liten kommandokö,
  * så att inget behöver låsas. Buffertarna är små (~50 KB) så att det räcker även
  * på PSP-1000. */
@@ -8,6 +9,7 @@
 #include <pspaudio.h>
 #include <psputility.h>
 #include <pspmp3.h>
+#include <pspaudiocodec.h>
 #include <pspsysmem.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +18,11 @@
 #include "music.h"
 #include "system.h"
 #include "config.h"
+#include "m4a.h"
+
+#ifndef PSP_CODEC_AAC
+#define PSP_CODEC_AAC 0x1003
+#endif
 
 #define MAX_TRACKS   1000
 #define MAX_DEPTH    3
@@ -26,6 +33,9 @@
 #define MP3_END      0x80671402 /* sceMp3Decode: strömmen är slut */
 #define ALREADY_LOADED  0x80020139
 #define ALREADY_LOADED2 0x80111102 /* samma sak, från sceUtilityLoadModule */
+#define AAC_IN       (8 * 1024) /* en AAC-bildruta (högst ~1,5 KB i stereo) + ADTS-huvud */
+#define AAC_SAMPLES  1024
+#define AAC_READ     (32 * 1024) /* läses i förväg från filen, som MP3-bufferten (~2 s) */
 
 /* --- låtlistan --- */
 
@@ -82,6 +92,19 @@ static unsigned char s_toc[100];
 static int s_has_toc;
 static float s_seek_base;              /* sekunder in i låten där avkodaren startade */
 static int s_seek_grace;               /* bildrutor efter ett hopp som får misslyckas */
+
+/* M4A (AAC): sceAudiocodec avkodar en bildruta i taget, m4a.c säger var de ligger */
+static int s_is_m4a;
+static M4a s_m4a;
+static unsigned long __attribute__((aligned(64))) s_codec[65];
+static int s_codec_edram;              /* avkodarens EDRAM är reserverat */
+static int s_adts, s_adts_tried;       /* bildrutorna får ett ADTS-huvud (om råa AAC-rutor inte går) */
+static int s_aac_good, s_aac_errors;   /* någon bildruta har avkodats / fel i rad */
+static unsigned char __attribute__((aligned(64))) s_aac_in[AAC_IN];
+/* plats för 2048 prover: avkodar PSP:n SBR-delen av HE-AAC själv får den inte skriva utanför */
+static short __attribute__((aligned(64))) s_aac_out[2][AAC_SAMPLES * 2 * 2];
+static unsigned char s_aac_buf[AAC_READ];
+static u32 s_aac_buf_pos, s_aac_buf_len; /* var i filen s_aac_buf börjar, och hur mycket den har */
 
 /* ---------------------------------------------------------------------- */
 /* ID3 */
@@ -263,10 +286,18 @@ static int unsync(unsigned char *b, int len)
     return w;
 }
 
+static int has_m4a_ext(const char *name)
+{
+    int n = strlen(name);
+    return n > 4 && (!strcasecmp(name + n - 4, ".m4a") || !strcasecmp(name + n - 4, ".m4b"));
+}
+
 #define MAX_COVER_TAG (2 * 1024 * 1024) /* större taggar läses inte (minnet på PSP-1000) */
 
 void *music_cover_data(const char *path, u32 *size_out)
 {
+    if (has_m4a_ext(path))
+        return m4a_cover(path, size_out);
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
     if (fd < 0)
         return NULL;
@@ -375,10 +406,17 @@ static void add_track(const char *path, const char *name, const char *folder, un
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
     if (fd >= 0) {
         u32 size = sceIoLseek32(fd, 0, PSP_SEEK_END);
-        read_tags(fd, size, it, buf);
+        int ok = 1;
+        if (has_m4a_ext(name)) /* bara AAC – ALAC m.fl. kan PSP:n inte spela */
+            ok = m4a_read_tags(fd, size, it->t.title, sizeof(it->t.title), it->t.artist, sizeof(it->t.artist),
+                               it->t.album, sizeof(it->t.album), &it->trackno);
+        else
+            read_tags(fd, size, it, buf);
         sceIoClose(fd);
+        if (!ok)
+            return;
     }
-    if (!it->t.title[0]) { /* filnamnet utan .mp3 */
+    if (!it->t.title[0]) { /* filnamnet utan .mp3/.m4a */
         snprintf(it->t.title, sizeof(it->t.title), "%.*s", (int)strlen(name) - 4, name);
     }
     if (!it->t.album[0] && folder)
@@ -403,7 +441,7 @@ static void scan_dir(const char *dir, const char *folder, int depth, unsigned ch
                         snprintf(sub, sizeof(sub), "%s", ent.d_name);
                         scan_dir(path, sub, depth + 1, buf);
                     }
-                } else if (has_mp3_ext(ent.d_name)) {
+                } else if (has_mp3_ext(ent.d_name) || has_m4a_ext(ent.d_name)) {
                     add_track(path, ent.d_name, folder, buf);
                 }
             }
@@ -529,6 +567,14 @@ static void close_track(void)
         sceMp3ReleaseMp3Handle(s_handle);
         s_handle = -1;
     }
+    if (s_codec_edram) {
+        sceAudiocodecReleaseEDRAM(s_codec);
+        s_codec_edram = 0;
+    }
+    if (s_is_m4a) {
+        m4a_free(&s_m4a);
+        s_is_m4a = 0;
+    }
     if (s_fd >= 0) {
         sceIoClose(s_fd);
         s_fd = -1;
@@ -649,6 +695,140 @@ static int start_decoder(u32 offset)
     return 0;
 }
 
+/* --- M4A (AAC) --- */
+
+/* Startar AAC-avkodaren och läser spårets tabeller (filen är redan öppen i s_fd) */
+static int open_m4a(void)
+{
+    if (m4a_open(&s_m4a, s_fd, s_size) < 0)
+        return -1;
+    s_is_m4a = 1;
+    memset(s_codec, 0, sizeof(s_codec));
+    if (sceAudiocodecCheckNeedMem(s_codec, PSP_CODEC_AAC) < 0 || sceAudiocodecGetEDRAM(s_codec, PSP_CODEC_AAC) < 0)
+        return -1;
+    s_codec_edram = 1;
+    s_codec[10] = s_m4a.rate;
+    if (sceAudiocodecInit(s_codec, PSP_CODEC_AAC) < 0)
+        return -1;
+    s_rate = s_m4a.rate;
+    s_channels = s_m4a.channels;
+    s_spf = AAC_SAMPLES;
+    s_adts = s_adts_tried = s_aac_good = s_aac_errors = 0;
+    s_aac_buf_pos = s_aac_buf_len = 0; /* bufferten hör till förra filen */
+    s_duration = s_m4a.duration > 0 ? s_m4a.duration : (float)s_m4a.nsamples * AAC_SAMPLES / s_rate;
+    s_elapsed = s_seek_base = 0;
+    s_seek_grace = 0;
+    return 0;
+}
+
+/* Fyller s_aac_buf från byte off (öppnar filen igen efter viloläge). Antal byte, <0 = läsfel. */
+static int fill_aac_buf(u32 off)
+{
+    s_aac_buf_len = 0;
+    int got = -1;
+    if (sceIoLseek32(s_fd, off, PSP_SEEK_SET) >= 0)
+        got = sceIoRead(s_fd, s_aac_buf, AAC_READ);
+    if (got < 0 && s_open_index >= 0) {
+        sceIoClose(s_fd);
+        s_fd = sceIoOpen(s_items[s_open_index].t.path, PSP_O_RDONLY, 0777);
+        if (s_fd >= 0 && sceIoLseek32(s_fd, off, PSP_SEEK_SET) >= 0)
+            got = sceIoRead(s_fd, s_aac_buf, AAC_READ);
+    }
+    if (got > 0) {
+        s_aac_buf_pos = off;
+        s_aac_buf_len = got;
+    }
+    return got;
+}
+
+/* Läser len byte från off till dst – ur s_aac_buf, som fylls på när rutan inte finns där.
+ * En läsning från minneskortet per ~2 s i stället för per ruta (23 ms): annars hackar
+ * ljudet när laddartråden läser spelbilder samtidigt. <0 = läsfel. */
+static int read_frame(u32 off, u32 len, unsigned char *dst)
+{
+    if (off < s_aac_buf_pos || off - s_aac_buf_pos > s_aac_buf_len || s_aac_buf_len - (off - s_aac_buf_pos) < len) {
+        if (fill_aac_buf(off) < (int)len)
+            return -1;
+    }
+    memcpy(dst, s_aac_buf + (off - s_aac_buf_pos), len);
+    return 0;
+}
+
+/* Avkodar bildrutan i s_aac_in (rå: från början, ADTS: efter huvudets 7 byte) till out */
+static int decode_aac(u32 len, short *out)
+{
+    unsigned char *src = s_aac_in;
+    if (s_adts) { /* ADTS-huvud: AAC-LC, frekvensindex, kanaler, längd med huvudet */
+        u32 fl = len + 7;
+        int fi = s_m4a.freq_index, ch = s_m4a.channels;
+        s_aac_in[0] = 0xFF;
+        s_aac_in[1] = 0xF1;
+        s_aac_in[2] = (1 << 6) | (fi << 2) | (ch >> 2);
+        s_aac_in[3] = ((ch & 3) << 6) | (fl >> 11);
+        s_aac_in[4] = (fl >> 3) & 0xFF;
+        s_aac_in[5] = ((fl & 7) << 5) | 0x1F;
+        s_aac_in[6] = 0xFC;
+        len = fl;
+    }
+    /* avkodaren (Media Engine) läser och skriver minnet direkt, förbi processorns cache */
+    sceKernelDcacheWritebackInvalidateRange(src, len);
+    sceKernelDcacheWritebackInvalidateRange(out, sizeof(s_aac_out[0]));
+    s_codec[6] = (unsigned long)src;
+    s_codec[7] = len;
+    s_codec[8] = (unsigned long)out;
+    s_codec[9] = sizeof(s_aac_out[0]);
+    return sceAudiocodecDecode(s_codec, PSP_CODEC_AAC);
+}
+
+/* Avkodar och spelar en AAC-bildruta. 1 = fortsätt, 0 = låten slut, -1 = fel */
+static int play_aac_frame(void)
+{
+    u32 off, len;
+    if (!m4a_next(&s_m4a, &off, &len))
+        return 0;
+    if (!len)
+        return 1;
+    if (len > AAC_IN - 7)
+        return ++s_aac_errors >= 8 ? -1 : 1;
+    if (read_frame(off, len, s_aac_in + (s_adts ? 7 : 0)) < 0)
+        return -1;
+    short *out = s_aac_out[s_out_idx];
+    int r = decode_aac(len, out);
+    if (r < 0 && !s_aac_good && !s_adts_tried && s_m4a.freq_index < 13) {
+        /* första bildrutan gick inte rå: försök med ADTS-huvud (och fortsätt så om det går) */
+        s_adts_tried = 1; /* s_adts är 0 här: open_m4a nollställer, och bara ett byte görs */
+        s_adts = 1;
+        memmove(s_aac_in + 7, s_aac_in, len);
+        r = decode_aac(len, out);
+    }
+    if (r < 0) /* enstaka trasiga bildrutor hoppas över */
+        return ++s_aac_errors >= 8 ? -1 : 1;
+    s_aac_good = 1;
+    s_aac_errors = 0;
+    s_out_idx ^= 1;
+    if (!src_reserve(AAC_SAMPLES, s_rate))
+        return -1;
+    sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, out);
+    s_elapsed = (float)s_m4a.cur * AAC_SAMPLES / s_rate;
+    return 1;
+}
+
+/* Hoppar till `sec` sekunder in i M4A-låten. 0 = klart, -1 = förbi slutet. */
+static int seek_m4a(float sec)
+{
+    if (s_duration <= 0 || s_rate <= 0)
+        return 0;
+    if (sec >= s_duration - 0.5f)
+        return -1;
+    if (sec < 0)
+        sec = 0;
+    m4a_seek(&s_m4a, (u32)(sec * s_rate / AAC_SAMPLES));
+    if (s_m4a.cur >= s_m4a.nsamples)
+        return -1;
+    s_elapsed = (float)s_m4a.cur * AAC_SAMPLES / s_rate;
+    return 0;
+}
+
 static int open_track(int index)
 {
     close_track();
@@ -658,6 +838,14 @@ static int open_track(int index)
     if (s_fd < 0)
         return -1;
     s_size = sceIoLseek32(s_fd, 0, PSP_SEEK_END);
+    if (has_m4a_ext(s_items[index].t.path)) {
+        s_open_index = index;
+        if (open_m4a() < 0) {
+            close_track();
+            return -1;
+        }
+        return 0;
+    }
     s_start = id3v2_size(s_fd); /* strömmen börjar efter taggen */
     if (s_start >= s_size)
         s_start = 0;
@@ -710,6 +898,8 @@ static u32 find_frame(u32 pos)
 /* Hoppar till `sec` sekunder in i låten. 0 = klart, -1 = gick inte (låten är slut). */
 static int seek_to(float sec)
 {
+    if (s_is_m4a)
+        return seek_m4a(sec);
     if (s_handle < 0 || s_fd < 0 || s_duration <= 0)
         return 0;
     if (sec >= s_duration - 0.5f)
@@ -742,6 +932,8 @@ static int seek_to(float sec)
 /* Avkodar och spelar en bildruta. 1 = fortsätt, 0 = låten slut, -1 = fel */
 static int play_frame(void)
 {
+    if (s_is_m4a)
+        return play_aac_frame();
     if (sceMp3CheckStreamDataNeeded(s_handle) > 0 && feed() < 0)
         return -1;
     SceShort16 *pcm;
@@ -908,7 +1100,7 @@ static int player_thread(SceSize args, void *argp)
             s_q_tail = (t + 1) % QUEUE;
             failures = 0;
         }
-        if (s_state != MUSIC_PLAYING || s_handle < 0) {
+        if (s_state != MUSIC_PLAYING || (s_handle < 0 && !s_is_m4a)) {
             sceKernelDelayThread(10000);
             continue;
         }
