@@ -576,3 +576,30 @@ int sys_display(int on)
     }
     return 1;
 }
+
+#define NID_RTC_SET_TICK     0x9763C138 /* sceRtcSetCurrentTick (ARK översätter) */
+#define NID_RTC_SET_TICK_660 0x929620CE /* samma i 6.60/6.61, om översättningen saknas */
+
+/* Systemklockan går bara att ställa i kärnan: ARK hittar sceRtcSetCurrentTick och kubridge
+ * anropar den, som NTPSP gör. Klockan räknar i UTC, så den lokala tiden räknas om först. */
+int sys_set_clock(const ScePspDateTime *local)
+{
+    if (!s_has_ark)
+        return -1;
+    void *f = (void *)sctrlHENFindFunction("sceRTC_Service", "sceRtc_driver", NID_RTC_SET_TICK);
+    if (!f)
+        f = (void *)sctrlHENFindFunction("sceRTC_Service", "sceRtc_driver", NID_RTC_SET_TICK_660);
+    if (!f)
+        return -1;
+    u64 tick, utc;
+    if (sceRtcGetTick(local, &tick) < 0)
+        return -1;
+    if (sceRtcConvertLocalTimeToUTC(&tick, &utc) < 0) {
+        /* samma reserv som klockan i övre fältet (PSP-1000 med ARK-4) */
+        int tz = 0, dst = 0;
+        sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_TIMEZONE, &tz);
+        sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_DAYLIGHTSAVINGS, &dst);
+        sceRtcTickAddMinutes(&utc, &tick, -(tz + (dst ? 60 : 0)));
+    }
+    return kcall(f, (u32)&utc, 0);
+}

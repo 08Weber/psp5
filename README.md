@@ -62,7 +62,8 @@ so the game gets the whole PSP.
 
 **Settings** is laid out like the PS5's settings pages. From there you can change ARK's CFW options (CPU speed,
 extra memory, caches, USB charging and so on), turn plugins on and off, connect over USB, restart, shut down,
-jump to the XMB or open ARK's recovery menu.
+jump to the XMB or open ARK's recovery menu. *Settings → System → Date and time* sets the PSP's clock: ← → pick
+the field, ↑ ↓ change it and ✕ saves (it needs ARK, so not in PPSSPP).
 
 A few other things I cared about:
 

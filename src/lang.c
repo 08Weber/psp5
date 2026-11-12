@@ -487,6 +487,17 @@ static const char *const T[S_COUNT][NL] = {
                          "Impossible de lancer la vidéo", "No se pudo iniciar el vídeo", "Impossibile avviare il video",
                          "Kan de video niet starten", "Não foi possível iniciar o vídeo", "Не удалось запустить видео",
                          "ビデオを開始できませんでした" },
+    [S_DATE_TIME] = { "Date and time", "Datum och tid", "Datum und Uhrzeit", "Date et heure", "Fecha y hora",
+                      "Data e ora", "Datum en tijd", "Data e hora", "Дата и время", "日付と時刻" },
+    [S_CLOCK_SET] = { "Date and time set", "Datum och tid inställda", "Datum und Uhrzeit eingestellt",
+                      "Date et heure réglées", "Fecha y hora ajustadas", "Data e ora impostate",
+                      "Datum en tijd ingesteld", "Data e hora definidas", "Дата и время установлены",
+                      "日付と時刻を設定しました" },
+    [S_CLOCK_FAILED] = { "Couldn't set the clock", "Kunde inte ställa klockan", "Uhr konnte nicht gestellt werden",
+                         "Impossible de régler l'horloge", "No se pudo ajustar el reloj",
+                         "Impossibile impostare l'orologio", "Kan de klok niet instellen",
+                         "Não foi possível acertar o relógio", "Не удалось установить часы",
+                         "時計を設定できませんでした" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",
