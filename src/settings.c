@@ -4,6 +4,8 @@
  * och en tunn ljus ram runt det valda. All grafik ritas här. */
 #include <pspkernel.h>
 #include <pspctrl.h>
+#include <psprtc.h>
+#include <psputility.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,7 +36,7 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_CLOCK } ItemType;
 
 typedef struct {
     const char *label;
@@ -76,7 +78,89 @@ static struct {
     float repeat_timer;
     char toast[96];
     float toast_time;
+    int clock_edit, clock_field; /* datum och tid: 1 = ändras nu, markerat fält i visningsordning */
+    ScePspDateTime clock;
 } S;
+
+/* --- datum och tid --- */
+
+enum { CF_YEAR, CF_MONTH, CF_DAY, CF_HOUR, CF_MINUTE, CF_COUNT };
+static int s_clock_order[CF_COUNT]; /* fälten i visningsordning, efter systemets datumformat */
+static const char *const CLOCK_SEP[CF_COUNT] = { "/", "/", "  ", ":", "" };
+
+static void clock_load_format(void)
+{
+    static const int dates[3][3] = {
+        { CF_YEAR, CF_MONTH, CF_DAY }, { CF_MONTH, CF_DAY, CF_YEAR }, { CF_DAY, CF_MONTH, CF_YEAR },
+    };
+    int fmt = PSP_SYSTEMPARAM_DATE_FORMAT_YYYYMMDD;
+    sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_DATE_FORMAT, &fmt);
+    if (fmt < 0 || fmt > 2)
+        fmt = PSP_SYSTEMPARAM_DATE_FORMAT_YYYYMMDD;
+    for (int i = 0; i < 3; i++)
+        s_clock_order[i] = dates[fmt][i];
+    s_clock_order[3] = CF_HOUR; /* 24 timmar, som klockan i övre fältet */
+    s_clock_order[4] = CF_MINUTE;
+}
+
+static int clock_get(const ScePspDateTime *t, int f)
+{
+    return f == CF_YEAR ? t->year : f == CF_MONTH ? t->month : f == CF_DAY ? t->day : f == CF_HOUR ? t->hour : t->minute;
+}
+
+/* Fältens texter i visningsordning, och hela raden ("12/11/2026  14:05") om out inte är NULL */
+static void clock_parts(const ScePspDateTime *t, char parts[CF_COUNT][6], char *out, int size)
+{
+    if (out)
+        out[0] = 0;
+    for (int i = 0; i < CF_COUNT; i++) {
+        int f = s_clock_order[i];
+        snprintf(parts[i], 6, f == CF_YEAR ? "%04d" : "%02d", clock_get(t, f));
+        if (out)
+            snprintf(out + strlen(out), size - strlen(out), "%s%s", parts[i], CLOCK_SEP[i]);
+    }
+}
+
+static int wrapi(int v, int lo, int hi)
+{
+    int n = hi - lo + 1;
+    return lo + ((v - lo) % n + n) % n;
+}
+
+static int days_in_month(const ScePspDateTime *t)
+{
+    int days = sceRtcGetDaysInMonth(t->year, t->month);
+    return days >= 28 && days <= 31 ? days : 31;
+}
+
+static void clock_step(ScePspDateTime *t, int f, int d)
+{
+    switch (f) {
+    case CF_YEAR: t->year = wrapi(t->year + d, 2000, 2099); break;
+    case CF_MONTH: t->month = wrapi(t->month + d, 1, 12); break;
+    case CF_DAY: t->day = wrapi(t->day + d, 1, days_in_month(t)); break;
+    case CF_HOUR: t->hour = wrapi(t->hour + d, 0, 23); break;
+    case CF_MINUTE: t->minute = wrapi(t->minute + d, 0, 59); break;
+    }
+    if (t->day > days_in_month(t)) /* 31 mars → februari */
+        t->day = days_in_month(t);
+}
+
+/* ✕ på raden: börja med klockan som den går nu, på första fältet */
+static void clock_begin(void)
+{
+    memset(&S.clock, 0, sizeof(S.clock));
+    if (!ui_read_clock(&S.clock))
+        S.clock.year = 2026, S.clock.month = 1, S.clock.day = 1;
+    if (S.clock.year < 2000 || S.clock.year > 2099) /* t.ex. 1970 efter att batteriet tagits ur */
+        S.clock.year = S.clock.year < 2000 ? 2000 : 2099;
+    S.clock.month = S.clock.month < 1 || S.clock.month > 12 ? 1 : S.clock.month;
+    S.clock.day = S.clock.day < 1 ? 1 : S.clock.day > days_in_month(&S.clock) ? days_in_month(&S.clock) : S.clock.day;
+    S.clock.second = 0;
+    S.clock.microsecond = 0;
+    S.clock_edit = 1;
+    S.clock_field = 0;
+}
 
 /* valtexter byggs om när språket ändras */
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
@@ -317,6 +401,7 @@ static void build(int rebuild)
 
     c = &s_cats[CAT_SYSTEM];
     c->name = L(S_CAT_SYSTEM);
+    add(c, L(S_DATE_TIME), IT_CLOCK); /* gäller direkt, inte via SETTINGS.TXT */
     if (!psp1000)
         toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
@@ -383,6 +468,7 @@ void settings_open(void)
     arkcfg_load(path);
     plugins_load(sys_ark_dir());
     load_walls();
+    clock_load_format();
     build(0);
     memset(&S, 0, sizeof(S));
     S.confirm_item = -1;
@@ -473,7 +559,30 @@ int settings_update(const UiInput *in, float dt)
     u32 p = in->pressed;
     int move = vertical(in, dt);
 
-    if (S.focus == 0) {
+    if (S.focus == 1 && S.clock_edit) {
+        /* ←/→ väljer fält, ↑/↓ ändrar det, ✕ ställer klockan, ○ ångrar */
+        if (move) {
+            clock_step(&S.clock, s_clock_order[S.clock_field], -move);
+            sound_play(SND_MOVE);
+        }
+        if ((p & PSP_CTRL_LEFT) && S.clock_field > 0) {
+            S.clock_field--;
+            sound_play(SND_MOVE);
+        } else if ((p & PSP_CTRL_RIGHT) && S.clock_field < CF_COUNT - 1) {
+            S.clock_field++;
+            sound_play(SND_MOVE);
+        }
+        if (p & PSP_CTRL_CROSS) {
+            int ok = sys_set_clock(&S.clock) >= 0;
+            snprintf(S.toast, sizeof(S.toast), "%s", L(ok ? S_CLOCK_SET : S_CLOCK_FAILED));
+            S.toast_time = 2.4f;
+            sound_play(ok ? SND_SELECT : SND_ERROR);
+            S.clock_edit = 0;
+        } else if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
+            S.clock_edit = 0;
+            sound_play(SND_BACK);
+        }
+    } else if (S.focus == 0) {
         if (move) {
             int cat = (S.cat + move + CAT_COUNT) % CAT_COUNT; /* gå runt i listan (issue #15) */
             if (cat != S.cat)
@@ -520,6 +629,10 @@ int settings_update(const UiInput *in, float dt)
                 mark_dirty(it);
             }
             sound_play(SND_TOGGLE);
+        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_CLOCK) {
+            clock_begin();
+            S.confirm_item = -1;
+            sound_play(SND_SELECT);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
@@ -691,7 +804,34 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
 {
     float right = RIGHT_X + RIGHT_W - 8;
     char value[64] = "";
+    float drawn_w = 0; /* bredden på ett värde som ritats här, för etikettens plats */
     switch (it->type) {
+    case IT_CLOCK: {
+        ScePspDateTime now;
+        char parts[CF_COUNT][6];
+        if (!(selected && S.clock_edit)) { /* klockan som den går */
+            if (ui_read_clock(&now))
+                clock_parts(&now, parts, value, sizeof(value));
+            break;
+        }
+        /* ändras: markera fältet med temats färg */
+        clock_parts(&S.clock, parts, value, sizeof(value));
+        const float pad = 3; /* luft runt varje fält, så att markeringen inte täcker skiljetecknen */
+        float x = right - text_width(0.58f, 0, value) - pad * 2 * CF_COUNT;
+        drawn_w = right - x + 12;
+        for (int i = 0; i < CF_COUNT; i++) {
+            float w = text_width(0.58f, 0, parts[i]);
+            int active = i == S.clock_field;
+            if (active)
+                gfx_round_rect(x, y + 5, w + pad * 2, 16, 4, fade(theme_toggle_on(shown), a));
+            text_draw(x + pad, y + 17, 0.58f, 0, fade(active ? LIGHT : TEXT_MAIN, a), ALIGN_LEFT, parts[i]);
+            x += w + pad * 2;
+            text_draw(x, y + 17, 0.58f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, CLOCK_SEP[i]);
+            x += text_width(0.58f, 0, CLOCK_SEP[i]);
+        }
+        value[0] = 0;
+        break;
+    }
     case IT_TOGGLE:
         draw_toggle(right - 26, y + 6.5f, *it->value != 0, theme_toggle_on(shown), a);
         right -= 34;
@@ -726,7 +866,7 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
             snprintf(value, sizeof(value), "%s", it->info);
         break;
     }
-    float value_w = 0;
+    float value_w = drawn_w;
     if (value[0]) {
         float vs = text_fit(0.58f, 0.46f, 0, RIGHT_W * 0.55f, value);
         value_w = text_width(vs, 0, value) + 12;

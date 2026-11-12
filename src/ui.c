@@ -2318,7 +2318,7 @@ static void format_time(char *out, int size, float sec)
 /* Lokal tid. På en PSP-1000 med ARK-4 kan sceRtcGetCurrentClockLocalTime ge fel efter att
  * batteriet tagits ur, fast XMB visar rätt tid – räkna då själv med systemets tidszon
  * och sommartid, och i sista hand den råa klockan. */
-static int read_clock(ScePspDateTime *now)
+int ui_read_clock(ScePspDateTime *now)
 {
     if (sceRtcGetCurrentClockLocalTime(now) >= 0)
         return 1;
@@ -2372,7 +2372,7 @@ static void draw_top_bar(Ui *ui)
 
     ScePspDateTime now;
     char clock[8] = "";
-    if (read_clock(&now))
+    if (ui_read_clock(&now))
         snprintf(clock, sizeof(clock), "%02d:%02d", now.hour, now.minute);
     text_draw(SCREEN_W - MARGIN, 24.5f, 0.74f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock);
     float cw = text_width(0.74f, 0, clock);

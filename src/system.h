@@ -3,6 +3,7 @@
 #define SYSTEM_H
 
 #include <psptypes.h>
+#include <psprtc.h>
 
 /* Lagringen psp5 startades från: "ms0:" eller "ef0:" (PSP Go:s internminne) */
 extern char g_root[5];
@@ -51,6 +52,8 @@ u32 sys_home_buttons(void);
 void sys_home_release(void);
 /* Släcker (0) eller tänder (1) skärmen. 0 = går inte (ingen ARK). */
 int sys_display(int on);
+/* Ställer systemklockan till lokal tid (systemets tidszon och sommartid). <0 = gick inte (ingen ARK). */
+int sys_set_clock(const ScePspDateTime *local);
 
 int sys_usb_start(void);
 void sys_usb_stop(void);

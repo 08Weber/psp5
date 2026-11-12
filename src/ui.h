@@ -2,6 +2,7 @@
 #ifndef UI_H
 #define UI_H
 
+#include <psprtc.h>
 #include "gfx.h"
 #include "scan.h"
 #include "loader.h"
@@ -158,6 +159,8 @@ void ui_set_tab(Ui *ui, int tab);
 /* bilderna i PICTURE, PSP/PHOTO och PSP/SCREENSHOT (inläses i bakgrunden) – till bakgrundsbilderna i inställningarna */
 int ui_pic_count(void);
 const char *ui_pic_path(int i);
+/* Lokal tid som i övre fältet. 0 = gick inte att läsa. */
+int ui_read_clock(ScePspDateTime *now);
 
 /* Enkel skärm under första skanningen. */
 void ui_draw_scanning(int done, const char *name, float time);
