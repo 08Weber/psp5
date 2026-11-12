@@ -15,6 +15,14 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 2.2.0
+
+- **Datum och tid:** första raden i Inställningar → System visar klockan. ✕ öppnar redigeringen: ← → väljer fält,
+  ↑ ↓ ändrar, ✕ sparar, ○/△ avbryter. Ordningen följer systemets datumformat (`PSP_SYSTEMPARAM_ID_INT_DATE_FORMAT`).
+  `sys_set_clock` (`src/system.c`) gör om lokal tid till UTC med `sceRtcConvertLocalTimeToUTC` (annars tidszon och
+  sommartid ur systemparametrarna) och anropar kärnans `sceRtcSetCurrentTick` (sceRtc_driver, NID 0x9763C138, eller
+  0x929620CE i 6.60/6.61) via `kuKernelCall`, som osd.c. Utan ARK (PPSSPP) säger den att klockan inte gick att ställa.
+
 ## Version 2.1.3
 
 Buggfixar och önskemål efter 2.1.2 (issues #27, #39, #43, #44).
@@ -267,7 +275,7 @@ Ser ut som PS5:s inställningar och läser/skriver samma filer som arkMenu:
   rensa bildcache, version
 - **Tema:** spelens bilder i bakgrunden, egen bakgrundsbild ur `PICTURE`, PS5-färgerna och PS1–PS4
 - **Prestanda:** CPU i spel / XMB, extra minne, minneskortscache, ISO-cache
-- **System:** USB-laddning, WPA2, logotyper, dölj bilder/MAC/DLC, lampor, UMD, analogspak, regioner m.m.
+- **System:** datum och tid, USB-laddning, WPA2, logotyper, dölj bilder/MAC/DLC, lampor, UMD, analogspak, regioner m.m.
 - **Plugins:** slå av/på rader i `ARK_01234/PLUGINS.TXT` och `SEPLUGINS/PLUGINS.TXT`
 - **Ström och USB:** USB-läge, XMB, viloläge, starta om, stäng av, återställningsmeny
 
