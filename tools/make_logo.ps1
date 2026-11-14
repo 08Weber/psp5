@@ -1,71 +1,52 @@
-# psp5 - made by 08Weber
-# Ritar psp5-loggan kantutjamnad och sparar den i src/logo.h (ABGR per bildpunkt, som GU vill ha).
-# Loggan: bla rundad ruta med PlayStations knappformer (triangel, cirkel, kryss, fyrkant) och "psp5"
-# bredvid (tunt "psp", halvfett "5", typsnittet Segoe UI som finns i Windows 10/11).
-# Kors i Windows: powershell -ExecutionPolicy Bypass -File tools\make_logo.ps1
+# Convert the supplied PSP5 boot-logo artwork to the compact texture used by boot.c.
+# Run from the repository root with: powershell -ExecutionPolicy Bypass -File tools\make_logo.ps1
 Add-Type -AssemblyName System.Drawing
 $project = Split-Path $PSScriptRoot -Parent
+$source = Join-Path $project 'res\BOOT_LOGO_SOURCE.png'
+$image = [System.Drawing.Bitmap]::new($source)
 
-function RoundRect($x, $y, $w, $h, $r) {
-    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $p.AddArc($x, $y, 2 * $r, 2 * $r, 180, 90); $p.AddArc($x + $w - 2 * $r, $y, 2 * $r, 2 * $r, 270, 90)
-    $p.AddArc($x + $w - 2 * $r, $y + $h - 2 * $r, 2 * $r, 2 * $r, 0, 90); $p.AddArc($x, $y + $h - 2 * $r, 2 * $r, 2 * $r, 90, 90)
-    $p.CloseFigure(); return $p
+# Find the lit logo and retain a little black margin for the blue glow.
+$x0 = $image.Width; $y0 = $image.Height; $x1 = -1; $y1 = -1
+for ($y = 0; $y -lt $image.Height; $y++) {
+    for ($x = 0; $x -lt $image.Width; $x++) {
+        $c = $image.GetPixel($x, $y)
+        if ([Math]::Max($c.R, [Math]::Max($c.G, $c.B)) -gt 5) {
+            $x0 = [Math]::Min($x0, $x); $x1 = [Math]::Max($x1, $x)
+            $y0 = [Math]::Min($y0, $y); $y1 = [Math]::Max($y1, $y)
+        }
+    }
 }
-function Pt($x, $y) { New-Object System.Drawing.PointF ([float]$x), ([float]$y) }
+if ($x1 -lt $x0) { throw 'No illuminated logo found in res/BOOT_LOGO_SOURCE.png' }
+$pad = 18
+$x0 = [Math]::Max(0, $x0 - $pad); $y0 = [Math]::Max(0, $y0 - $pad)
+$x1 = [Math]::Min($image.Width - 1, $x1 + $pad); $y1 = [Math]::Min($image.Height - 1, $y1 + $pad)
+$crop = [System.Drawing.Rectangle]::new($x0, $y0, $x1 - $x0 + 1, $y1 - $y0 + 1)
+$width = 176
+$height = [Math]::Max(1, [int][Math]::Round($crop.Height * $width / $crop.Width))
+$bitmap = [System.Drawing.Bitmap]::new($width, $height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.Clear([System.Drawing.Color]::Black)
+$graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+$graphics.DrawImage($image, [System.Drawing.Rectangle]::new(0, 0, $width, $height), $crop, [System.Drawing.GraphicsUnit]::Pixel)
+$graphics.Dispose(); $image.Dispose()
 
-$bmp = New-Object System.Drawing.Bitmap 200, 70, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.Clear([System.Drawing.Color]::Transparent)
-$g.SmoothingMode = 'AntiAlias'; $g.TextRenderingHint = 'AntiAlias'
-$fmt = [System.Drawing.StringFormat]::GenericTypographic
-
-# symbolen: 40 x 40, ljusare bla uppe till vanster
-$sx = 4; $sy = 10; $s = 40
-$rect = New-Object System.Drawing.Rectangle $sx, $sy, $s, $s
-$grad = New-Object System.Drawing.Drawing2D.LinearGradientBrush $rect, ([System.Drawing.Color]::FromArgb(78, 148, 255)), ([System.Drawing.Color]::FromArgb(22, 66, 196)), 60
-$g.FillPath($grad, (RoundRect $sx $sy $s $s 11))
-$pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), 2.2
-$r = $s * 0.12
-$cx1 = $sx + $s * 0.31; $cx2 = $sx + $s * 0.69; $cy1 = $sy + $s * 0.31; $cy2 = $sy + $s * 0.69
-$g.DrawPolygon($pen, [System.Drawing.PointF[]]@((Pt $cx1 ($cy1 - $r)), (Pt ($cx1 + $r * 1.1) ($cy1 + $r * 0.8)), (Pt ($cx1 - $r * 1.1) ($cy1 + $r * 0.8))))
-$g.DrawEllipse($pen, [float]($cx2 - $r), [float]($cy1 - $r), [float](2 * $r), [float](2 * $r))
-$g.DrawLine($pen, (Pt ($cx1 - $r * 0.85) ($cy2 - $r * 0.85)), (Pt ($cx1 + $r * 0.85) ($cy2 + $r * 0.85)))
-$g.DrawLine($pen, (Pt ($cx1 + $r * 0.85) ($cy2 - $r * 0.85)), (Pt ($cx1 - $r * 0.85) ($cy2 + $r * 0.85)))
-$g.DrawRectangle($pen, [float]($cx2 - $r * 0.9), [float]($cy2 - $r * 0.9), [float]($r * 1.8), [float]($r * 1.8))
-
-# ordbilden
-$white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(238, 238, 242))
-$light = New-Object System.Drawing.Font('Segoe UI Semilight', [float]30, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
-$bold = New-Object System.Drawing.Font('Segoe UI Semibold', [float]30, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
-$x = $sx + $s + 11
-foreach ($c in @(@('p', $light), @('s', $light), @('p', $light), @('5', $bold))) {
-    $g.DrawString($c[0], $c[1], $white, [float]$x, [float]($sy - 3), $fmt)
-    $x += $g.MeasureString($c[0], $c[1], 1000, $fmt).Width + 1
-}
-
-# beskar till det som syns, med en bildpunkts marginal
-$x0 = 999; $y0 = 999; $x1 = 0; $y1 = 0
-for ($y = 0; $y -lt $bmp.Height; $y++) { for ($x = 0; $x -lt $bmp.Width; $x++) {
-    if ($bmp.GetPixel($x, $y).A -gt 0) { $x0 = [Math]::Min($x0, $x); $x1 = [Math]::Max($x1, $x); $y0 = [Math]::Min($y0, $y); $y1 = [Math]::Max($y1, $y) }
-} }
-$x0--; $y0--; $x1++; $y1++
-$w = $x1 - $x0 + 1; $h = $y1 - $y0 + 1
-
-$sb = New-Object System.Text.StringBuilder
+$sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('/* psp5 - made by 08Weber */')
-[void]$sb.AppendLine('/* Generated by tools/make_logo.ps1 - do not edit by hand. ABGR per pixel (GU_PSM_8888). */')
-[void]$sb.AppendLine("#define LOGO_W $w")
-[void]$sb.AppendLine("#define LOGO_H $h")
-[void]$sb.AppendLine('static const unsigned int LOGO_PX[LOGO_W * LOGO_H] = {')
-for ($y = $y0; $y -le $y1; $y++) {
-    $row = for ($x = $x0; $x -le $x1; $x++) {
-        $c = $bmp.GetPixel($x, $y)
-        '0x{0:x8}' -f ([uint32]$c.A * 16777216 + [uint32]$c.B * 65536 + [uint32]$c.G * 256 + [uint32]$c.R)
+[void]$sb.AppendLine('/* Generated from res/BOOT_LOGO_SOURCE.png by tools/make_logo.ps1. */')
+[void]$sb.AppendLine("#define LOGO_W $width")
+[void]$sb.AppendLine("#define LOGO_H $height")
+[void]$sb.AppendLine('static const unsigned short LOGO_PX[LOGO_W * LOGO_H] = {')
+for ($y = 0; $y -lt $height; $y++) {
+    $row = for ($x = 0; $x -lt $width; $x++) {
+        $c = $bitmap.GetPixel($x, $y)
+        '0x{0:x4}' -f ([uint16](($c.R -shr 3) -shl 11) + [uint16](($c.G -shr 2) -shl 5) + [uint16]($c.B -shr 3))
     }
     [void]$sb.AppendLine('    ' + ($row -join ',') + ',')
 }
 [void]$sb.AppendLine('};')
-[System.IO.File]::WriteAllText((Join-Path $project 'src\logo.h'), $sb.ToString(), (New-Object System.Text.UTF8Encoding $false))
-$bmp.Clone((New-Object System.Drawing.Rectangle $x0, $y0, $w, $h), $bmp.PixelFormat).Save((Join-Path $env:TEMP 'psp5_logo_preview.png'))
-"logo: $w x $h"
+[System.IO.File]::WriteAllText((Join-Path $project 'src\logo.h'), $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
+$preview = Join-Path $env:TEMP 'psp5_logo_preview.png'
+$bitmap.Save($preview, [System.Drawing.Imaging.ImageFormat]::Png)
+$bitmap.Dispose()
+"logo: $width x $height"
