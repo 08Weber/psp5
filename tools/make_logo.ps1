@@ -38,10 +38,14 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine("#define LOGO_H $height")
 [void]$sb.AppendLine('static const unsigned short LOGO_PX[LOGO_W * LOGO_H] = {')
 # GU_PSM_5650 uses the same channel packing as img_to_texture: red low, blue high.
+# Expand System.Drawing's byte channels before left shifts to avoid 8-bit overflow.
 for ($y = 0; $y -lt $height; $y++) {
     $row = for ($x = 0; $x -lt $width; $x++) {
         $c = $bitmap.GetPixel($x, $y)
-        '0x{0:x4}' -f ([uint16](($c.B -shr 3) -shl 11) + [uint16](($c.G -shr 2) -shl 5) + [uint16]($c.R -shr 3))
+        $r5 = [int]$c.R -shr 3
+        $g6 = [int]$c.G -shr 2
+        $b5 = [int]$c.B -shr 3
+        '0x{0:x4}' -f [uint16](($b5 -shl 11) -bor ($g6 -shl 5) -bor $r5)
     }
     [void]$sb.AppendLine('    ' + ($row -join ',') + ',')
 }
