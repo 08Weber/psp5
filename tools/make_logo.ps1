@@ -2,7 +2,7 @@
 # Run from the repository root with: powershell -ExecutionPolicy Bypass -File tools\make_logo.ps1
 Add-Type -AssemblyName System.Drawing
 $project = Split-Path $PSScriptRoot -Parent
-$source = Join-Path $project 'res\BOOT_LOGO_SOURCE.png'
+$source = Join-Path $project 'res\BOOT_SOURCE.png'
 $image = [System.Drawing.Bitmap]::new($source)
 
 # Find the lit logo and retain a little black margin for the blue glow.
@@ -16,12 +16,12 @@ for ($y = 0; $y -lt $image.Height; $y++) {
         }
     }
 }
-if ($x1 -lt $x0) { throw 'No illuminated logo found in res/BOOT_LOGO_SOURCE.png' }
+if ($x1 -lt $x0) { throw 'No illuminated logo found in res/BOOT_SOURCE.png' }
 $pad = 18
 $x0 = [Math]::Max(0, $x0 - $pad); $y0 = [Math]::Max(0, $y0 - $pad)
 $x1 = [Math]::Min($image.Width - 1, $x1 + $pad); $y1 = [Math]::Min($image.Height - 1, $y1 + $pad)
 $crop = [System.Drawing.Rectangle]::new($x0, $y0, $x1 - $x0 + 1, $y1 - $y0 + 1)
-$width = 176
+$width = 256
 $height = [Math]::Max(1, [int][Math]::Round($crop.Height * $width / $crop.Width))
 $bitmap = [System.Drawing.Bitmap]::new($width, $height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
@@ -33,7 +33,7 @@ $graphics.Dispose(); $image.Dispose()
 
 $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('/* psp5 - made by 08Weber */')
-[void]$sb.AppendLine('/* Generated from res/BOOT_LOGO_SOURCE.png by tools/make_logo.ps1. */')
+[void]$sb.AppendLine('/* Generated from res/BOOT_SOURCE.png by tools/make_logo.ps1. */')
 [void]$sb.AppendLine("#define LOGO_W $width")
 [void]$sb.AppendLine("#define LOGO_H $height")
 [void]$sb.AppendLine('static const unsigned short LOGO_PX[LOGO_W * LOGO_H] = {')

@@ -1,6 +1,6 @@
 /* psp5 – made by 08Weber */
 /* Startskärm i samma ordning som en PS5:s uppstart:
- *   1. PSP5-startloggan från boot-logotypen, centrerad på svart
+ *   1. PSP5-ordmärket, centrerat på svart
  *   2. hälsovarningen, centrerad, över djupblå botten med glidande ljusfläckar
  *   3. små ljusa bokeh-cirklar som tonar över till "Welcome Back"-bilden
  * och därefter tonar launchern in. Allt ritas här, valfri knapp hoppar över. */
@@ -50,7 +50,7 @@ static float rnd(void)
     return (s_seed >> 8) / 16777216.0f;
 }
 
-/* --- PSP5-loggan: förrenderad från res/BOOT_LOGO_SOURCE.png (tools/make_logo.ps1 → logo.h) --- */
+/* --- PSP5-loggan: förrenderad från res/BOOT_SOURCE.png (tools/make_logo.ps1 → logo.h) --- */
 
 Texture *logo_texture(void)
 {
