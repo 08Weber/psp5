@@ -147,6 +147,8 @@ void ui_free(Ui *ui);
 void ui_relist(Ui *ui, int removed_front, int added_front);
 int ui_update(Ui *ui, const UiInput *in, float dt);
 void ui_draw(Ui *ui);
+/* Enhetlig topprad (Games, Apps, Library, Music, kugghjul, batteri, klocka) som delas med inställningarna. */
+void ui_draw_top_bar(int active_tab, int in_settings, float alpha, float anim_time);
 void ui_toast(Ui *ui, const char *msg);
 /* Öppnar Control Center (HOME) och stänger andra paneler. */
 void ui_open_cc(Ui *ui);
