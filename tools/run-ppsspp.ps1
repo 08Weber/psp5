@@ -1,6 +1,6 @@
 # psp5 – made by 08Weber
 # Kopierar launchern + testdata till PPSSPP:s minneskort och startar den i PPSSPP.
-#   powershell -ExecutionPolicy Bypass -File tools\run-ppsspp.ps1 [-NoTestData]
+#  powershell -ExecutionPolicy Bypass -File tools\run-ppsspp.ps1 [-NoTestData]
 param([switch]$NoTestData)
 
 $ErrorActionPreference = 'Stop'
@@ -17,3 +17,4 @@ if (-not $NoTestData) {
 }
 
 Start-Process $ppsspp -ArgumentList "`"$memstick\PSP\GAME\PSP5\EBOOT.PBP`""
+

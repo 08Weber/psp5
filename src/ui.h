@@ -5,6 +5,7 @@
 #include "gfx.h"
 #include "scan.h"
 #include "loader.h"
+#include "theme.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */ };
 enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_PICTURES, TAB_MEDIA, TAB_VIDEO, TAB_SEARCH, TAB_COUNT };
@@ -149,6 +150,16 @@ int ui_update(Ui *ui, const UiInput *in, float dt);
 void ui_draw(Ui *ui);
 /* Enhetlig topprad (Games, Apps, Library, Music, kugghjul, batteri, klocka) som delas med inställningarna. */
 void ui_draw_top_bar(int active_tab, int in_settings, float alpha, float anim_time);
+/* Lugn Figma-bakgrund (mörk gradient, mjuka vågor och PS-vattenstämpel) som delas med inställningarna. */
+void ui_draw_calm_backdrop(const Theme *t, float time, const float accent[3], int allow_wallpaper);
+/* Enhetlig dockad fotlist längs nederkanten som delas med inställningarna. */
+void ui_draw_footer_bar(float alpha);
+/* Förrenderade ikoner (tools/make_icons.ps1): kategorier 16 x 16, Control Center 24 x 24. */
+enum {
+    UI_ICON_CAT_PSP5, UI_ICON_CAT_THEME, UI_ICON_CAT_PERF, UI_ICON_CAT_SYSTEM, UI_ICON_CAT_PLUGINS,
+    UI_ICON_CAT_POWER, UI_ICON_CC_USB, UI_ICON_CC_GEAR, UI_ICON_COUNT
+};
+void ui_draw_mask_icon(int id, float cx, float cy, u32 color);
 void ui_toast(Ui *ui, const char *msg);
 /* Öppnar Control Center (HOME) och stänger andra paneler. */
 void ui_open_cc(Ui *ui);
