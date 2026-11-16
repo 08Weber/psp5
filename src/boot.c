@@ -50,7 +50,7 @@ static float rnd(void)
     return (s_seed >> 8) / 16777216.0f;
 }
 
-/* --- PSP5-loggan: förrenderad från res/BOOT_SOURCE.png (tools/make_logo.ps1 → logo.h) --- */
+/* --- PSP5-loggan: förrenderad från res/BOOT_SOURCE.png (tools/make_logo.ps1 → logo.h) [medhatk] --- */
 
 Texture *logo_texture(void)
 {

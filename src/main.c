@@ -28,7 +28,7 @@
 #include "files.h"
 #include "preview.h"
 
-PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
+PSP_MODULE_INFO("PSP5_REMAKE", PSP_MODULE_USER, 0, 1); /* [medhatk] Renamed module info for PSP5 REMAKE */
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 /* Lämna 7 MB fritt: ARK:s RECOVERY.PRX (4 MB egen heap), MP3-avkodarens moduler och
  * trådarnas stackar. Resten (~17 MB på PSP-1000) räcker gott – psp5 använder under 10 MB. */

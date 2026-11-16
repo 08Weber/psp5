@@ -254,7 +254,7 @@ static void build(int rebuild)
     Category *c;
 
     c = &s_cats[CAT_PSP5];
-    c->name = "psp5";
+    c->name = "PSP5 REMAKE"; /* [medhatk] Renamed project/fork category in Settings sidebar */
     c->desc = L(S_DESC_PSP5);
     toggle(c, L(S_BOOT_PSP5), &g_cfw.launcher);
     toggle(c, L(S_SOUNDS), &g_sound_on);
