@@ -1924,7 +1924,8 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
 
 /* --- Control Center (HOME eller SELECT) --- */
 
-enum { CC_MUSIC, CC_SCREENSHOT, CC_SLEEP, CC_USB, CC_FILES, CC_SETTINGS, CC_XMB, CC_RESTART, CC_OFF, CC_COUNT };
+/* [medhatk] Added CC_STANDBY to Control Center bar between Sleep and USB */
+enum { CC_MUSIC, CC_SCREENSHOT, CC_SLEEP, CC_STANDBY, CC_USB, CC_FILES, CC_SETTINGS, CC_XMB, CC_RESTART, CC_OFF, CC_COUNT };
 
 static const char *cc_label(int item)
 {
@@ -1932,6 +1933,7 @@ static const char *cc_label(int item)
     case CC_MUSIC:      return L(music_state() == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
     case CC_SCREENSHOT: return L(S_SCREENSHOT);
     case CC_SLEEP:      return L(S_SLEEP);
+    case CC_STANDBY:    return L(S_STANDBY); /* [medhatk] "Standby Screen" label */
     case CC_USB:        return L(S_USB_MODE);
     case CC_FILES:      return L(S_FILES);
     case CC_SETTINGS:   return L(S_SETTINGS);
@@ -1991,7 +1993,8 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
     }
     if (!(in->pressed & ok))
         return UI_NONE;
-    static const int actions[CC_COUNT] = { 0, 0, SA_SUSPEND, SA_USB, SA_FILES, 0, SA_XMB, SA_RESTART, SA_SHUTDOWN };
+    /* [medhatk] Slot 3 (CC_STANDBY) maps to 0 here because it transitions to UI_STANDBY rather than SA_* */
+    static const int actions[CC_COUNT] = { 0, 0, SA_SUSPEND, 0, SA_USB, SA_FILES, 0, SA_XMB, SA_RESTART, SA_SHUTDOWN };
     switch (ui->cc_sel) {
     case CC_MUSIC:
         if (music_current() >= 0 && music_state() != MUSIC_STOPPED)
@@ -2006,6 +2009,12 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
         ui->cc_anim = 0;
         osd_request_screenshot();
         return UI_NONE;
+    case CC_STANDBY:
+        /* [medhatk] Close Control Center and hand off to main.c standby_mode() loop */
+        ui->cc_open = 0;
+        ui->cc_anim = 0;
+        sound_play(SND_CC_CLOSE);
+        return UI_STANDBY;
     case CC_SETTINGS:
         ui->cc_open = 0;
         return UI_SETTINGS;
@@ -4202,6 +4211,12 @@ static void draw_cc_glyph(int item, float cx, float cy, u32 c, u32 bg)
         gfx_circle(cx, cy, 8, c);
         gfx_circle(cx + 4, cy - 3, 6.8f, bg);
         break;
+    case CC_STANDBY: /* [medhatk] Standby Screen clock glyph (circle + 12/3 o'clock hands) */
+        gfx_circle(cx, cy, 8.5f, c);
+        gfx_circle(cx, cy, 6.5f, bg);
+        gfx_round_rect(cx - 0.9f, cy - 5.0f, 1.8f, 5.9f, 0.9f, c);
+        gfx_round_rect(cx - 0.9f, cy - 0.9f, 4.9f, 1.8f, 0.9f, c);
+        break;
     case CC_USB:
         ui_draw_mask_icon(UI_ICON_CC_USB, cx, cy, c);
         break;
@@ -4299,7 +4314,8 @@ static void draw_cc(Ui *ui)
     cc_colors(&top, &bottom);
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * e)));
 
-    const float ph = 84, step = 48;
+    /* [medhatk] Narrow Control Center icon stride from 48 to 44 px when CC_COUNT > 9 so all 10 icons fit comfortably */
+    const float ph = 84, step = CC_COUNT > 9 ? 44 : 48;
     float py = SCREEN_H - ph * e;
     draw_cc_music(ui, MARGIN, py - 56, e, top);
     gfx_glow(0, py, SCREEN_W, ph + 20, 12, RGBA(0, 0, 0, (int)(150 * e)));
@@ -4393,6 +4409,290 @@ void ui_draw(Ui *ui)
     if (ui->cc_leave > 0) /* Control Center: ut till svart innan USB, filer, viloläge … */
         black = fmaxf(black, smooth(ui->cc_leave));
     if (black > 0)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * black)));
+    gfx_end();
+}
+
+/* [medhatk] Initialize/reset all Standby Screen state before entering standby_mode() */
+void ui_standby_open(Ui *ui)
+{
+    ui->sb_time = 0;
+    ui->sb_leave = 0;
+    ui->sb_power_open = 0;
+    ui->sb_power_sel = 0;
+    ui->sb_confirm = 0;
+    ui->sb_confirm_time = 0;
+    ui->sb_power_anim = 0;
+    ui->sb_step_dir = 0;
+    ui->sb_step_time = 0;
+}
+
+/* [medhatk] Process input & animations in Standby Screen:
+ * - Only HOME unlocks (SB_UNLOCK); Triangle toggles the Power panel (Sleep / Shut down).
+ * - Confirm plays/pauses music; Left/Right skips tracks when music is loaded.
+ * - Shut down requires a second confirm press within 3s to avoid accidental power-off. */
+int ui_standby_update(Ui *ui, const UiInput *in, float dt)
+{
+    ui->time += dt;
+    ui->sb_time += dt;
+    ui->sb_power_anim = clampf(ui->sb_power_anim + (ui->sb_power_open ? 7.0f : -8.0f) * dt, 0, 1);
+    if (ui->sb_step_time > 0) {
+        ui->sb_step_time -= dt;
+        if (ui->sb_step_time <= 0)
+            ui->sb_step_dir = 0;
+    }
+    media_poll(ui);
+    update_cover(ui, dt);
+    if (music_needs_cjk())
+        font_ensure_cjk();
+
+    if (ui->sb_confirm) {
+        ui->sb_confirm_time += dt;
+        if (ui->sb_confirm_time >= 3.0f) {
+            ui->sb_confirm = 0;
+            ui->sb_confirm_time = 0;
+        }
+    }
+
+    /* [medhatk] 0.3s entry guard absorbs any lingering button press from Control Center */
+    if (ui->sb_time < 0.3f)
+        return SB_NONE;
+
+    if (in->pressed & PSP_CTRL_HOME) {
+        sound_play(SND_BACK);
+        return SB_UNLOCK;
+    }
+
+    u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
+    u32 back = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
+
+    /* [medhatk] Power overlay active: navigate between Sleep (0) and Shut down (1) */
+    if (ui->sb_power_open) {
+        int move = step_input(ui, in, dt, 0);
+        if (move) {
+            ui->sb_power_sel ^= 1;
+            ui->sb_confirm = 0;
+            ui->sb_confirm_time = 0;
+            sound_play(SND_MOVE);
+        }
+        if (in->pressed & (back | PSP_CTRL_TRIANGLE)) {
+            ui->sb_power_open = 0;
+            ui->sb_confirm = 0;
+            ui->sb_confirm_time = 0;
+            sound_play(SND_CLOSE_MENU);
+        } else if (in->pressed & ok) {
+            if (ui->sb_power_sel == 0) {
+                sound_play(SND_CONFIRM);
+                return SB_SLEEP;
+            }
+            if (!ui->sb_confirm) {
+                ui->sb_confirm = 1;
+                ui->sb_confirm_time = 0;
+                sound_play(SND_SELECT);
+            } else {
+                sound_play(SND_CONFIRM);
+                return SB_SHUTDOWN;
+            }
+        }
+        return SB_NONE;
+    }
+
+    /* [medhatk] Main lock-screen shortcuts: Triangle = Power menu, OK = play/pause, Left/Right = track skip */
+    if (in->pressed & PSP_CTRL_TRIANGLE) {
+        ui->sb_power_open = 1;
+        ui->sb_power_sel = 0;
+        ui->sb_confirm = 0;
+        ui->sb_confirm_time = 0;
+        sound_play(SND_OPEN);
+    } else if (in->pressed & ok) {
+        if (music_current() >= 0 && music_state() != MUSIC_STOPPED)
+            music_toggle_pause();
+        else if (music_count())
+            music_play(ui->music_sel);
+        else
+            sound_play(SND_ERROR);
+    } else if (music_current() >= 0) {
+        if (in->pressed & PSP_CTRL_LEFT) {
+            music_prev();
+            ui->sb_step_dir = -1;
+            ui->sb_step_time = 0.22f;
+        } else if (in->pressed & PSP_CTRL_RIGHT) {
+            music_next();
+            ui->sb_step_dir = 1;
+            ui->sb_step_time = 0.22f;
+        }
+    }
+    return SB_NONE;
+}
+
+/* [medhatk] Render one Standby Screen frame using the active theme or custom wallpaper */
+void ui_draw_standby(Ui *ui)
+{
+    gfx_begin(CLEAR_COLOR);
+    ui_draw_calm_backdrop(theme_cur(), ui->time * 0.3f, ui->accent, 1);
+
+    /* [medhatk] Battery percentage & icon in the top-right corner */
+    float bx = SCREEN_W - 36.0f;
+    int battery = scePowerIsBatteryExist();
+    int charging = testrun_charging() >= 0 ? testrun_charging() : battery && scePowerIsBatteryCharging() > 0;
+    int level = testrun_battery() >= 0 ? testrun_battery() : battery ? scePowerGetBatteryLifePercent() : -1;
+    char bat_info[12] = "";
+    if (level >= 0)
+        snprintf(bat_info, sizeof(bat_info), "%d%%", level);
+    float iw = bat_info[0] ? text_width(0.58f, 0, bat_info) + 5.0f : 0.0f;
+    if (bat_info[0])
+        text_draw(bx - 5.0f, 24.0f, 0.58f, 0, with_alpha(TEXT_DIM, 0.95f), ALIGN_RIGHT, bat_info);
+    draw_battery(bx, 15.0f, level, charging, ui->time, 0.95f, iw);
+
+    int cur = music_current(), mstate = music_state();
+    const Track *tr = cur >= 0 ? music_track(cur) : NULL;
+    int has_music = tr && mstate != MUSIC_STOPPED;
+
+    /* [medhatk] Large centered digital clock (with blinking colon) + date; shifts slightly up when music card is shown */
+    ScePspDateTime now;
+    if (read_clock(&now)) {
+        char hh[4], mm[4], date[20];
+        snprintf(hh, sizeof(hh), "%02d", now.hour);
+        snprintf(mm, sizeof(mm), "%02d", now.minute);
+        const float clk_sz = 1.8f;
+        float hw = text_width(clk_sz, 0, hh);
+        float cw = text_width(clk_sz, 0, ":");
+        float mw = text_width(clk_sz, 0, mm);
+        float tx = SCREEN_W * 0.5f - (hw + cw + mw) * 0.5f;
+        float cy = has_music ? 60.0f : 96.0f;
+        text_draw(tx, cy, clk_sz, 0, TEXT_MAIN, ALIGN_LEFT, hh);
+        text_draw(tx + hw, cy, clk_sz, 0, with_alpha(TEXT_MAIN, (now.second & 1) ? 0.45f : 1.0f), ALIGN_LEFT, ":");
+        text_draw(tx + hw + cw, cy, clk_sz, 0, TEXT_MAIN, ALIGN_LEFT, mm);
+
+        snprintf(date, sizeof(date), "%02d/%02d/%04d", now.day, now.month, now.year);
+        text_draw(SCREEN_W * 0.5f, cy + 21.0f, 0.60f, 0, TEXT_DIM, ALIGN_CENTER, date);
+    }
+
+    /* [medhatk] Compact launcher-style Now Playing card (168x140) centered under the clock when playing/paused */
+    u32 card_top, card_bot;
+    cc_colors(&card_top, &card_bot);
+    if (has_music) {
+        const float pw = 168.0f, ph = 140.0f;
+        const float px = (SCREEN_W - pw) * 0.5f, py = 94.0f;
+        u32 border = g_theme == 0 ? RGBA(44, 55, 74, 210) : with_alpha(theme_cur()->accent, 0.35f);
+        u32 panel_bg = g_theme == 0 ? RGBA(18, 24, 34, 238) : with_alpha(theme_cur()->card, 0.90f);
+        gfx_glow(px, py + 2.0f, pw, ph, 8.0f, RGBA(0, 0, 0, 120));
+        gfx_round_rect(px, py, pw, ph, 10.0f, border);
+        gfx_round_rect(px + 1.0f, py + 1.0f, pw - 2.0f, ph - 2.0f, 9.2f, panel_bg);
+
+        /* [medhatk] 44x44 album cover thumbnail with note-icon fallback */
+        float as = 44.0f, ax = px + (pw - as) * 0.5f, ay = py + 9.0f;
+        unsigned h = (unsigned)cur * 2654435761u;
+        int r0 = 60 + (h >> 8) % 120, g0 = 60 + (h >> 16) % 110, b0 = 90 + (h >> 24) % 140;
+        gfx_glow(ax, ay + 2.0f, as, as, 6.0f, RGBA(0, 0, 0, 110));
+        gfx_round_rect(ax, ay, as, as, 7.0f, RGBA(r0, g0, b0, 255));
+        gfx_gradient_v(ax + 3.0f, ay + as * 0.5f, as - 6.0f, as * 0.5f - 3.0f,
+                       RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 65));
+        draw_note(ax + as * 0.5f, ay + as * 0.5f, 20.0f, RGBA(255, 255, 255, 230));
+        if (ui->cover && ui->cover_for == cur)
+            gfx_tex(ui->cover, ax, ay, as, as, RGBA(255, 255, 255, (int)(255 * smooth(ui->cover_fade))));
+
+        /* [medhatk] Cache ellipsized track title & artist until track, music list, or language changes */
+        static char title[96], artist[64];
+        static int text_for = -2, text_gen = -1;
+        static const char *text_lang;
+        if (text_for != cur || text_gen != music_generation() || text_lang != L(S_UNKNOWN_ARTIST)) {
+            text_ellipsis(title, sizeof(title), tr->title, 0.54f, pw - 20.0f);
+            text_ellipsis(artist, sizeof(artist), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.43f,
+                          pw - 20.0f);
+            text_for = cur;
+            text_gen = music_generation();
+            text_lang = L(S_UNKNOWN_ARTIST);
+        }
+        text_draw(px + pw * 0.5f, ay + as + 13.0f, 0.54f, 0, TEXT_MAIN, ALIGN_CENTER, title);
+        text_draw(px + pw * 0.5f, ay + as + 25.0f, 0.43f, 0, RGBA(148, 163, 184, 235), ALIGN_CENTER, artist);
+
+        /* [medhatk] Playback progress bar, elapsed/duration timestamps, and [prev] [play/pause] [next] controls */
+        float el = music_elapsed(), du = music_duration();
+        float pbw = pw - 24.0f, pbx = px + 12.0f, pby = py + ph - 46.0f;
+        gfx_round_rect(pbx, pby, pbw, 2.5f, 1.25f, RGBA(44, 56, 74, 220));
+        if (du > 0.0f) {
+            float fw = fmaxf(2.5f, pbw * clampf(el / du, 0.0f, 1.0f));
+            gfx_round_rect(pbx, pby, fw, 2.5f, 1.25f, with_alpha(theme_cur()->accent, 0.96f));
+            gfx_circle(pbx + fw, pby + 1.25f, 2.5f, with_alpha(theme_cur()->accent, 1.0f));
+        }
+        char e[12], d[12];
+        format_time(e, sizeof(e), el);
+        format_time(d, sizeof(d), du);
+        text_draw(pbx, pby + 11.0f, 0.42f, 0, RGBA(140, 152, 172, 235), ALIGN_LEFT, e);
+        if (du > 0.0f)
+            text_draw(pbx + pbw, pby + 11.0f, 0.42f, 0, RGBA(140, 152, 172, 235), ALIGN_RIGHT, d);
+
+        float ctx = px + pw * 0.5f, cty = py + ph - 17.0f;
+        draw_transport_step(ctx - 32.0f, cty, -1, ui->sb_step_time > 0 && ui->sb_step_dir < 0, 1.0f);
+        gfx_circle(ctx, cty, 9.5f, with_alpha(LIGHT, 0.96f));
+        draw_play_glyph(ctx, cty, 5.6f, mstate == MUSIC_PLAYING, DARK);
+        draw_transport_step(ctx + 32.0f, cty, 1, ui->sb_step_time > 0 && ui->sb_step_dir > 0, 1.0f);
+    }
+
+    /* [medhatk] Bottom hint bar: centered HOME unlock prompt + right-aligned Triangle Power shortcut */
+    const char *pwr = L(S_POWER);
+    float pw = text_width(0.52f, 0, pwr);
+    float pwr_x = SCREEN_W - MARGIN - pw;
+    float hy = 252.0f;
+    gfx_button(pwr_x - 10.5f, hy, 6.0f, BTN_TRIANGLE, with_alpha(LIGHT, 0.88f), with_alpha(DARK, 0.95f));
+    text_draw(pwr_x, hy + 4.0f, 0.52f, 0, with_alpha(TEXT_DIM, 0.95f), ALIGN_LEFT, pwr);
+
+    const char *unlock = L(S_STANDBY_UNLOCK);
+    float max_uw = (pwr_x - 28.0f - MARGIN) * 2.0f - 16.0f;
+    if (max_uw < 80.0f)
+        max_uw = 80.0f;
+    float usz = text_fit(0.54f, 0.40f, 0, max_uw, unlock);
+    float uw = text_width(usz, 0, unlock);
+    float ux = SCREEN_W * 0.5f - (14.0f + uw) * 0.5f;
+    if (ux + 14.0f + uw > pwr_x - 22.0f)
+        ux = pwr_x - 22.0f - (14.0f + uw);
+    if (ux < MARGIN)
+        ux = MARGIN;
+    /* [medhatk] Custom house glyph representing the PSP HOME button */
+    float hx = ux + 5.0f;
+    float roof[6] = { hx, hy - 5.5f, hx - 5.5f, hy - 0.5f, hx + 5.5f, hy - 0.5f };
+    u32 hc = with_alpha(TEXT_DIM, 0.95f);
+    gfx_fan(hx, hy - 2.0f, roof, 3, hc);
+    gfx_rect(hx - 3.6f, hy - 0.5f, 7.2f, 5.2f, hc);
+    gfx_rect(hx - 1.1f, hy + 1.5f, 2.2f, 3.2f, RGBA(12, 14, 18, 220));
+    text_draw(ux + 14.0f, hy + 4.0f, usz, 0, hc, ALIGN_LEFT, unlock);
+
+    /* [medhatk] Slide-up Power overlay (Sleep / Shut down) when Triangle is toggled */
+    if (ui->sb_power_anim > 0.01f) {
+        float pa = smooth(ui->sb_power_anim);
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(95 * pa)));
+        const float pan_w = 210.0f, pan_h = 76.0f;
+        float pan_x = (SCREEN_W - pan_w) * 0.5f;
+        float pan_y = 236.0f - pan_h + (1.0f - pa) * 10.0f;
+        gfx_glow(pan_x, pan_y, pan_w, pan_h, 10.0f, RGBA(0, 0, 0, (int)(150 * pa)));
+        gfx_round_rect(pan_x, pan_y, pan_w, pan_h, 14.0f, with_alpha(card_top, 0.97f * pa));
+        gfx_ring(pan_x, pan_y, pan_w, pan_h, 14.0f, RGBA(255, 255, 255, (int)(26 * pa)));
+
+        float cx0 = pan_x + pan_w * 0.5f - 28.0f;
+        float cx1 = pan_x + pan_w * 0.5f + 28.0f;
+        float iy = pan_y + 49.0f;
+        float sel_x = ui->sb_power_sel ? cx1 : cx0;
+        gfx_round_rect(sel_x - 20.0f, iy - 20.0f, 40.0f, 40.0f, 10.0f, with_alpha(LIGHT, pa));
+
+        int s0 = ui->sb_power_sel == 0, s1 = ui->sb_power_sel == 1;
+        draw_cc_glyph(CC_SLEEP, cx0, iy, with_alpha(s0 ? DARK : LIGHT, pa),
+                      with_alpha(s0 ? LIGHT : card_top, pa));
+        draw_cc_glyph(CC_OFF, cx1, iy, with_alpha(s1 ? DARK : LIGHT, pa),
+                      with_alpha(s1 ? LIGHT : card_top, pa));
+
+        const char *lbl = ui->sb_confirm ? L(S_CONFIRM) : L(ui->sb_power_sel == 0 ? S_SLEEP : S_SHUTDOWN);
+        float lsz = text_fit(0.56f, 0.40f, 0, pan_w - 20.0f, lbl);
+        text_draw(pan_x + pan_w * 0.5f, pan_y + 20.0f, lsz, 0, with_alpha(TEXT_MAIN, pa), ALIGN_CENTER, lbl);
+    }
+
+    /* [medhatk] Keep volume & screenshot OSD functional on top of Standby Screen, then apply entry/exit fade */
+    osd_draw();
+
+    float black = 1.0f - clampf(ui->sb_time / 0.25f, 0.0f, 1.0f);
+    if (ui->sb_leave > 0.0f)
+        black = fmaxf(black, smooth(ui->sb_leave));
+    if (black > 0.0f)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * black)));
     gfx_end();
 }

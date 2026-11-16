@@ -101,9 +101,13 @@ A few other things I cared about:
   single game (one folder per game) is not a category unless its name starts with `g_` or `s_` (the prefix
   isn't shown). In a category the Games row shows all of its games; "All" counts every game, and SELECT again
   closes the picker.
-- **It has a Control Center.** HOME opens a PS5-style panel with sleep, USB, the file manager, settings, the XMB,
-  restart and power off. *Settings → Power and USB* can also turn the screen off and put the PSP to sleep after a
-  while without a button press (not while music is playing).
+- **It has a Control Center.** HOME opens a PS5-style panel with music playback, screenshot, sleep, **Standby Screen**,
+  USB, the file manager, settings, the XMB, restart and power off. *Settings → Power and USB* can also turn the
+  screen off and put the PSP to sleep after a while without a button press (not while music is playing).
+- **It has a Standby Screen.** Pick **Standby Screen** in the Control Center for a theme-styled always-on clock
+  with date, battery status and music controls (✕ play/pause, ←/→ previous/next track, △ for Sleep or Shut down).
+  Screen brightness steps down by one level, auto-sleep and screen-off are paused while it stays open, and pressing
+  **HOME** unlocks back to the menu and restores brightness.
 - **It shows the game's logo** (PIC0) under the selected game, and the background art (PIC1) in full resolution.
 - **It remembers where you were** – after a game, psp5 opens on the same tab, category and game.
 - **It can show your pictures.** Press ✕ on a JPEG or PNG in the file manager to view it (← → for the next one)
@@ -130,7 +134,7 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | any button | skip the startup screen |
 | ○ | back |
 | SELECT | categories (folders in ISO and PSP/GAME) |
-| HOME | Control Center: sleep, USB, files, screenshot, settings, XMB, restart, power off |
+| HOME | Control Center: music, screenshot, sleep, Standby Screen, USB, files, settings, XMB, restart, power off |
 | ♪ or L + R + START | take a screenshot (PNG in `PICTURE/PSP5`) |
 
 If something ever goes wrong, hold **SELECT** while the PSP boots – ARK then skips its settings and you land

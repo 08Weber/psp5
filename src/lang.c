@@ -487,6 +487,16 @@ static const char *const T[S_COUNT][NL] = {
                          "Impossible de lancer la vidéo", "No se pudo iniciar el vídeo", "Impossibile avviare il video",
                          "Kan de video niet starten", "Não foi possível iniciar o vídeo", "Не удалось запустить видео",
                          "ビデオを開始できませんでした" },
+    /* [medhatk] Standby Screen strings across all 10 supported UI languages */
+    [S_STANDBY] = { "Standby Screen", "Standby Screen", "Standby Screen", "Standby Screen", "Standby Screen",
+                    "Standby Screen", "Standby Screen", "Standby Screen", "Standby Screen", "Standby Screen" },
+    [S_STANDBY_UNLOCK] = { "Press HOME to unlock", "Tryck på HOME för att låsa upp", "HOME drücken zum Entsperren",
+                           "Appuyez sur HOME pour déverrouiller", "Pulsa HOME para desbloquear",
+                           "Premi HOME per sbloccare", "Druk op HOME om te ontgrendelen",
+                           "Prima HOME para desbloquear", "Нажмите HOME для разблокировки",
+                           "HOMEを押してロック解除" },
+    [S_POWER] = { "Power", "Ström", "Energie", "Alimentation", "Energía", "Energia",
+                  "Energie", "Energia", "Питание", "電源" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

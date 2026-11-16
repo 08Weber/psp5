@@ -40,6 +40,8 @@ typedef enum {
     S_TAB_PICTURES, S_NO_PICTURES, S_HINT_PICTURES, S_SCREENSHOT, S_SCREENSHOT_SAVED,
     S_TAB_MEDIA, S_TAB_VIDEO, S_NO_VIDEOS, S_HINT_VIDEOS, S_SEARCH, S_NO_RESULTS,
     S_ALBUMS, S_ALL_TRACKS, S_WELCOME, S_ALL_GAMES, S_LOADING_MEDIA, S_MP4_IN_XMB, S_VIDEO_FAILED,
+    /* [medhatk] Standby Screen: Control Center item label, HOME unlock hint, and Power panel title */
+    S_STANDBY, S_STANDBY_UNLOCK, S_POWER,
     S_COUNT
 } StrId;
 
