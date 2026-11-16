@@ -32,6 +32,7 @@ Optional - use PSP5 REMAKE as ARK's launcher:
 
 Music: put .mp3 or .m4a files in the MUSIC folder.
 Stuck? Hold SELECT while turning on the PSP - ARK then starts the normal XMB.
+Full guide: https://github.com/medhatk/PSP5-REMAKE/blob/main/INSTALL.md
 """
 
 README_GO = """PSP5 REMAKE v{version} for the PSP Go with {ark}
@@ -54,6 +55,7 @@ Optional - use PSP5 REMAKE as ARK's launcher:
   (on the internal storage).
 
 Stuck? Hold SELECT while turning on the PSP - ARK then starts the normal XMB.
+Full guide: https://github.com/medhatk/PSP5-REMAKE/blob/main/INSTALL.md
 """
 
 
@@ -78,7 +80,7 @@ def make(version, ark, dist, go=False):
 
 
 if __name__ == '__main__':
-    v = sys.argv[1] if len(sys.argv) > 1 else '2.1.3'
+    v = sys.argv[1] if len(sys.argv) > 1 else '1.0.0'
     make(v, 'ARK-5', 'dist')
     make(v, 'ARK-4', 'dist-ark4')
     make(v, 'ARK-5', 'dist', go=True)

@@ -276,9 +276,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "2.1.3 (ARK-4)");
+    info(c, L(S_VERSION), "1.0.0 (ARK-4)"); /* [medhatk] PSP5 REMAKE initial release version */
 #else
-    info(c, L(S_VERSION), "2.1.3 (ARK-5)");
+    info(c, L(S_VERSION), "1.0.0 (ARK-5)"); /* [medhatk] PSP5 REMAKE initial release version */
 #endif
     info(c, "CFW", system_name());
 
