@@ -777,7 +777,7 @@ static void run_act(int act)
             free(paths[i]);
         break;
     default:
-        sound_play(SND_BACK);
+        sound_play(SND_CLOSE_MENU);
         break;
     }
 }
@@ -1016,7 +1016,7 @@ static void view_update(const UiInput *in)
         snprintf(g_wallpaper, sizeof(g_wallpaper), "%s", path);
         config_save(g_data_dir);
         toast(L(S_WALLPAPER_SET));
-        sound_play(SND_SELECT);
+        sound_play(SND_CONFIRM);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
         s_viewing = 0;
         tex_free(s_view);
@@ -1067,7 +1067,7 @@ static void finish_op(void)
         clear_clip();
     static const StrId msg[] = { S_F_DONE, S_F_FAILED, S_F_NO_SPACE, S_F_CANCELLED };
     toast(L(msg[r]));
-    sound_play(r == R_OK ? SND_SELECT : SND_ERROR);
+    sound_play(r == R_OK ? SND_CONFIRM : SND_ERROR);
     char keep[256] = "";
     if (s_count)
         snprintf(keep, sizeof(keep), "%s", s_items[s_sel].name);
@@ -1110,7 +1110,7 @@ int files_update(const UiInput *in, float dt)
             run_act(s_menu_act[s_menu_sel]);
         else if (in->pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
             s_menu = M_NONE;
-            sound_play(SND_BACK);
+            sound_play(SND_CLOSE_MENU);
         }
         return 0;
     }
@@ -1165,7 +1165,7 @@ int files_update(const UiInput *in, float dt)
         }
     } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE) {
         e->marked ^= 1;
-        sound_play(SND_TOGGLE);
+        sound_play(e->marked ? SND_TOGGLE_ON : SND_TOGGLE_OFF);
         if (s_sel < s_count - 1)
             s_sel++;
     } else if ((in->pressed & PSP_CTRL_TRIANGLE) && s_path[0]) {
