@@ -21,8 +21,12 @@ $pad = 18
 $x0 = [Math]::Max(0, $x0 - $pad); $y0 = [Math]::Max(0, $y0 - $pad)
 $x1 = [Math]::Min($image.Width - 1, $x1 + $pad); $y1 = [Math]::Min($image.Height - 1, $y1 + $pad)
 $crop = [System.Drawing.Rectangle]::new($x0, $y0, $x1 - $x0 + 1, $y1 - $y0 + 1)
-$width = 256
-$height = [Math]::Max(1, [int][Math]::Round($crop.Height * $width / $crop.Width))
+# [medhatk] Fit both horizontal wordmarks (<=256px wide) and stacked emblem+wordmark boot logos (<=128px tall)
+$maxW = 256
+$maxH = 128
+$scale = [Math]::Min($maxW / [double]$crop.Width, $maxH / [double]$crop.Height)
+$width = [Math]::Max(1, [int][Math]::Round($crop.Width * $scale))
+$height = [Math]::Max(1, [int][Math]::Round($crop.Height * $scale))
 $bitmap = [System.Drawing.Bitmap]::new($width, $height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 $graphics.Clear([System.Drawing.Color]::Black)
@@ -32,15 +36,20 @@ $graphics.DrawImage($image, [System.Drawing.Rectangle]::new(0, 0, $width, $heigh
 $graphics.Dispose(); $image.Dispose()
 
 $sb = [System.Text.StringBuilder]::new()
-[void]$sb.AppendLine('/* psp5 - made by 08Weber */')
+[void]$sb.AppendLine('/* PSP5 REMAKE – fork by medhatk (based on psp5 by 08Weber) */')
 [void]$sb.AppendLine('/* Generated from res/BOOT_SOURCE.png by tools/make_logo.ps1. */')
 [void]$sb.AppendLine("#define LOGO_W $width")
 [void]$sb.AppendLine("#define LOGO_H $height")
 [void]$sb.AppendLine('static const unsigned short LOGO_PX[LOGO_W * LOGO_H] = {')
+# GU_PSM_5650 uses the same channel packing as img_to_texture: red low, blue high.
+# Expand System.Drawing's byte channels before left shifts to avoid 8-bit overflow.
 for ($y = 0; $y -lt $height; $y++) {
     $row = for ($x = 0; $x -lt $width; $x++) {
         $c = $bitmap.GetPixel($x, $y)
-        '0x{0:x4}' -f ([uint16](($c.R -shr 3) -shl 11) + [uint16](($c.G -shr 2) -shl 5) + [uint16]($c.B -shr 3))
+        $r5 = [int]$c.R -shr 3
+        $g6 = [int]$c.G -shr 2
+        $b5 = [int]$c.B -shr 3
+        '0x{0:x4}' -f [uint16](($b5 -shl 11) -bor ($g6 -shl 5) -bor $r5)
     }
     [void]$sb.AppendLine('    ' + ($row -join ',') + ',')
 }

@@ -1,4 +1,4 @@
-# psp5 – made by 08Weber
+# PSP5 REMAKE – fork by medhatk (based on psp5 by 08Weber)
 TARGET = psp5
 OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/launch.o \
        src/gfx.o src/image.o src/art.o src/loader.o src/ui.o \
@@ -24,7 +24,7 @@ BUILD_PRX = 1
 PSP_FW_VERSION = 660
 
 EXTRA_TARGETS = EBOOT.PBP
-PSP_EBOOT_TITLE = psp5
+PSP_EBOOT_TITLE = PSP5 REMAKE
 PSP_EBOOT_ICON = res/ICON0.PNG
 PSP_EBOOT_PIC1 = res/PIC1.PNG
 

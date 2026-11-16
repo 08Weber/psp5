@@ -5,8 +5,10 @@
 #include "gfx.h"
 #include "scan.h"
 #include "loader.h"
+#include "theme.h"
 
-enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */ };
+/* [medhatk] UI_STANDBY returned by Control Center triggers standby_mode() in main.c */
+enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */, UI_STANDBY };
 enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_PICTURES, TAB_MEDIA, TAB_VIDEO, TAB_SEARCH, TAB_COUNT };
 
 typedef struct {
@@ -135,6 +137,17 @@ typedef struct {
     int cc_action;       /* SA_* som main.c ska utföra efter UI_ACTION */
     char umd_video_path[256]; /* SA_UMD_VIDEO: ISO:n i ISO/VIDEO */
 
+    /* [medhatk] Standby Screen runtime state (time, fade-out, Power overlay, double-confirm) */
+    float sb_time;         /* seconds since Standby Screen opened (0.3s input guard + fade-in) */
+    float sb_leave;        /* >0 while fading out to black before returning control */
+    int   sb_power_open;   /* Triangle Power menu open (Sleep / Shut down) */
+    int   sb_power_sel;    /* 0 = Sleep, 1 = Shut down */
+    int   sb_confirm;      /* 1 after first Shut down press (double-press safety confirmation) */
+    float sb_confirm_time; /* auto-resets sb_confirm after 3 seconds */
+    float sb_power_anim;   /* Power overlay slide/alpha animation progress [0..1] */
+    int   sb_step_dir;     /* -1 / +1 highlight direction when prev/next track is pressed */
+    float sb_step_time;    /* remaining highlight duration for prev/next glyph */
+
     char toast[96];
     float toast_time;
 } Ui;
@@ -147,9 +160,27 @@ void ui_free(Ui *ui);
 void ui_relist(Ui *ui, int removed_front, int added_front);
 int ui_update(Ui *ui, const UiInput *in, float dt);
 void ui_draw(Ui *ui);
+/* Enhetlig topprad (Games, Apps, Library, Music, kugghjul, batteri, klocka) som delas med inställningarna. */
+void ui_draw_top_bar(int active_tab, int in_settings, float alpha, float anim_time);
+/* Lugn Figma-bakgrund (mörk gradient, mjuka vågor och PS-vattenstämpel) som delas med inställningarna. */
+void ui_draw_calm_backdrop(const Theme *t, float time, const float accent[3], int allow_wallpaper);
+/* Enhetlig dockad fotlist längs nederkanten som delas med inställningarna. */
+void ui_draw_footer_bar(float alpha);
+/* Förrenderade ikoner (tools/make_icons.ps1): kategorier 16 x 16, Control Center 24 x 24. */
+enum {
+    UI_ICON_CAT_PSP5, UI_ICON_CAT_THEME, UI_ICON_CAT_PERF, UI_ICON_CAT_SYSTEM, UI_ICON_CAT_PLUGINS,
+    UI_ICON_CAT_POWER, UI_ICON_CC_USB, UI_ICON_CC_GEAR, UI_ICON_COUNT
+};
+void ui_draw_mask_icon(int id, float cx, float cy, u32 color);
 void ui_toast(Ui *ui, const char *msg);
 /* Öppnar Control Center (HOME) och stänger andra paneler. */
 void ui_open_cc(Ui *ui);
+
+/* [medhatk] Standby Screen public API & exit actions */
+enum { SB_NONE, SB_UNLOCK, SB_SLEEP, SB_SHUTDOWN };
+void ui_standby_open(Ui *ui);                                  /* resets all sb_* fields on entry */
+int  ui_standby_update(Ui *ui, const UiInput *in, float dt);   /* handles HOME unlock, music & Power panel -> SB_* */
+void ui_draw_standby(Ui *ui);                                  /* draws full Standby Screen frame (gfx_begin..gfx_end) */
 /* Låter korten glida in igen som vid start (efter startskärmen). */
 void ui_replay_intro(Ui *ui);
 /* Index i spellistan för markerad post, eller -1. */

@@ -101,7 +101,7 @@ void osd_capture(const u32 *vram, int stride)
     if (img_save_png(path, vram, SCREEN_W, SCREEN_H, stride)) {
         s_shot_shown = 2.0f;
         s_shot_done = 1;
-        sound_play(SND_SELECT);
+        sound_play(SND_SCREENSHOT);
     } else {
         sound_play(SND_ERROR);
     }
@@ -199,4 +199,10 @@ void osd_draw(void)
     char num[8];
     snprintf(num, sizeof(num), "%d", s_muted ? 0 : s_volume);
     text_draw(x + w - 18, y + h / 2 + 5, 0.62f, 0, light, ALIGN_RIGHT, num);
+}
+
+/* [medhatk] Used by Standby Screen to keep 60fps redraws only while volume/screenshot OSD is visible */
+int osd_active(void)
+{
+    return s_shot_anim >= 0.01f || (s_anim >= 0.01f && s_volume >= 0);
 }

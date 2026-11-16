@@ -1,0 +1,35 @@
+# [medhatk] Automated PPSSPP test script for Standby Screen:
+# Opens Control Center -> CC_STANDBY -> Standby -> Power panel -> Shut down confirm -> Music card -> HOME unlock.
+wait 30
+press circle
+wait 180
+battery 72
+charging 0
+press home
+wait 25
+press right
+wait 8
+press right
+wait 8
+press right
+wait 20
+shot 01-cc-standby
+press cross
+wait 40
+shot 02-standby
+press triangle
+wait 25
+shot 03-power-panel
+press right
+wait 10
+press cross
+wait 15
+shot 03b-shutdown-confirm
+press circle
+wait 20
+press cross
+wait 60
+shot 04-standby-music
+press home
+wait 30
+shot 05-back-menu

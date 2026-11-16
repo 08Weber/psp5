@@ -19,14 +19,21 @@
 #include "osd.h"
 #include "ui.h" /* bilderna i PICTURE */
 
-#define TITLE_Y     34.0f
-#define LEFT_X      32.0f
-#define LEFT_W      124.0f
-#define RIGHT_X     176.0f
-#define RIGHT_W     280.0f
-#define ROW_H       26.0f
-#define LIST_TOP    58.0f
-#define LIST_BOTTOM 236.0f
+#define TITLE_X     16.0f
+#define TITLE_Y     50.0f
+#define LEFT_X      16.0f
+#define LEFT_W      142.0f
+#define CAT_STEP    28.0f
+#define CAT_H       25.0f
+#define PANEL_X     168.0f
+#define PANEL_Y     56.0f
+#define PANEL_W     296.0f
+#define PANEL_H     182.0f
+#define RIGHT_X     180.0f
+#define RIGHT_W     272.0f
+#define ROW_H       25.0f
+#define LIST_TOP    64.0f
+#define LIST_BOTTOM 230.0f
 #define MAX_ITEMS   (MAX_PLUGINS + 4)
 #define CONFIRM_TIME 3.0f
 
@@ -247,7 +254,7 @@ static void build(int rebuild)
     Category *c;
 
     c = &s_cats[CAT_PSP5];
-    c->name = "psp5";
+    c->name = "PSP5 REMAKE"; /* [medhatk] Renamed project/fork category in Settings sidebar */
     c->desc = L(S_DESC_PSP5);
     toggle(c, L(S_BOOT_PSP5), &g_cfw.launcher);
     toggle(c, L(S_SOUNDS), &g_sound_on);
@@ -483,10 +490,10 @@ int settings_update(const UiInput *in, float dt)
         }
         if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {
             S.focus = 1;
-            sound_play(SND_SELECT);
+            sound_play(SND_PANEL);
         }
         if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
-            sound_play(SND_BACK);
+            sound_play(SND_CLOSE_MENU);
             return SA_CLOSE;
         }
     } else {
@@ -507,7 +514,7 @@ int settings_update(const UiInput *in, float dt)
         if (change) {
             *it->value = (*it->value + change + it->nopts) % it->nopts;
             mark_dirty(it);
-            sound_play(SND_TOGGLE);
+            sound_play(SND_SLIDER);
             if (it->value == &g_lang_setting) {
                 lang_apply();
                 if (lang_needs_cjk())
@@ -519,11 +526,11 @@ int settings_update(const UiInput *in, float dt)
                 g_theme = it->action;
                 mark_dirty(it);
             }
-            sound_play(SND_TOGGLE);
+            sound_play(SND_CONFIRM);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
-            sound_play(SND_TOGGLE);
+            sound_play(*it->value ? SND_TOGGLE_ON : SND_TOGGLE_OFF);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
             if (it->action == SA_USBNET) {
                 int r = sys_usbnet_probe(1200);
@@ -533,10 +540,10 @@ int settings_update(const UiInput *in, float dt)
                          L(ok ? S_USB_CONNECTED : (st & 1) ? S_YES : S_USB_WAITING));
                 snprintf(S.toast, sizeof(S.toast), "USBNet: %s", it->info);
                 S.toast_time = 2.4f;
-                sound_play(ok ? SND_SELECT : SND_ERROR);
+                sound_play(ok ? SND_CONFIRM : SND_ERROR);
                 return SA_NONE;
             }
-            sound_play(SND_SELECT);
+            sound_play((it->confirm && S.confirm_item != *sel) ? SND_SELECT : SND_CONFIRM);
             if (it->confirm && S.confirm_item != *sel) {
                 S.confirm_item = *sel;
                 S.confirm_time = CONFIRM_TIME;
@@ -548,9 +555,9 @@ int settings_update(const UiInput *in, float dt)
         } else if ((p & PSP_CTRL_CIRCLE) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
             S.focus = 0;
             S.confirm_item = -1;
-            sound_play(SND_BACK);
+            sound_play((p & PSP_CTRL_CIRCLE) ? SND_BACK : SND_PANEL);
         } else if (p & PSP_CTRL_TRIANGLE) {
-            sound_play(SND_BACK);
+            sound_play(SND_CLOSE_MENU);
             return SA_CLOSE;
         }
     }
@@ -584,7 +591,7 @@ static int utf8_len(const char *p)
  * mellan enskilda tecken när ett "ord" inte får plats (japanska har inga mellanslag). */
 static int wrap_desc_now(const char *text)
 {
-    const float max_w = RIGHT_W - 8;
+    const float max_w = RIGHT_W - 38.0f;
     int lines = 0;
     char line[sizeof(s_desc[0])] = "";
     const char *p = text;
@@ -599,7 +606,7 @@ static int wrap_desc_now(const char *text)
             end += utf8_len(end);
         char test[sizeof(line) * 2];
         snprintf(test, sizeof(test), "%s%s%.*s", line, line[0] ? " " : "", (int)(end - p), p);
-        if (text_width(0.56f, 0, test) <= max_w && strlen(test) < sizeof(line)) {
+        if (text_width(0.50f, 0, test) <= max_w && strlen(test) < sizeof(line)) {
             snprintf(line, sizeof(line), "%s", test);
             p = end;
             continue;
@@ -614,7 +621,7 @@ static int wrap_desc_now(const char *text)
         while (p + n < end) {
             int l = utf8_len(p + n);
             snprintf(test, sizeof(test), "%.*s", n + l, p);
-            if (n && (text_width(0.56f, 0, test) > max_w || n + l >= (int)sizeof(line)))
+            if (n && (text_width(0.50f, 0, test) > max_w || n + l >= (int)sizeof(line)))
                 break;
             n += l;
         }
@@ -637,12 +644,17 @@ static int wrap_desc(const char *text)
 
 static float desc_line_h(void)
 {
-    return lang_needs_cjk() ? 15.0f : 13.0f;
+    return lang_needs_cjk() ? 14.0f : 12.0f;
+}
+
+static float desc_box_h(const Category *c)
+{
+    return c->desc ? fmaxf(32.0f, wrap_desc(c->desc) * desc_line_h() + 10.0f) : 0.0f;
 }
 
 static float desc_height(const Category *c)
 {
-    return c->desc ? wrap_desc(c->desc) * desc_line_h() + 10 : 0;
+    return c->desc ? desc_box_h(c) + 6.0f : 0.0f;
 }
 
 static float row_y(const Category *c, int i)
@@ -663,38 +675,54 @@ static const Theme *shown_theme(void)
 static void draw_background(const Theme *t)
 {
     static const float neutral[3] = { 120, 120, 120 };
-    theme_backdrop(t, S.time, neutral, 1, 1);
+    ui_draw_calm_backdrop(t, S.time, neutral, 0);
+}
+
+static void draw_info_icon(float cx, float cy, u32 col)
+{
+    gfx_ring(cx - 6.5f, cy - 6.5f, 13.0f, 13.0f, 6.5f, col);
+    gfx_circle(cx, cy - 2.6f, 0.95f, col);
+    gfx_rect(cx - 0.8f, cy - 0.7f, 1.6f, 4.3f, col);
+}
+
+/* Kategoriikoner: förrenderade tunna konturer (tools/make_icons.ps1), samma stil som toppraden. */
+static void draw_cat_icon(int cat, float cx, float cy, u32 col)
+{
+    if (cat >= 0 && cat < CAT_COUNT)
+        ui_draw_mask_icon(UI_ICON_CAT_PSP5 + cat, cx, cy, col);
 }
 
 static void draw_toggle(float x, float y, int on, u32 on_color, float a)
 {
-    gfx_round_rect(x, y, 26, 13, 6.5f, fade(on ? on_color : RGBA(74, 76, 84, 255), a));
-    gfx_circle(on ? x + 19.5f : x + 6.5f, y + 6.5f, 5, fade(on ? LIGHT : RGBA(196, 196, 202, 255), a));
+    gfx_round_rect(x, y, 26.0f, 14.0f, 7.0f, fade(on ? on_color : RGBA(68, 79, 96, 245), a));
+    gfx_circle(on ? x + 19.0f : x + 7.0f, y + 7.0f, 5.0f, fade(on ? LIGHT : RGBA(208, 214, 224, 255), a));
 }
 
 static void draw_hints(float a)
 {
     const char *sel = L(S_SELECT), *back = L(S_BACK);
-    float w = 13 + 5 + text_width(0.58f, 0, sel) + 14 + 13 + 5 + text_width(0.58f, 0, back);
-    float x = SCREEN_W - 24 - w, y = 246;
-    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
-    x += 18;
-    text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, sel);
-    x += text_width(0.58f, 0, sel) + 14;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
-    x += 18;
-    text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, back);
+    float w = 13.0f + 5.0f + text_width(0.56f, 0, sel) + 14.0f + 13.0f + 5.0f + text_width(0.56f, 0, back);
+    float x = SCREEN_W - 16.0f - w, y = 257.0f;
+    u32 label_col = fade(RGBA(218, 224, 235, 238), a);
+    u32 dark_mark = fade(RGBA(18, 22, 30, 255), a);
+    gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, fade(LIGHT, 0.96f * a), dark_mark);
+    x += 18.0f;
+    text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, sel);
+    x += text_width(0.56f, 0, sel) + 14.0f;
+    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, fade(LIGHT, 0.96f * a), dark_mark);
+    x += 18.0f;
+    text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, back);
 }
 
 static void draw_item(const Item *it, int index, float y, int selected, const Theme *shown, float a)
 {
-    float right = RIGHT_X + RIGHT_W - 8;
+    float right = RIGHT_X + RIGHT_W - 10.0f;
     char value[64] = "";
+    u32 on_col = shown == theme_get(0) ? RGBA(37, 99, 210, 255) : theme_toggle_on(shown);
     switch (it->type) {
     case IT_TOGGLE:
-        draw_toggle(right - 26, y + 6.5f, *it->value != 0, theme_toggle_on(shown), a);
-        right -= 34;
+        draw_toggle(right - 26.0f, y + 5.5f, *it->value != 0, on_col, a);
+        right -= 34.0f;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
     case IT_CHOICE:
@@ -708,14 +736,14 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
         break;
     case IT_THEME: {
         /* liten förhandsvisning, och en bock för temat som används */
-        theme_swatch(theme_get(it->action), right - 40, y + 5, 40, 16, a);
-        right -= 48;
+        theme_swatch(theme_get(it->action), right - 40.0f, y + 4.5f, 40.0f, 16.0f, a);
+        right -= 48.0f;
         if (it->action == g_theme) {
-            float cx = right - 6, cy = y + 13;
-            float xy[6] = { cx - 5, cy, cx - 1.5f, cy + 3.5f, cx + 5, cy - 4 };
+            float cx = right - 6.0f, cy = y + 12.5f;
+            float xy[6] = { cx - 5.0f, cy, cx - 1.5f, cy + 3.5f, cx + 5.0f, cy - 4.0f };
             u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
             gfx_stroke(xy, col, 3, 1.8f);
-            right -= 16;
+            right -= 16.0f;
         }
         break;
     }
@@ -728,79 +756,106 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
     }
     float value_w = 0;
     if (value[0]) {
-        float vs = text_fit(0.58f, 0.46f, 0, RIGHT_W * 0.55f, value);
-        value_w = text_width(vs, 0, value) + 12;
-        u32 col = S.confirm_item == index ? RGBA(255, 190, 120, 255) : TEXT_DIM;
-        text_draw(right, y + 17, vs, 0, fade(col, a), ALIGN_RIGHT, value);
+        float vs = text_fit(0.56f, 0.44f, 0, RIGHT_W * 0.55f, value);
+        value_w = text_width(vs, 0, value) + 12.0f;
+        u32 col = S.confirm_item == index ? RGBA(255, 190, 120, 255)
+                : selected                ? RGBA(240, 244, 252, 255)
+                                          : RGBA(168, 180, 198, 235);
+        text_draw(right, y + 16.5f, vs, 0, fade(col, a), ALIGN_RIGHT, value);
     }
     /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
-    float ls = text_fit(0.62f, 0.48f, 0, right - value_w - (RIGHT_X + 8), it->label);
-    text_draw(RIGHT_X + 8, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+    float ls = text_fit(0.58f, 0.46f, 0, right - value_w - (RIGHT_X + 10.0f), it->label);
+    u32 lcol = selected ? TEXT_MAIN : RGBA(226, 232, 240, 240);
+    text_draw(RIGHT_X + 10.0f, y + 16.5f, ls, 0, fade(lcol, a), ALIGN_LEFT, it->label);
 }
 
 void settings_draw(void)
 {
     float a = S.open;
-    float slide = (1 - a) * 10;
+    float slide = (1.0f - a) * 10.0f;
     const Category *c = &s_cats[S.cat];
 
-    gfx_begin(RGBA(20, 20, 24, 255));
+    gfx_begin(RGBA(9, 13, 19, 255));
     const Theme *shown = shown_theme();
     draw_background(shown);
-    text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
+    ui_draw_top_bar(0, 1, a, S.time);
+    text_draw(TITLE_X + slide, TITLE_Y, 0.90f, 1, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
 
-    /* kategorier */
+    /* vänster kategorilista */
     for (int i = 0; i < CAT_COUNT; i++) {
-        float y = LIST_TOP + i * 30;
+        float y = LIST_TOP + i * CAT_STEP;
         int selected = i == S.cat;
-        float ta = selected ? 1.0f : S.focus ? 0.42f : 0.8f;
-        if (selected && S.focus == 0) {
-            gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
-            gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), a));
+        if (selected) {
+            float pa = S.focus == 0 ? 0.96f : 0.90f;
+            gfx_round_rect(LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(LIGHT, pa * a));
+            u32 dark_col = fade(RGBA(18, 22, 30, 255), a);
+            draw_cat_icon(i, LEFT_X + 14.0f, y + CAT_H * 0.5f, dark_col);
+            float cs = text_fit(0.60f, 0.48f, S.focus == 0, LEFT_W - 34.0f, s_cats[i].name);
+            text_draw(LEFT_X + 26.0f + slide, y + 16.5f, cs, S.focus == 0, dark_col, ALIGN_LEFT, s_cats[i].name);
+        } else {
+            float dim_a = S.focus ? 0.58f : 0.88f;
+            u32 dim_col = fade(RGBA(154, 166, 186, 235), a * dim_a);
+            draw_cat_icon(i, LEFT_X + 14.0f, y + CAT_H * 0.5f, dim_col);
+            float cs = text_fit(0.60f, 0.48f, 0, LEFT_W - 34.0f, s_cats[i].name);
+            text_draw(LEFT_X + 26.0f + slide, y + 16.5f, cs, 0, dim_col, ALIGN_LEFT, s_cats[i].name);
         }
-        float cs = text_fit(0.66f, 0.5f, 0, LEFT_W - 16, s_cats[i].name);
-        text_draw(LEFT_X + 10 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, a * ta), ALIGN_LEFT, s_cats[i].name);
     }
 
-    /* alternativ */
+    /* höger inställningskort */
+    int def_theme = shown == theme_get(0);
+    u32 card_bg = def_theme ? RGBA(16, 22, 32, (int)(232 * a)) : RGBA(14, 18, 26, (int)(208 * a));
+    u32 card_border = def_theme ? RGBA(56, 72, 98, (int)(195 * a)) : COLOR_ALPHA(shown->accent, (int)(135 * a));
+    gfx_round_rect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 10.0f, card_bg);
+    gfx_ring(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 10.0f, card_border);
+
+    gfx_clip(PANEL_X + 2.0f, LIST_TOP - 2.0f, PANEL_W - 4.0f, LIST_BOTTOM - LIST_TOP + 4.0f);
     float top = LIST_TOP - S.scroll;
     if (c->desc) {
         int n = wrap_desc(c->desc);
-        for (int l = 0; l < n; l++) {
-            float y = top + l * desc_line_h() + 9;
-            if (y > LIST_TOP - 4 && y < LIST_BOTTOM)
-                text_draw(RIGHT_X + 8 + slide, y, 0.56f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s_desc[l]);
+        float bh = desc_box_h(c);
+        float edge = clampf((top + bh - LIST_TOP) / (bh * 0.65f), 0.0f, 1.0f);
+        float ba = a * edge;
+        if (ba > 0.02f) {
+            gfx_round_rect(RIGHT_X, top, RIGHT_W, bh, 7.0f, RGBA(24, 34, 48, (int)(200 * ba)));
+            gfx_ring(RIGHT_X, top, RIGHT_W, bh, 7.0f, RGBA(70, 92, 124, (int)(125 * ba)));
+            draw_info_icon(RIGHT_X + 15.0f, top + bh * 0.5f, RGBA(168, 182, 204, (int)(235 * ba)));
+            float text_top = top + (bh - n * desc_line_h()) * 0.5f + 9.0f;
+            for (int l = 0; l < n; l++)
+                text_draw(RIGHT_X + 29.0f + slide, text_top + l * desc_line_h(), 0.50f, 0,
+                          RGBA(178, 190, 208, (int)(238 * ba)), ALIGN_LEFT, s_desc[l]);
         }
     }
     for (int i = 0; i < c->count; i++) {
         float y = top + row_y(c, i);
         if (y < LIST_TOP - ROW_H || y > LIST_BOTTOM)
             continue;
-        /* tona ut rader som glider ut ur listan */
-        float edge = clampf((y - (LIST_TOP - ROW_H * 0.6f)) / (ROW_H * 0.6f), 0, 1) *
-                     clampf((LIST_BOTTOM - y) / (ROW_H * 0.6f), 0, 1);
+        /* tona ut rader som glider ut ur kortet */
+        float edge = clampf((y - (LIST_TOP - ROW_H * 0.5f)) / (ROW_H * 0.55f), 0.0f, 1.0f) *
+                     clampf((LIST_BOTTOM - y) / (ROW_H * 0.55f), 0.0f, 1.0f);
         float ra = a * edge;
         int selected = S.focus == 1 && i == S.item[S.cat];
         if (selected) {
-            gfx_rect(RIGHT_X, y, RIGHT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ra)));
-            gfx_frame(RIGHT_X, y, RIGHT_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), ra));
+            gfx_round_rect(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, RGBA(30, 44, 66, (int)(175 * ra)));
+            gfx_ring(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(RGBA(236, 240, 246, 245), ra));
         } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
-            gfx_rect(RIGHT_X + 4, y + ROW_H - 0.5f, RIGHT_W - 8, 1, RGBA(255, 255, 255, (int)(26 * ra)));
+            gfx_rect(RIGHT_X + 6.0f, y + ROW_H - 0.5f, RIGHT_W - 12.0f, 1.0f, RGBA(44, 56, 74, (int)(190 * ra)));
         }
         draw_item(&c->items[i], i, y, selected, shown, ra);
     }
+    gfx_clip_reset();
 
+    /* Figma: inställningarna har ingen dockad fotlist, bara fria knapptips */
     draw_hints(a);
 
     if (S.toast_time > 0) {
-        float ta = clampf(S.toast_time / 0.4f, 0, 1);
-        float w = text_width(0.6f, 0, S.toast) + 30;
-        gfx_round_rect((SCREEN_W - w) / 2, 128, w, 26, 7, RGBA(44, 45, 52, (int)(245 * ta)));
-        text_draw(SCREEN_W / 2, 145, 0.6f, 0, RGBA(240, 240, 245, (int)(255 * ta)), ALIGN_CENTER, S.toast);
+        float ta = clampf(S.toast_time / 0.4f, 0.0f, 1.0f);
+        float w = text_width(0.6f, 0, S.toast) + 30.0f;
+        gfx_round_rect((SCREEN_W - w) / 2.0f, 128.0f, w, 26.0f, 7.0f, RGBA(44, 45, 52, (int)(245 * ta)));
+        text_draw(SCREEN_W / 2.0f, 145.0f, 0.6f, 0, RGBA(240, 240, 245, (int)(255 * ta)), ALIGN_CENTER, S.toast);
     }
     osd_draw();
     /* in-toning */
-    if (a < 1)
-        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));
+    if (a < 1.0f)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1.0f - a))));
     gfx_end();
 }

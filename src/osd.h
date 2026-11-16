@@ -13,6 +13,8 @@ void osd_init(void);
 void osd_update(float dt);
 /* Ritar indikatorn om den syns – sist i bildrutan, före gfx_end. */
 void osd_draw(void);
+/* [medhatk] Returns 1 while a volume or screenshot OSD pill is animating (used by Standby Screen render throttling) */
+int osd_active(void);
 
 /* Begär att nästa färdigritade bildruta sparas som PNG i PICTURE/PSP5/. */
 void osd_request_screenshot(void);
