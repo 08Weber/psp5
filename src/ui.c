@@ -2928,24 +2928,26 @@ static void draw_games_card(Ui *ui, int list_index, int is_library, float x, flo
     } else {
         gfx_glow(x, y + lerpf(2.0f, 3.0f, f), w, h, lerpf(4.0f, 8.0f, f),
                  RGBA(0, 0, 0, (int)(lerpf(85.0f, 125.0f, f) * alpha)));
-        gfx_round_rect(x, y, w, h, r, with_alpha(theme_cur()->card, alpha));
         IconSlot *slot = loader_icon(list_index);
         float shown = 0.0f;
         if (slot && slot->state == SLOT_READY && slot->tex) {
             slot->shown = clampf(slot->shown + 1.0f / 9.0f, 0.0f, 1.0f);
             shown = slot->shown;
-            int tint = (int)lerpf(238.0f, 255.0f, f);
-            gfx_tex(slot->tex, x, y, w, h, RGBA(tint, tint, tint, (int)(255.0f * alpha * shown)));
         }
         if (shown < 1.0f) {
+            float pa = alpha * (1.0f - shown);
+            gfx_round_rect(x, y, w, h, r, with_alpha(theme_cur()->card, pa));
             const char *title = ui->list->items[list_index].title;
             char initial[2] = { (title[0] >= 'a' && title[0] <= 'z') ? title[0] - 32 : title[0], 0 };
-            float pa = alpha * (1.0f - shown);
             if ((u8)initial[0] < 0x80 && initial[0] && pa > 0.02f) {
                 float s = w / (float)ICON_W;
                 text_draw(x + w * 0.5f, y + h * 0.5f + 9.0f * s, 1.3f * s, 1,
                           with_alpha(TEXT_MAIN, pa), ALIGN_CENTER, initial);
             }
+        }
+        if (shown > 0.0f) {
+            int tint = (int)lerpf(238.0f, 255.0f, f);
+            gfx_tex(slot->tex, x, y, w, h, RGBA(tint, tint, tint, (int)(255.0f * alpha * shown)));
         }
         Texture *video = focus > 0.5f && ui->preview_anim > 0 ? preview_frame(list_index) : NULL;
         if (video)

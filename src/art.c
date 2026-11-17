@@ -29,10 +29,10 @@ void art_init(const char *base_dir)
     sceIoMkdir(s_cache_dir, 0777);
     sceIoMkdir(s_cover_dir, 0777);
 
-    /* 1.6.0: fyrkantiga ikoner (minis) sträcks inte längre – ta bort cachade ikoner en gång */
+    /* Ta bort cachade ikoner en gång när ikonbehandlingen ändras (rör aldrig covers/) */
     char mark[220], path[256];
     SceIoStat st;
-    snprintf(mark, sizeof(mark), "%s/icons2", s_cache_dir);
+    snprintf(mark, sizeof(mark), "%s/icons3", s_cache_dir);
     if (sceIoGetstat(mark, &st) >= 0)
         return;
     SceUID d = sceIoDopen(s_cache_dir);
@@ -128,6 +128,25 @@ static int decode_embedded(const Entry *e, u32 offset, u32 size, const char *umd
     return ok;
 }
 
+/* Beskär bilden till (x0, y0, cw, ch). */
+static int crop_image(Image *img, int x0, int y0, int cw, int ch)
+{
+    if (cw <= 0 || ch <= 0 || x0 < 0 || y0 < 0 || x0 + cw > img->w || y0 + ch > img->h)
+        return 0;
+    if (x0 == 0 && y0 == 0 && cw == img->w && ch == img->h)
+        return 1;
+    u32 *px = malloc((size_t)cw * ch * 4);
+    if (!px)
+        return 0;
+    for (int y = 0; y < ch; y++)
+        memcpy(px + y * cw, img->px + (y + y0) * img->w + x0, (size_t)cw * 4);
+    free(img->px);
+    img->px = px;
+    img->w = cw;
+    img->h = ch;
+    return 1;
+}
+
 /* Skalar om bilden till exakt w×h om den inte redan har den storleken. */
 static int fit(Image *img, int w, int h)
 {
@@ -141,24 +160,199 @@ static int fit(Image *img, int w, int h)
     return 1;
 }
 
+/* Skalar om bilden med bibehållet bildförhållande så att den fyller w×h (Cover/Fill). */
+static int cover_fit(Image *img, int w, int h)
+{
+    if (img->w <= 0 || img->h <= 0 || w <= 0 || h <= 0)
+        return 0;
+    if (img->w == w && img->h == h)
+        return 1;
+    int cw = img->w, ch = img->h;
+    if (img->w * h > img->h * w) {
+        cw = (img->h * w + h / 2) / h;
+        if (cw < 1)
+            cw = 1;
+    } else if (img->w * h < img->h * w) {
+        ch = (img->w * h + w / 2) / w;
+        if (ch < 1)
+            ch = 1;
+    }
+    if (cw != img->w || ch != img->h) {
+        int x0 = (img->w - cw) / 2, y0 = (img->h - ch) / 2;
+        if (!crop_image(img, x0, y0, cw, ch))
+            return 0;
+    }
+    return fit(img, w, h);
+}
+
+static int row_alpha_empty(const Image *img, int y, int x0, int x1)
+{
+    const u32 *row = img->px + y * img->w;
+    for (int x = x0; x < x1; x++)
+        if ((row[x] >> 24) > 16)
+            return 0;
+    return 1;
+}
+
+static int col_alpha_empty(const Image *img, int x, int y0, int y1)
+{
+    for (int y = y0; y < y1; y++)
+        if ((img->px[y * img->w + x] >> 24) > 16)
+            return 0;
+    return 1;
+}
+
+static int px_black(u32 c)
+{
+    return (c >> 24) <= 16 || ((c & 0xFF) <= 8 && ((c >> 8) & 0xFF) <= 8 && ((c >> 16) & 0xFF) <= 8);
+}
+
+static int px_bright(u32 c)
+{
+    return (c >> 24) > 128 && ((c & 0xFF) >= 24 || ((c >> 8) & 0xFF) >= 24 || ((c >> 16) & 0xFF) >= 24);
+}
+
+static int row_is_black(const Image *img, int y, int x0, int x1)
+{
+    const u32 *row = img->px + y * img->w;
+    for (int x = x0; x < x1; x++)
+        if (!px_black(row[x]))
+            return 0;
+    return 1;
+}
+
+static int col_is_black(const Image *img, int x, int y0, int y1)
+{
+    for (int y = y0; y < y1; y++)
+        if (!px_black(img->px[y * img->w + x]))
+            return 0;
+    return 1;
+}
+
+/* Tar försiktigt bort genomskinliga ytterkanter och symmetriska, skarpa svarta
+ * letterbox/pillarbox-kanter. Vid minsta osäkerhet behålls originalbilden orörd. */
+static void trim_icon_margins(Image *img)
+{
+    if (img->w < 48 || img->h < 26)
+        return;
+
+    /* 1. Genomskinliga marginaler (hög säkerhet) */
+    int top = 0, bot = img->h, left = 0, right = img->w;
+    while (top < bot && row_alpha_empty(img, top, left, right))
+        top++;
+    while (bot > top && row_alpha_empty(img, bot - 1, left, right))
+        bot--;
+    while (left < right && col_alpha_empty(img, left, top, bot))
+        left++;
+    while (right > left && col_alpha_empty(img, right - 1, top, bot))
+        right--;
+
+    int tw = right - left, th = bot - top;
+    if (tw >= 48 && th >= 26 && tw * 3 >= img->w && th * 3 >= img->h && (tw != img->w || th != img->h)) {
+        if (!crop_image(img, left, top, tw, th))
+            return;
+    }
+
+    /* 2. Ogenomskinliga svarta kanter (strikt symmetrisk + skarp kant + max 25%/axel, >= 70% yta) */
+    int w = img->w, h = img->h;
+    int max_v = h / 4, max_h = w / 4;
+    int bt = 0, bb = 0, bl = 0, br = 0;
+
+    while (bt < max_v && row_is_black(img, bt, 0, w))
+        bt++;
+    while (bb < max_v && row_is_black(img, h - 1 - bb, 0, w))
+        bb++;
+    if (bt > 0 && bb > 0 && abs(bt - bb) <= 2 && bt + bb <= max_v) {
+        int b1 = 0, b2 = 0;
+        for (int x = 0; x < w; x++) {
+            if (px_bright(img->px[bt * w + x]))
+                b1++;
+            if (px_bright(img->px[(h - 1 - bb) * w + x]))
+                b2++;
+        }
+        if (b1 * 4 < w || b2 * 4 < w)
+            bt = bb = 0;
+    } else {
+        bt = bb = 0;
+    }
+
+    int ch_v = h - bt - bb;
+    while (bl < max_h && col_is_black(img, bl, bt, h - bb))
+        bl++;
+    while (br < max_h && col_is_black(img, w - 1 - br, bt, h - bb))
+        br++;
+    if (bl > 0 && br > 0 && abs(bl - br) <= 2 && bl + br <= max_h && ch_v > 0) {
+        int b1 = 0, b2 = 0;
+        for (int y = bt; y < h - bb; y++) {
+            if (px_bright(img->px[y * w + bl]))
+                b1++;
+            if (px_bright(img->px[y * w + (w - 1 - br)]))
+                b2++;
+        }
+        if (b1 * 4 < ch_v || b2 * 4 < ch_v)
+            bl = br = 0;
+    } else {
+        bl = br = 0;
+    }
+
+    int cw = w - bl - br, ch = h - bt - bb;
+    if ((bt || bb || bl || br) && cw >= 48 && ch >= 26 && (cw * ch) * 100 >= (w * h) * 70)
+        crop_image(img, bl, bt, cw, ch);
+}
+
 /* Ikon till kortets format. En ikon som är mycket smalare än 144×80 (t.ex. PSP minis
- * fyrkantiga ikoner) sträcks inte: den centreras på en suddig, mörkare kopia av sig själv. */
+ * fyrkantiga ikoner) sträcks inte: den centreras på en suddig kopia av sig själv. */
 static int fit_icon(Image *img)
 {
-    if (img->h <= 0 || img->w * 10 >= img->h * 15) /* bredare än 1,5:1 – vanlig ikon */
-        return fit(img, ICON_W, ICON_H);
+    if (img->h <= 0 || img->w <= 0)
+        return 0;
+    trim_icon_margins(img);
+    if (img->w * 10 >= img->h * 15) /* bredare än 1,5:1 – Cover/Fill med bibehållna proportioner */
+        return cover_fit(img, ICON_W, ICON_H);
+
     int fw = img->w * ICON_H / img->h;
     Image bg, fg;
-    if (fw < 1 || !img_resize(img, ICON_W, ICON_H, &bg))
+    if (fw < 1 || !img_resize(img, fw, ICON_H, &fg))
         return 0;
-    if (!img_resize(img, fw, ICON_H, &fg)) {
+
+    bg = (Image){ img->w, img->h, malloc((size_t)img->w * img->h * 4) };
+    if (!bg.px) {
+        img_free(&fg);
+        return 0;
+    }
+    memcpy(bg.px, img->px, (size_t)img->w * img->h * 4);
+
+    /* Fyll genomskinliga partier med ikonens medelfärg före oskärpa så att kanterna inte blir svarta. */
+    u32 sum[3] = { 0 }, n = 0;
+    for (int i = 0; i < bg.w * bg.h; i++) {
+        u32 c = bg.px[i];
+        if ((c >> 24) >= 128) {
+            sum[0] += c & 0xFF;
+            sum[1] += (c >> 8) & 0xFF;
+            sum[2] += (c >> 16) & 0xFF;
+            n++;
+        }
+    }
+    u32 fill = n ? RGBA(sum[0] / n, sum[1] / n, sum[2] / n, 255) : RGBA(48, 52, 64, 255);
+    for (int i = 0; i < bg.w * bg.h; i++) {
+        u32 c = bg.px[i];
+        u32 a = c >> 24;
+        if (a < 255) {
+            u32 r = ((c & 0xFF) * a + (fill & 0xFF) * (255 - a)) / 255;
+            u32 g = (((c >> 8) & 0xFF) * a + ((fill >> 8) & 0xFF) * (255 - a)) / 255;
+            u32 b = (((c >> 16) & 0xFF) * a + ((fill >> 16) & 0xFF) * (255 - a)) / 255;
+            bg.px[i] = RGBA(r, g, b, 255);
+        }
+    }
+    if (!cover_fit(&bg, ICON_W, ICON_H)) {
         img_free(&bg);
+        img_free(&fg);
         return 0;
     }
     img_blur(&bg, 8);
-    for (int i = 0; i < ICON_W * ICON_H; i++) { /* 55 % ljus, helt ogenomskinlig */
+    for (int i = 0; i < ICON_W * ICON_H; i++) { /* ~68 % ljus, helt ogenomskinlig */
         u32 c = bg.px[i];
-        bg.px[i] = RGBA((c & 0xFF) * 55 / 100, ((c >> 8) & 0xFF) * 55 / 100, ((c >> 16) & 0xFF) * 55 / 100, 255);
+        bg.px[i] = RGBA((c & 0xFF) * 68 / 100, ((c >> 8) & 0xFF) * 68 / 100, ((c >> 16) & 0xFF) * 68 / 100, 255);
     }
     int x0 = (ICON_W - fw) / 2;
     for (int y = 0; y < ICON_H; y++) {
