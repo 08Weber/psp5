@@ -1,6 +1,6 @@
 # PSP5 REMAKE – fork by medhatk (based on psp5 by 08Weber)
-# Builds all variants (ARK-5, ARK-4, PSP Go), packages release zips,
-# and automatically publishes a GitHub Release when pushing a v* tag or running manually with a version.
+# Builds all variants (ARK-5, ARK-4, PSP Go) and uploads testable workflow artifacts on every build.
+# Releases are NEVER published automatically: publish only when publish_release=true via manual workflow_dispatch.
 name: build
 
 on:
@@ -8,9 +8,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version to publish (e.g. 1.0.0) — leave empty to only build artifacts'
+        description: 'Release version (e.g. 1.0.0)'
         required: false
-        default: ''
+        default: '1.0.0'
+      publish_release:
+        description: 'Publish public GitHub Release? (keep unchecked to build artifacts only)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -27,22 +32,15 @@ jobs:
           bash tools/build.sh
           bash tools/build.sh ark4
           bash tools/build.sh test
-      - name: Resolve release version
+      - name: Resolve build version
         id: ver
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "$REF_TYPE" = "tag" ] && [[ "$REF_NAME" == v* ]]; then
-            echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "$INPUT_VERSION" ]; then
+          if [ -n "$INPUT_VERSION" ]; then
             echo "version=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
-            echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "version=1.0.0" >> "$GITHUB_OUTPUT"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Zips
         run: |
@@ -58,7 +56,7 @@ jobs:
           name: test
           path: dist-test/PSP/GAME/PSP5/EBOOT.PBP
       - name: GitHub Release
-        if: steps.ver.outputs.publish == 'true'
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
