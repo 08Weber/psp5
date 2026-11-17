@@ -289,7 +289,7 @@ Okända rader och kommentarer behålls.
 | ✕ eller START (○ med japansk knappinställning) | starta |
 | △ | inställningar |
 | SELECT | kategorier (mappar i ISO och PSP/GAME) |
-| HOME | Control Center: musik, skärmbild, viloläge, Standby Screen (temaklocka med musikkontroll, håller PSP:n vaken och sänker ljusstyrkan ett steg – HOME låser upp), USB, filer, inställningar, XMB, starta om, stäng av |
+| HOME | Control Center: musik, skärmbild, viloläge, Standby Screen (temaklocka med musikkontroll, håller PSP:n vaken med bibehållen ljusstyrka – HOME låser upp), USB, filer, inställningar, XMB, starta om, stäng av |
 
 ## Vad som visas
 - `ms0:/ISO` (+ en nivå undermappar): `.iso`, `.cso`, `.zso` – fliken **Spel**

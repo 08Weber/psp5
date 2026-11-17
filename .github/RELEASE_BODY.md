@@ -1,4 +1,4 @@
-**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) brings a refreshed **PS5 UI overhaul**, a dedicated **Apps** tab, compressed **PS5 UI sound effects**, custom **PSP5™** startup visuals, and an enhanced **Control Center & Standby Screen**. Your existing settings, covers, pins and music stay when you update from psp5.
+**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) brings improved game icon & PMF card-preview fitting, the restored procedural UI sound engine, Standby Screen rendering & brightness normalization, and the full **PS5 UI overhaul**. Your existing settings, covers, pins and music stay when you update from psp5 or v1.0.0.
 
 > [!NOTE]
 > **Based on psp5 by 08Weber**
@@ -17,24 +17,19 @@ Not sure which ARK you have? Press **SELECT** in the XMB: ARK's menu shows *ARK 
 
 ## What's new in __VERSION__
 
-**Custom PSP5™ Boot Logo & Welcome Back Screen**
-- Uses the pre-rendered stacked **PSP5™** emblem & boot logo (`res/BOOT_SOURCE.png` → `src/logo.h`) and adjusts scanning bar spacing automatically.
-- Adds a custom **Welcome Back** startup backdrop (`res/WELCOME.JPG` → `src/welcome.h`) at the end of the boot sequence.
+**Standby Screen Rendering & Brightness Fix**
+- Removed Standby-specific automatic brightness step-down/restore so your chosen system brightness is always preserved.
+- Restored continuous normal vblank rendering in `standby_mode()` (removing the 10 FPS / 100ms idle throttling), fixing intermittent black-screen transitions while preserving the theme/wallpaper clock, Now Playing card, Power menu, and `HOME` unlock.
 
-**Unified Top Bar, Outline Icons & Apps Tab**
-- Reworked the top navigation bar into a shared pill bar across every screen with custom pre-rendered outline icons (`src/icons.h`) cycling via **L / R** across **Games**, **Apps**, **Library**, **Music**, and **Settings**.
-- Separated homebrew apps into their own dedicated **Apps** tab alongside **Games**, with hero card framing over a calm animated wave backdrop (`ui_draw_calm_backdrop` with PlayStation watermark) and a unified footer bar with format badges (`PSP`, `APP`, `PSN`, `PS1`, `UMD`) and Disc ID.
-- Added item count and quick-action header pills (`[SELECT] Categories`, `[□] Sort`) in **Library**, plus outline category icons and contextual info callouts in **Settings**.
+**Game Icon Fitting & PMF Card Previews**
+- Automatically trims transparent and symmetric black letterbox/pillarbox margins on game icons (`src/art.c`), cover-fits wide icons to the 16:9 card, and centers narrow/square icons cleanly (`icons3` cache refresh).
+- Aspect-crops and rounded-corner-masks `ICON1.PMF` video previews (`src/preview.c`, `src/gfx.c`) so animated previews align seamlessly inside rounded game cards.
 
-**PS5 Sound Effects**
-- Embedded zlib-compressed 44.1 kHz 16-bit mono PCM PS5 UI sound assets (`src/ps5_sounds.h`), unpacked into memory at boot with automatic fallback to built-in synthesized sounds, plus dedicated Control Center open/close cues.
+**Procedural UI Sound Engine Restored**
+- Restored the original lightweight procedural synthesized UI sound engine (`src/sound.c`), removing the large embedded FLAC/zlib sound blob for a cleaner, smaller EBOOT.
 
-**Control Center & Standby Screen Enhancements**
-- Added a **Now playing** mini-card directly inside the Control Center dock alongside quick actions.
-- Updated the **Standby Screen** to match the active theme or custom user wallpaper, with a compact square **Now playing** music card (album art, track title/artist, progress bar, and playback controls) under the large clock and a **△** Sleep / Shut down power overlay.
-
-**PSP5 REMAKE Branding**
-- Updated the XMB EBOOT display title (`PSP5 REMAKE`), module identifier (`PSP5_REMAKE`), Settings category, localized launcher strings, and release archives (`psp5-remake-v__VERSION__-*.zip`).
+**Full PSP5 REMAKE Features Included**
+- Custom **PSP5™** boot logo & **Welcome Back** startup backdrop, unified PS5 top navigation bar & outline icons, dedicated **Apps** tab, **Now playing** mini-card in Control Center, and **Standby Screen** with **△** Sleep / Shut down power overlay.
 
 ## Thank you
 

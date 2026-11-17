@@ -109,8 +109,8 @@ A few other things I cared about:
   screen off and put the PSP to sleep after a while without a button press (not while music is playing).
 - **It has a Standby Screen.** Pick **Standby Screen** in the Control Center for a theme-styled always-on clock
   with date, battery status and music controls (✕ play/pause, ←/→ previous/next track, △ for Sleep or Shut down).
-  Screen brightness steps down by one level, auto-sleep and screen-off are paused while it stays open, and pressing
-  **HOME** unlocks back to the menu and restores brightness.
+  Your current screen brightness is preserved, auto-sleep and screen-off are paused while it stays open, and
+  pressing **HOME** unlocks back to the menu.
 - **It shows the game's logo** (PIC0) under the selected game, and the background art (PIC1) in full resolution.
 - **It remembers where you were** – after a game, psp5 opens on the same tab, category and game.
 - **It can show your pictures.** Press ✕ on a JPEG or PNG in the file manager to view it (← → for the next one)
@@ -129,11 +129,15 @@ On top of 08Weber's original psp5 foundation above, the **PSP5 REMAKE** fork inc
   - Separated homebrew apps into their own **Apps** tab alongside **Games**.
   - Updated the **Games** and **Apps** rows with hero artwork card framing layered over a calm animated wave backdrop (`ui_draw_calm_backdrop` with a subtle PlayStation watermark) and a unified footer bar showing format badges (`PSP`, `APP`, `PSN`, `PS1`, `UMD`), Disc ID, and button hints.
   - Added header count and quick-action pills (`[SELECT] Categories`, `[□] Sort`) to the **Library** view, plus outline sidebar icons and bottom info callout boxes in **Settings**.
-- **PS5 Sound Effects Pipeline** (`src/sound.c`, `tools/make_sounds.ps1`):
-  Embedded zlib-compressed 44.1 kHz 16-bit mono PCM sound effects (`src/ps5_sounds.h`, built from `PS5_Sound/*.flac`) unpacked into memory at boot (with automatic fallback to the built-in synthesized sounds), plus dedicated Control Center open/close sound cues.
+- **Game Icon Fitting & PMF Card Previews** (`src/art.c`, `src/preview.c`, `src/gfx.c`, `src/ui.c`):
+  - Automatically trims transparent or symmetric black letterbox/pillarbox borders on game icons, cover-fits wide icons cleanly to the `144×80` card ratio, and centers narrow/square icons over a blurred color-filled backdrop.
+  - Crops and rounded-corner-masks animated `ICON1.PMF` video previews (`preview_frame_sub`, `gfx_tex_sub`) to fit seamlessly inside the rounded 16:9 game card.
+- **Procedural UI Sound Engine** (`src/sound.c`, `src/sound.h`):
+  Restored the lightweight procedural synthesized UI sound engine (sine tones, filtered noise, and envelopes generated at startup with zero external audio assets or embedded FLAC blobs).
 - **Control Center & Standby Screen Enhancements** (`src/ui.c`, `src/main.c`, `src/system.c`, `src/osd.c`, `tools/tests/standby.txt`):
   - Added a **Now playing** mini-card directly inside the Control Center dock alongside the quick actions.
   - Updated the **Standby Screen** to match the active theme or the user's selected custom wallpaper, and placed a compact square **Now playing** music card (cover art, track title/artist, progress bar, and controls) below the large clock.
+  - Normalized Standby Screen rendering and display handling to preserve the user's current screen brightness and render continuously at normal vblank cadence, eliminating intermittent black-screen transitions.
 - **PSP5 REMAKE Branding** (`Makefile`, `src/main.c`, `src/settings.c`, `src/lang.c`, `INSTALL.md`, `tools/make_release.py`):
   Renamed the EBOOT display title (`PSP_EBOOT_TITLE`), module identifier (`PSP5_REMAKE`), Settings category, localized launcher strings, release packaging names, and documentation/fork title to **PSP5 REMAKE**.
 
