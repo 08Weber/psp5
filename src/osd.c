@@ -101,7 +101,7 @@ void osd_capture(const u32 *vram, int stride)
     if (img_save_png(path, vram, SCREEN_W, SCREEN_H, stride)) {
         s_shot_shown = 2.0f;
         s_shot_done = 1;
-        sound_play(SND_SCREENSHOT);
+        sound_play(SND_SELECT);
     } else {
         sound_play(SND_ERROR);
     }

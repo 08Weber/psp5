@@ -490,10 +490,10 @@ int settings_update(const UiInput *in, float dt)
         }
         if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {
             S.focus = 1;
-            sound_play(SND_PANEL);
+            sound_play(SND_SELECT);
         }
         if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
-            sound_play(SND_CLOSE_MENU);
+            sound_play(SND_BACK);
             return SA_CLOSE;
         }
     } else {
@@ -514,7 +514,7 @@ int settings_update(const UiInput *in, float dt)
         if (change) {
             *it->value = (*it->value + change + it->nopts) % it->nopts;
             mark_dirty(it);
-            sound_play(SND_SLIDER);
+            sound_play(SND_TOGGLE);
             if (it->value == &g_lang_setting) {
                 lang_apply();
                 if (lang_needs_cjk())
@@ -526,11 +526,11 @@ int settings_update(const UiInput *in, float dt)
                 g_theme = it->action;
                 mark_dirty(it);
             }
-            sound_play(SND_CONFIRM);
+            sound_play(SND_TOGGLE);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
-            sound_play(*it->value ? SND_TOGGLE_ON : SND_TOGGLE_OFF);
+            sound_play(SND_TOGGLE);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
             if (it->action == SA_USBNET) {
                 int r = sys_usbnet_probe(1200);
@@ -540,10 +540,10 @@ int settings_update(const UiInput *in, float dt)
                          L(ok ? S_USB_CONNECTED : (st & 1) ? S_YES : S_USB_WAITING));
                 snprintf(S.toast, sizeof(S.toast), "USBNet: %s", it->info);
                 S.toast_time = 2.4f;
-                sound_play(ok ? SND_CONFIRM : SND_ERROR);
+                sound_play(ok ? SND_SELECT : SND_ERROR);
                 return SA_NONE;
             }
-            sound_play((it->confirm && S.confirm_item != *sel) ? SND_SELECT : SND_CONFIRM);
+            sound_play(SND_SELECT);
             if (it->confirm && S.confirm_item != *sel) {
                 S.confirm_item = *sel;
                 S.confirm_time = CONFIRM_TIME;
@@ -555,9 +555,9 @@ int settings_update(const UiInput *in, float dt)
         } else if ((p & PSP_CTRL_CIRCLE) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
             S.focus = 0;
             S.confirm_item = -1;
-            sound_play((p & PSP_CTRL_CIRCLE) ? SND_BACK : SND_PANEL);
+            sound_play(SND_BACK);
         } else if (p & PSP_CTRL_TRIANGLE) {
-            sound_play(SND_CLOSE_MENU);
+            sound_play(SND_BACK);
             return SA_CLOSE;
         }
     }

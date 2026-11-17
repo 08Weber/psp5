@@ -2,29 +2,17 @@
 #ifndef SOUND_H
 #define SOUND_H
 
-/* PlayStation 5-ljud (förpackade i ps5_sounds.h via tools/make_sounds.ps1). */
+/* Egna gränssnittsljud – räknas fram vid start, inga ljudfiler. */
 typedef enum {
-    SND_MOVE,       /* bläddra mellan kort och rader */
-    SND_SWIPE,      /* byta huvudflik (L / R) */
-    SND_PANEL,      /* byta panel / vy / sortering */
-    SND_SELECT,     /* välja / gå in */
-    SND_BACK,       /* tillbaka / avbryt */
-    SND_TOGGLE_ON,  /* slå på reglage / markera */
-    SND_TOGGLE_OFF, /* slå av reglage / avmarkera */
-    SND_SLIDER,     /* ändra värde / flyttsteg */
-    SND_OPEN,       /* öppna alternativ, kategorier eller inställningar */
-    SND_CLOSE_MENU, /* stänga alternativ, kategorier eller inställningar */
-    SND_CC_OPEN,    /* öppna Control Center */
-    SND_CC_CLOSE,   /* stänga Control Center */
-    SND_LAUNCH,     /* starta spel eller app */
-    SND_ERROR,      /* något gick inte */
-    SND_SCREENSHOT, /* skärmbild tagen */
-    SND_KEY_MOVE,   /* flytta markören på skärmtangentbordet */
-    SND_KEY_TYPE,   /* skriva tecken i sökningen */
-    SND_KEY_BACK,   /* ta bort tecken i sökningen */
-    SND_KEY_ERROR,  /* fel i textruta (tom / full) */
-    SND_CONFIRM,    /* bekräfta åtgärd / tema / dialog */
-    SND_BOOT,       /* startskärmen */
+    SND_MOVE,    /* bläddra */
+    SND_SWIPE,   /* byta flik */
+    SND_SELECT,  /* välja / gå in */
+    SND_BACK,    /* tillbaka */
+    SND_TOGGLE,  /* reglage */
+    SND_OPEN,    /* öppna inställningar */
+    SND_LAUNCH,  /* starta spel */
+    SND_ERROR,   /* något gick inte */
+    SND_BOOT,    /* startskärmen */
     SND_COUNT
 } SoundId;
 

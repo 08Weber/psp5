@@ -493,7 +493,7 @@ static void toggle_sort(Ui *ui)
             ui->sel[TAB_LIBRARY] = p;
     ui->tab_anim = 0.4f;
     ui->lib_label_for = -2;
-    sound_play(SND_PANEL);
+    sound_play(SND_TOGGLE);
 }
 
 static float row_entry_offset(int tab, int intro)
@@ -511,7 +511,7 @@ static void switch_tab(Ui *ui, int tab)
         ui->search_from = ui->tab;
     ui->tab = tab;
     ui->tab_anim = 0;
-    sound_play(tab == TAB_SEARCH ? SND_OPEN : SND_SWIPE);
+    sound_play(SND_SWIPE);
     ui->pos = ui->sel[tab] + row_entry_offset(tab, 0); /* raden glider in mjukt */
     ui->still = 0;
     ui->label_for = -999;
@@ -848,7 +848,7 @@ static void arrange_step(Ui *ui, int dir)
     v->idx[nb] = a;
     *sel = nb;
     ui->still = 0;
-    sound_play(SND_SLIDER);
+    sound_play(SND_MOVE);
 }
 
 static void menu_choose(Ui *ui)
@@ -865,7 +865,7 @@ static void menu_choose(Ui *ui)
         meta_save(ui->list, META_PINS);
         ui->menu_open = 0;
         resort(ui);
-        sound_play(meta(i)->pinned ? SND_TOGGLE_ON : SND_TOGGLE_OFF);
+        sound_play(SND_TOGGLE);
         break;
     case MI_MOVE:
         ui->menu_open = 0;
@@ -1117,7 +1117,7 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
     if (in->pressed & PSP_CTRL_TRIANGLE) {
         ui->music_view ^= 1;
         ui->album_sel = ui->music_album;
-        sound_play(SND_PANEL);
+        sound_play(SND_TOGGLE);
     }
     int playing = music_current() >= 0 && music_state() != MUSIC_STOPPED;
     /* ← →: kort tryck byter låt (när knappen släpps), håll för att spola – fortare ju längre */
@@ -1158,7 +1158,7 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
         g_shuffle ^= 1;
         config_save(g_data_dir);
         ui_toast(ui, L(g_shuffle ? S_SHUFFLE_ON : S_SHUFFLE_OFF));
-        sound_play(g_shuffle ? SND_TOGGLE_ON : SND_TOGGLE_OFF);
+        sound_play(SND_TOGGLE);
     }
     u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
     if (in->pressed & confirm) {
@@ -1291,7 +1291,7 @@ static void set_pic_wallpaper(Ui *ui, const char *path)
     snprintf(g_wallpaper, sizeof(g_wallpaper), "%s", path);
     config_save(g_data_dir);
     ui_toast(ui, L(S_WALLPAPER_SET));
-    sound_play(SND_CONFIRM);
+    sound_play(SND_SELECT);
 }
 
 static void update_pictures(Ui *ui, const UiInput *in, float dt)
@@ -1754,19 +1754,19 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
             next = k + 1;
         else if (move == 1 && n > 0) {
             ui->search_focus = 1;
-            sound_play(SND_PANEL);
+            sound_play(SND_MOVE);
         } else if (move == -2 && k >= SEARCH_COLS)
             next = k - SEARCH_COLS;
         else if (move == 2 && k / SEARCH_COLS < (SEARCH_KEY_COUNT - 1) / SEARCH_COLS)
             next = k + SEARCH_COLS < SEARCH_KEY_COUNT ? k + SEARCH_COLS : SEARCH_KEY_COUNT - 1; /* kortare sista rad */
         if (next != k) {
             ui->search_key = next;
-            sound_play(SND_KEY_MOVE);
+            sound_play(SND_MOVE);
         }
     } else {
         if (move == -1) {
             ui->search_focus = 0;
-            sound_play(SND_PANEL);
+            sound_play(SND_MOVE);
         } else if ((move == -2 || move == 2) && n > 0) {
             int next = step_wrap(ui, ui->search_sel, move / 2, n);
             if (next != ui->search_sel) {
@@ -1781,7 +1781,7 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
         u32 back_btn = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
         if (in->pressed & back_btn) {
             switch_tab(ui, ui->search_from);
-            sound_play(SND_CLOSE_MENU);
+            sound_play(SND_BACK);
             return;
         } else if (in->pressed & PSP_CTRL_SQUARE) {
             int len = strlen(ui->search_query);
@@ -1789,9 +1789,9 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
                 ui->search_query[len - 1] = 0;
                 ui->search_sel = 0;
                 ui->search_target = 0;
-                sound_play(SND_KEY_BACK);
+                sound_play(SND_BACK);
             } else {
-                sound_play(SND_KEY_ERROR);
+                sound_play(SND_ERROR);
             }
         } else if (in->pressed & confirm) {
             if (ui->search_focus == 0) {
@@ -1800,16 +1800,16 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
                 if (ch == '<') {
                     if (len > 0) {
                         ui->search_query[len - 1] = 0;
-                        sound_play(SND_KEY_BACK);
+                        sound_play(SND_BACK);
                     } else {
-                        sound_play(SND_KEY_ERROR);
+                        sound_play(SND_ERROR);
                     }
                 } else if (len + 1 < (int)sizeof(ui->search_query)) {
                     ui->search_query[len] = ch;
                     ui->search_query[len + 1] = 0;
-                    sound_play(SND_KEY_TYPE);
+                    sound_play(SND_SELECT);
                 } else {
-                    sound_play(SND_KEY_ERROR);
+                    sound_play(SND_ERROR);
                 }
                 ui->search_sel = 0;
                 ui->search_target = 0;
@@ -1918,7 +1918,7 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
         sound_play(SND_SELECT);
     } else if (in->pressed & (back | PSP_CTRL_SELECT)) { /* SELECT igen stänger (issue #39) */
         ui->cat_open = 0;
-        sound_play(SND_CLOSE_MENU);
+        sound_play(SND_BACK);
     }
 }
 
@@ -1953,7 +1953,7 @@ void ui_open_cc(Ui *ui)
     ui->cc_label = 0;
     ui->menu_open = ui->cat_open = 0;
     stop_arrange(ui); /* en påbörjad flytt sparas som den står */
-    sound_play(SND_CC_OPEN);
+    sound_play(SND_OPEN);
 }
 
 /* UI_SETTINGS / UI_ACTION (ui->cc_action) / UI_NONE */
@@ -1988,7 +1988,7 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
     u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_HOME | PSP_CTRL_SELECT;
     if (in->pressed & back) {
         ui->cc_open = 0;
-        sound_play(SND_CC_CLOSE);
+        sound_play(SND_BACK);
         return UI_NONE;
     }
     if (!(in->pressed & ok))
@@ -2013,7 +2013,7 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
         /* [medhatk] Close Control Center and hand off to main.c standby_mode() loop */
         ui->cc_open = 0;
         ui->cc_anim = 0;
-        sound_play(SND_CC_CLOSE);
+        sound_play(SND_BACK);
         return UI_STANDBY;
     case CC_SETTINGS:
         ui->cc_open = 0;
@@ -2031,7 +2031,7 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
     ui->cc_confirm = 0;
     ui->cc_action = actions[ui->cc_sel];
     ui->cc_leave = 0.001f;
-    sound_play(SND_CONFIRM);
+    sound_play(SND_SELECT);
     return UI_NONE;
 }
 
@@ -2074,7 +2074,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             menu_choose(ui);
         else if (in->pressed & back) {
             ui->menu_open = 0;
-            sound_play(SND_CLOSE_MENU);
+            sound_play(SND_BACK);
         }
         in = &none;
     }
@@ -2085,7 +2085,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             arrange_step(ui, move);
         if (in->pressed & (PSP_CTRL_CROSS | PSP_CTRL_CIRCLE | PSP_CTRL_SQUARE)) {
             stop_arrange(ui);
-            sound_play(SND_CONFIRM);
+            sound_play(SND_SELECT);
         }
         in = &none;
     }
@@ -4490,10 +4490,10 @@ int ui_standby_update(Ui *ui, const UiInput *in, float dt)
             ui->sb_power_open = 0;
             ui->sb_confirm = 0;
             ui->sb_confirm_time = 0;
-            sound_play(SND_CLOSE_MENU);
+            sound_play(SND_BACK);
         } else if (in->pressed & ok) {
             if (ui->sb_power_sel == 0) {
-                sound_play(SND_CONFIRM);
+                sound_play(SND_SELECT);
                 return SB_SLEEP;
             }
             if (!ui->sb_confirm) {
@@ -4501,7 +4501,7 @@ int ui_standby_update(Ui *ui, const UiInput *in, float dt)
                 ui->sb_confirm_time = 0;
                 sound_play(SND_SELECT);
             } else {
-                sound_play(SND_CONFIRM);
+                sound_play(SND_SELECT);
                 return SB_SHUTDOWN;
             }
         }
