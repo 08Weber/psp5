@@ -2254,6 +2254,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
     /* spelets video och musik, som i XMB – eller vald video i Videospelaren (TAB_VIDEO) */
     int pv = -1;
+    int pv_card = 0;
     const Entry *pv_entry = NULL;
     if (ui->tab == TAB_VIDEO && s_nvids > 0 && ui->vid_still >= 0.14f && !ui->cc_open) {
         pv = VID_PREVIEW + ui->vid_sel;
@@ -2261,10 +2262,12 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     } else if (g_previews && is_row_tab && !overlay && ui->cat_anim <= 0 &&
                ui->cc_anim <= 0 && ui->intro >= 1 && ui->still >= PREVIEW_DELAY) {
         pv = ui_selected(ui);
-        if (pv >= 0)
+        if (pv >= 0) {
             pv_entry = &ui->list->items[pv];
+            pv_card = 1;
+        }
     }
-    preview_want(pv_entry, pv);
+    preview_want_ex(pv_entry, pv, pv_card);
     if (pv >= 0 && preview_frame(pv))
         ui->preview_anim = clampf(ui->preview_anim + dt * 4, 0, 1);
     else
@@ -2729,9 +2732,12 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
         gfx_tex(slot->tex, x, y, w, h, RGBA(tint, tint, tint, (int)(255 * alpha * shown)));
     }
     /* spelets video (ICON1.PMF) över ikonen på valt kort */
-    Texture *video = focus > 0.5f && ui->preview_anim > 0 ? preview_frame(list_index) : NULL;
+    int vx, vy, vw, vh;
+    Texture *video = focus > 0.5f && ui->preview_anim > 0
+                     ? preview_frame_sub(list_index, &vx, &vy, &vw, &vh) : NULL;
     if (video)
-        gfx_tex(video, x, y, w, h, RGBA(255, 255, 255, (int)(255 * alpha * smooth(ui->preview_anim))));
+        gfx_tex_sub(video, (float)vx, (float)vy, (float)vw, (float)vh,
+                    x, y, w, h, RGBA(255, 255, 255, (int)(255 * alpha * smooth(ui->preview_anim))));
 
     /* fäst: en liten nål i övre högra hörnet */
     if (meta(list_index)->pinned) {
@@ -2949,9 +2955,12 @@ static void draw_games_card(Ui *ui, int list_index, int is_library, float x, flo
             int tint = (int)lerpf(238.0f, 255.0f, f);
             gfx_tex(slot->tex, x, y, w, h, RGBA(tint, tint, tint, (int)(255.0f * alpha * shown)));
         }
-        Texture *video = focus > 0.5f && ui->preview_anim > 0 ? preview_frame(list_index) : NULL;
+        int vx, vy, vw, vh;
+        Texture *video = focus > 0.5f && ui->preview_anim > 0
+                         ? preview_frame_sub(list_index, &vx, &vy, &vw, &vh) : NULL;
         if (video)
-            gfx_tex(video, x, y, w, h, RGBA(255, 255, 255, (int)(255.0f * alpha * smooth(ui->preview_anim))));
+            gfx_tex_sub(video, (float)vx, (float)vy, (float)vw, (float)vh,
+                        x, y, w, h, RGBA(255, 255, 255, (int)(255.0f * alpha * smooth(ui->preview_anim))));
         if (meta(list_index)->pinned) {
             float s = w / (float)ICON_W, px = x + w - 10.0f * s, py = y + 10.0f * s;
             gfx_circle(px, py, 6.0f * s, RGBA(18, 18, 22, (int)(200.0f * alpha)));

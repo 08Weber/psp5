@@ -233,23 +233,52 @@ void gfx_line(float x0, float y0, float x1, float y1, u32 color)
     sceGuDrawArray(GU_LINES, CVERT_FMT, 2, 0, v);
 }
 
-void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
+void gfx_tex_sub(const Texture *t, float sx, float sy, float sw, float sh, float x, float y, float w, float h, u32 tint)
 {
-    if (!t || t->w < 2)
+    if (!t || t->w < 2 || t->h < 2 || sw < 2.0f || sh < 2.0f)
         return;
+    if (sx < 0.0f) {
+        sw += sx;
+        sx = 0.0f;
+    }
+    if (sy < 0.0f) {
+        sh += sy;
+        sy = 0.0f;
+    }
+    if (sx + sw > t->w)
+        sw = t->w - sx;
+    if (sy + sh > t->h)
+        sh = t->h - sy;
+    if (sw < 2.0f || sh < 2.0f)
+        return;
+
     /* Lodräta remsor om 64 texlar: en enda stor sprite (t.ex. bakgrunden över hela skärmen)
      * räcker inte texturcachen till och sänker bildfrekvensen (issue #9).
-     * En halv texel in så att filtreringen aldrig läser utanför bilden. */
-    int n = (t->w + 63) / 64;
-    float scale = w / (t->w - 1); /* skärmpixlar per texel */
+     * En halv texel in så att filtreringen aldrig läser utanför delområdet. */
+    float u_min = sx + 0.5f, u_max = sx + sw - 0.5f;
+    float v_min = sy + 0.5f, v_max = sy + sh - 0.5f;
+    int b0 = ((int)floorf(u_min) / 64) * 64;
+    int b1 = (((int)ceilf(u_max) + 63) / 64) * 64;
+    int n = (b1 - b0) / 64;
+    if (n < 1)
+        n = 1;
+    float scale = w / (u_max - u_min); /* skärmpixlar per texel */
     TVert *v = sceGuGetMemory(2 * n * sizeof(TVert));
     for (int k = 0; k < n; k++) {
-        float u0 = k ? k * 64 : 0.5f, u1 = k < n - 1 ? (k + 1) * 64 : t->w - 0.5f;
-        v[k * 2] = (TVert){ u0, 0.5f, tint, x + (u0 - 0.5f) * scale, y, 0 };
-        v[k * 2 + 1] = (TVert){ u1, t->h - 0.5f, tint, x + (u1 - 0.5f) * scale, y + h, 0 };
+        float u0 = k == 0 ? u_min : (float)(b0 + k * 64);
+        float u1 = k == n - 1 ? u_max : (float)(b0 + (k + 1) * 64);
+        v[k * 2] = (TVert){ u0, v_min, tint, x + (u0 - u_min) * scale, y, 0 };
+        v[k * 2 + 1] = (TVert){ u1, v_max, tint, x + (u1 - u_min) * scale, y + h, 0 };
     }
     bind(t);
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+}
+
+void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
+{
+    if (!t)
+        return;
+    gfx_tex_sub(t, 0, 0, (float)t->w, (float)t->h, x, y, w, h, tint);
 }
 
 /* Bilden pixel för pixel (1:1, närmaste texel) – förrenderade ikoner och loggan blir skarpa */
