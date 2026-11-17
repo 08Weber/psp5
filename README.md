@@ -185,6 +185,17 @@ able to try them on every combination, so let me know if something behaves oddly
 newest and untested on real hardware: started from the internal storage (`ef0:`), psp5 keeps its files there,
 and it finds games and music on both the internal storage and a Memory Stick Micro. The PS Vita isn't supported.
 
+## Feedback and issues
+
+If you run into problems or want to share feedback for PSP5 REMAKE, visit the
+[GitHub Issues](https://github.com/medhatk/PSP5-REMAKE/issues) page:
+
+- **Report a bug:** Use the **Bug Report** template and include your PSP model, PSP5 REMAKE version, ARK/firmware environment, and steps to reproduce.
+- **Request a feature:** Use the **Feature Request** template to describe the problem or use case, your proposed solution, and the expected benefit.
+- **Submit compatibility feedback:** Use the **Compatibility Report** template to report how a plugin, homebrew app, or hardware/ARK setup works with PSP5 REMAKE.
+
+Please do not upload copyrighted Sony system files, private keys, or personal data in issue reports.
+
 ## Building it yourself
 
 psp5 is written in C and built with the [pspdev](https://github.com/pspdev/pspdev) toolchain plus
