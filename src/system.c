@@ -490,9 +490,6 @@ static void *s_peek, *s_popup, *s_disp_on, *s_disp_off, *s_light_set, *s_light_g
 static volatile int s_popup_off;  /* 1 = systemets HOME-dialog är avstängd */
 static volatile u32 s_heartbeat;  /* sceKernelGetSystemTimeLow() när menyn senast läste knapparna */
 static int s_light = -1;          /* ljusstyrkan innan skärmen släcktes */
-/* [medhatk] Standby Screen state: active guard + saved pre-standby backlight level */
-static int s_sb_active;
-static int s_sb_light = -1;
 
 static void set_popup(int on)
 {
@@ -576,96 +573,6 @@ int sys_display(int on)
     }
     return 1;
 }
-
-/* [medhatk] Lazy-resolve kernel display brightness getters/setters via ARK */
-static void ensure_light_funcs(void)
-{
-    if (!s_has_ark)
-        return;
-    if (!s_light_set)
-        s_light_set = (void *)sctrlHENFindFunction("sceDisplay_Service", "sceDisplay_driver", NID_DISP_SET_LIGHT);
-    if (!s_light_get)
-        s_light_get = (void *)sctrlHENFindFunction("sceDisplay_Service", "sceDisplay_driver", NID_DISP_GET_LIGHT);
-}
-
-/* [medhatk] Append a capped debug line to standby.log (skipped while USB is active) */
-static void standby_log(const char *fmt, ...)
-{
-    if (s_usb_on)
-        return;
-    char path[32], line[160];
-    snprintf(path, sizeof(path), "%s/standby.log", g_data_dir);
-    va_list ap;
-    va_start(ap, fmt);
-    int n = vsnprintf(line, sizeof(line) - 1, fmt, ap);
-    va_end(ap);
-    if (n <= 0)
-        return;
-    if (n >= (int)sizeof(line) - 1)
-        n = sizeof(line) - 2;
-    line[n++] = '\n';
-    line[n] = 0;
-    SceIoStat st;
-    int big = sceIoGetstat(path, &st) >= 0 && st.st_size > 4096;
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | (big ? PSP_O_TRUNC : PSP_O_APPEND), 0777);
-    if (fd >= 0) {
-        sceIoWrite(fd, line, n);
-        sceIoClose(fd);
-    }
-}
-
-/* [medhatk] Enter Standby Screen: drop brightness by 1 XMB step (keeping prior
- * value in s_sb_light for restore). Never alters CPU/bus clock speeds. */
-void sys_standby_enter(void)
-{
-    if (s_sb_active)
-        return;
-    s_sb_active = 1;
-    s_sb_light = -1;
-    ensure_light_funcs();
-    if (!s_light_get || !s_light_set)
-        return;
-    int level = -1, unk = 0;
-    if (kcall(s_light_get, (u32)&level, (u32)&unk) < 0 || level < 0)
-        return;
-
-    /* [medhatk] Step down one notch along XMB brightness presets; leave untouched if already at minimum */
-    static const int LIGHT_STEPS[] = { 20, 40, 60, 80, 100 }; /* VERIFY on hardware via standby.log */
-    int target = level;
-    if (level > LIGHT_STEPS[0]) {
-        int found = -1;
-        for (int i = (int)(sizeof(LIGHT_STEPS) / sizeof(LIGHT_STEPS[0])) - 1; i >= 0; i--) {
-            if (LIGHT_STEPS[i] < level) {
-                found = LIGHT_STEPS[i];
-                break;
-            }
-        }
-        target = found > 0 ? found : (level * 3 / 4 < 20 ? 20 : level * 3 / 4);
-    }
-
-    int ret = 0;
-    if (target != level) {
-        s_sb_light = level;
-        ret = kcall(s_light_set, (u32)target, 0);
-    }
-    standby_log("enter model=%d ark=%d light=%d->%d ret=%08X", s_model, s_ark, level, target, ret);
-}
-
-/* [medhatk] Leave Standby Screen and restore the original backlight level if modified */
-void sys_standby_leave(void)
-{
-    if (!s_sb_active)
-        return;
-    if (s_sb_light >= 0 && s_light_set) {
-        int ret = kcall(s_light_set, (u32)s_sb_light, 0);
-        standby_log("leave model=%d light=%d ret=%08X", s_model, s_sb_light, ret);
-    }
-    s_sb_light = -1;
-    s_sb_active = 0;
-}
-
-/* [medhatk] Query whether Standby Screen brightness state is currently active */
-int sys_standby_active(void) { return s_sb_active; }
 
 /* [medhatk] Feed PSP power tick so system auto-sleep / screen dim stays disabled in standby */
 void sys_keep_awake(void)

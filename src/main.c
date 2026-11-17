@@ -242,8 +242,6 @@ static void sleep_and_wake(Ui *ui, int in_settings)
 /* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
 static void app_stop(EntryList *list, Ui *ui)
 {
-    /* [medhatk] Safety net: restore display brightness if shutting down directly from Standby Screen */
-    sys_standby_leave();
     sys_home_release(); /* spelet, XMB och USB-läget ska ha systemets HOME-dialog */
     umd_stop();
     loader_stop(); /* före music_term: laddaren läser musiklistan (omslagen) */
@@ -400,8 +398,6 @@ static void delete_dir_files(const char *dir)
 /* Utför en åtgärd från inställningarna. Returnerar 1 om appen ska byggas upp igen. */
 static int run_action(int action, EntryList *list, Ui *ui)
 {
-    /* [medhatk] Safety net: ensure original brightness is restored before sleep/USB/XMB/restart/shutdown */
-    sys_standby_leave();
     /* psp5 fungerar uppenbarligen. Till XMB tas bara startskyddet bort: launcherläget
      * ska vara fortsatt pausat där. */
     if (action == SA_XMB || action == SA_UMD_VIDEO)
@@ -468,27 +464,21 @@ static int run_action(int action, EntryList *list, Ui *ui)
 }
 
 /* [medhatk] Standby Screen event loop:
- * - Steps display brightness down by 1 notch and restores it on exit (no CPU clock changes).
+ * - Preserves the current system/user display brightness (no brightness or CPU clock changes).
  * - Feeds sys_keep_awake() every ~1s and bypasses psp5's idle/sleep timers while open.
  * - Keeps read_pad() running so hardware HOME handling & watchdog stay active.
- * - Throttles idle redraws to ~10 fps while keeping 60 fps during fades, Power menu, covers, or OSD. */
+ * - Renders continuously using the normal launcher vblank cadence. */
 static int standby_mode(EntryList *list, Ui *ui, u32 *old)
 {
     (void)list;
     ui_standby_open(ui);
     preview_pause(1);
-    sys_standby_enter();
     sys_keep_awake();
 
     int result = SB_NONE;
     int leaving = 0;
     u64 last = sceKernelGetSystemTimeWide();
     u64 last_awake = last;
-    u64 last_draw = 0;
-    int prev_music = music_state();
-    int prev_track = music_current();
-    int prev_cover = ui->cover_for;
-    u32 prev_held = *old;
     UiInput in = { 0, *old, 128, 128 };
 
     while (s_running) {
@@ -532,31 +522,9 @@ static int standby_mode(EntryList *list, Ui *ui, u32 *old)
             continue;
         }
 
-        /* [medhatk] Render immediately on input, animation, music/cover changes, or every 100ms for clock/progress */
-        int cur_music = music_state(), cur_track = music_current();
-        int animating = ui->sb_time < 0.30f ||
-                        ui->sb_step_time > 0.0f ||
-                        (ui->sb_power_open ? ui->sb_power_anim < 1.0f : ui->sb_power_anim > 0.0f) ||
-                        (ui->cover_for >= 0 && ui->cover && ui->cover_fade < 1.0f) ||
-                        osd_active();
-        int dirty = !last_draw || (now - last_draw >= 100000ULL) ||
-                    in.pressed != 0 || in.held != prev_held ||
-                    cur_music != prev_music || cur_track != prev_track ||
-                    ui->cover_for != prev_cover || animating;
-        prev_held = in.held;
-        prev_music = cur_music;
-        prev_track = cur_track;
-        prev_cover = ui->cover_for;
-
-        if (dirty) {
-            last_draw = now;
-            ui_draw_standby(ui);
-        } else {
-            sceKernelDelayThread(33000);
-        }
+        ui_draw_standby(ui);
     }
 
-    sys_standby_leave();
     preview_pause(0);
     *old = in.held;
     return result;
@@ -620,8 +588,6 @@ int main(int argc, char *argv[])
         if (testrun_take_resume())
             s_resumed = 1;
         if (s_sleeping || s_resumed) {
-            /* [medhatk] Safety net: restore display brightness if hardware sleep/resume happened during standby */
-            sys_standby_leave();
             if (dark == 1) /* somnade med släckt skärm: vakna med den tänd */
                 sys_display(1);
             dark = 0;
@@ -771,7 +737,6 @@ int main(int argc, char *argv[])
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             start_confirmed();    /* ett spel som hänger sig räknas inte mot psp5 */
-            sys_standby_leave(); /* [medhatk] Safety net before game launch */
             set_ingame_mark();
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */
@@ -787,7 +752,6 @@ int main(int argc, char *argv[])
     if (in_settings)
         settings_commit();
     app_stop(&list, &ui);
-    sys_standby_leave(); /* [medhatk] Final safety net before exiting back to XMB */
     sceIoRemove(START_MARK);
     sys_exit_xmb();
     sceKernelExitGame();

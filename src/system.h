@@ -52,14 +52,9 @@ void sys_home_release(void);
 /* Släcker (0) eller tänder (1) skärmen. 0 = går inte (ingen ARK). */
 int sys_display(int on);
 
-/* [medhatk] Standby Screen power & brightness helpers:
- * - sys_standby_enter() steps display brightness down by 1 level and snapshots
- *   the exact prior level; sys_standby_leave() restores it idempotently
- *   (no CPU/bus clocks are altered).
- * - sys_keep_awake() resets the PSP OS auto-sleep / backlight-off timers. */
-void sys_standby_enter(void);
-void sys_standby_leave(void);
-int  sys_standby_active(void);
+/* [medhatk] Standby Screen keep-awake helper:
+ * - sys_keep_awake() resets the PSP OS auto-sleep / backlight-off timers
+ *   (no brightness or CPU/bus clock changes). */
 void sys_keep_awake(void);
 
 int sys_usb_start(void);

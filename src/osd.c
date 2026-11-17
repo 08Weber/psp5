@@ -200,9 +200,3 @@ void osd_draw(void)
     snprintf(num, sizeof(num), "%d", s_muted ? 0 : s_volume);
     text_draw(x + w - 18, y + h / 2 + 5, 0.62f, 0, light, ALIGN_RIGHT, num);
 }
-
-/* [medhatk] Used by Standby Screen to keep 60fps redraws only while volume/screenshot OSD is visible */
-int osd_active(void)
-{
-    return s_shot_anim >= 0.01f || (s_anim >= 0.01f && s_volume >= 0);
-}
