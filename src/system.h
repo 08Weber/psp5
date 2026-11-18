@@ -19,6 +19,8 @@ void sys_init(const char *self_path);
 int sys_has_ark(void);
 /* ARK:s huvudversion: 4 (ARK-4), 5 (ARK-5) eller 0 (ingen ARK, t.ex. PPSSPP) */
 int sys_ark_version(void);
+/* Hela ARK-versionen som text, t.ex. "4.20.69"; "" om ingen ARK eller inga giltiga nummer. */
+const char *sys_ark_full_version(void);
 /* PSP-modell (kuKernelGetModel): 0 = PSP-1000, 1 = PSP-2000, 2/3/6/8 = PSP-3000,
  * 4 = PSP Go, 10 = PSP Street, -1 = okänd */
 int sys_model(void);
@@ -51,6 +53,28 @@ u32 sys_home_buttons(void);
 void sys_home_release(void);
 /* Släcker (0) eller tänder (1) skärmen. 0 = går inte (ingen ARK). */
 int sys_display(int on);
+
+/* PSP:ns egen knappinställning (även XMB): 1 = ○ bekräftar, 0 = ✕. */
+int sys_confirm_is_circle(void);
+int sys_set_confirm_is_circle(int circle);
+
+/* Systemets volym (0..30) och ljusstyrka (0..3, visas +1 som i XMB). -1 om anropet saknas. */
+int sys_volume(void);
+int sys_set_volume(int level);
+int sys_brightness(void);
+int sys_set_brightness(int level);
+
+/* Systeminformation för Inställningar -> System -> Systeminformation. -1 / 0 / "" om okänt. */
+typedef struct {
+    char nickname[40];
+    unsigned devkit;
+    int has_mac;
+    unsigned char mac[6];
+    int battery;
+    int percent, charging, mv, celsius, mah_left, mah_full;
+    unsigned ram_free;
+} SysAbout;
+void sys_about(SysAbout *out);
 
 /* [medhatk] Standby Screen keep-awake helper:
  * - sys_keep_awake() resets the PSP OS auto-sleep / backlight-off timers

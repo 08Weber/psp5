@@ -3,10 +3,13 @@
  * Fungerar på både ARK-4 och ARK-5 – versionen känns av vid start. */
 #include <pspkernel.h>
 #include <pspctrl.h>
+#include <pspimpose.h>
 #include <psppower.h> /* [medhatk] scePowerTick(PSP_POWER_TICK_ALL) for sys_keep_awake */
+#include <pspreg.h>
 #include <psputility.h>
 #include <pspusb.h>
 #include <pspusbstor.h>
+#include <pspwlan.h>
 #include <psploadexec_kernel.h>
 #include <kubridge.h>
 #include <systemctrl.h>
@@ -46,6 +49,7 @@ ARKConfig *sctrlArkGetConfig_ark4(ARKConfig *conf);
 
 static ARKConfig s_conf;
 static int s_ark;        /* 4, 5 eller 0 = ingen ARK */
+static char s_ark_full[24]; /* t.ex. "4.20.69" från SystemControl */
 static int s_model = -1; /* kuKernelGetModel(), -1 = okänd */
 static int s_has_ark;
 static int s_is_launcher;
@@ -102,10 +106,20 @@ static void fake_device(void)
     const char *p;
     if ((p = strstr(buf, "model=")))
         s_model = atoi(p + 6);
-    if ((p = strstr(buf, "ark=")))
+    if ((p = strstr(buf, "ark="))) {
         s_ark = atoi(p + 4);
+        snprintf(s_ark_full, sizeof(s_ark_full), "%d.%d.0", s_ark, s_ark == 4 ? 20 : 0);
+    }
 }
 #endif
+
+static void ark_version_text(int major, int minor, int micro, char *out, int size)
+{
+    if (major < 1 || major > 99 || minor < 0 || minor > 999 || micro < 0 || micro > 999)
+        out[0] = 0;
+    else
+        snprintf(out, size, "%d.%d.%d", major, minor, micro);
+}
 
 static void resolve_ark_dir(void)
 {
@@ -135,6 +149,7 @@ void sys_init(const char *self_path)
     if (launch_supported()) {
         int major = sctrlSEGetVersion();
         s_ark = major == 4 ? 4 : 5; /* ARK-4 ger 4, ARK-5 ger 5 */
+        ark_version_text(major, sctrlHENGetVersion(), sctrlHENGetMinorVersion(), s_ark_full, sizeof(s_ark_full));
         s_model = kuKernelGetModel();
         s_ms_is_ef = sctrlKernelMsIsEf() == 1;
         memset(&s_conf, 0, sizeof(s_conf));
@@ -191,6 +206,7 @@ void sys_init(const char *self_path)
 
 int sys_has_ark(void) { return s_has_ark; }
 int sys_ark_version(void) { return s_ark; }
+const char *sys_ark_full_version(void) { return s_ark_full; }
 int sys_model(void) { return s_model; }
 int sys_ms_is_ef(void) { return s_ms_is_ef; }
 int sys_is_psp1000(void) { return s_model == 0; }
@@ -323,6 +339,168 @@ static int kcall(void *f, u32 a1, u32 a2)
     a.arg1 = a1;
     a.arg2 = a2;
     return kuKernelCall(f, &a) < 0 ? -1 : (int)a.ret1;
+}
+
+/* The PSP's own button assignment (the XMB's Settings > Button Assignment): 1 = ○ confirms, 0 = ✕. */
+int sys_confirm_is_circle(void)
+{
+    int v = 1;
+    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &v) < 0)
+        return 0;
+    return v == 0;
+}
+
+static int reg_set_int(const char *category, const char *key, int value)
+{
+    struct RegParam reg;
+    REGHANDLE h = 0, hd = 0;
+    int ok = 0;
+    memset(&reg, 0, sizeof(reg));
+    reg.regtype = 1;
+    reg.namelen = strlen(SYSTEM_REGISTRY);
+    reg.unk2 = 1;
+    reg.unk3 = 1;
+    strcpy(reg.name, SYSTEM_REGISTRY);
+    if (sceRegOpenRegistry(&reg, 2, &h) < 0)
+        return 0;
+    if (sceRegOpenCategory(h, category, 2, &hd) >= 0) {
+        if (sceRegSetKeyValue(hd, key, &value, sizeof(value)) >= 0) {
+            sceRegFlushCategory(hd);
+            ok = 1;
+        }
+        sceRegCloseCategory(hd);
+    }
+    sceRegFlushRegistry(h);
+    sceRegCloseRegistry(h);
+    return ok;
+}
+
+int sys_set_confirm_is_circle(int circle)
+{
+    int lang = 0, button = 0, param = 1;
+    int have_impose = sceImposeGetLanguageMode(&lang, &button) >= 0;
+    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &param) < 0)
+        return sys_confirm_is_circle();
+    int same = button == param; /* both numbers mean the same thing */
+    int want = circle ? 0 : 1;  /* the system parameter's number for what is wanted */
+    reg_set_int("/CONFIG/SYSTEM/XMB", "button_assign", want);
+    if (have_impose)
+        sceImposeSetLanguageMode(lang, same ? want : !want);
+    int now = 1;
+    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &now) >= 0 && now == want)
+        return circle ? 1 : 0; /* the system says it: that is the answer */
+    if (!have_impose)
+        return sys_confirm_is_circle();
+    int lang2 = 0, button2 = 0; /* ask the same service that was told: the system parameter may not follow until the next start */
+    if (sceImposeGetLanguageMode(&lang2, &button2) < 0)
+        return sys_confirm_is_circle();
+    return (same ? button2 : !button2) == 0;
+}
+
+/* --- made by medhatk - Volume and brightness through the kernel's Impose service --- */
+#define NID_IMPOSE_GET_PARAM     0x531C9778
+#define NID_IMPOSE_GET_PARAM_660 0xDC3BECFF
+#define NID_IMPOSE_SET_PARAM     0x810FB7FB
+#define IMPOSE_MAIN_VOLUME       0x1
+#define IMPOSE_BRIGHTNESS        0x2
+
+static void *s_impose_get, *s_impose_set;
+static int s_impose_looked;
+
+static void impose_find(void)
+{
+    if (s_impose_looked)
+        return;
+    s_impose_looked = 1;
+    if (!s_has_ark)
+        return;
+    u32 g = sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_IMPOSE_GET_PARAM);
+    if (!g)
+        g = sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_IMPOSE_GET_PARAM_660);
+    s_impose_get = (void *)g;
+    s_impose_set = (void *)sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_IMPOSE_SET_PARAM);
+}
+
+#ifdef PSP5_TEST
+static int s_test_impose[0x20] = { [IMPOSE_MAIN_VOLUME] = 18, [IMPOSE_BRIGHTNESS] = 3 };
+#endif
+
+static int impose_get(int param)
+{
+#ifdef PSP5_TEST
+    return s_test_impose[param & 0x1F];
+#endif
+    impose_find();
+    if (!s_impose_get)
+        return -1;
+    KernelCallArg a = { 0 };
+    a.arg1 = param;
+    if (kuKernelCall(s_impose_get, &a) < 0)
+        return -1;
+    return (int)a.ret1;
+}
+
+static int impose_set(int param, int value)
+{
+#ifdef PSP5_TEST
+    s_test_impose[param & 0x1F] = value;
+    return 0;
+#endif
+    impose_find();
+    if (!s_impose_set)
+        return -1;
+    KernelCallArg a = { 0 };
+    a.arg1 = param;
+    a.arg2 = value;
+    if (kuKernelCall(s_impose_set, &a) < 0)
+        return -1;
+    return (int)a.ret1;
+}
+
+int sys_volume(void) { return impose_get(IMPOSE_MAIN_VOLUME); }
+
+int sys_set_volume(int level)
+{
+    if (impose_get(IMPOSE_MAIN_VOLUME) >= 0)
+        impose_set(IMPOSE_MAIN_VOLUME, level);
+    return impose_get(IMPOSE_MAIN_VOLUME);
+}
+
+int sys_brightness(void) { return impose_get(IMPOSE_BRIGHTNESS); }
+
+int sys_set_brightness(int level)
+{
+    if (impose_get(IMPOSE_BRIGHTNESS) >= 0)
+        impose_set(IMPOSE_BRIGHTNESS, level);
+    return impose_get(IMPOSE_BRIGHTNESS);
+}
+
+static int battery_celsius(int raw)
+{
+    if (raw < 0)
+        return -1;
+    return raw >= 100 ? raw / 100 + (raw % 100 >= 50) : raw;
+}
+
+void sys_about(SysAbout *a)
+{
+    memset(a, 0, sizeof(*a));
+    a->percent = a->mv = a->celsius = a->mah_left = a->mah_full = -1;
+    if (sceUtilityGetSystemParamString(PSP_SYSTEMPARAM_ID_STRING_NICKNAME, a->nickname, sizeof(a->nickname)) < 0)
+        a->nickname[0] = 0;
+    a->nickname[sizeof(a->nickname) - 1] = 0;
+    a->devkit = sceKernelDevkitVersion();
+    a->has_mac = sceWlanGetEtherAddr(a->mac) >= 0;
+    a->battery = scePowerIsBatteryExist() > 0;
+    if (a->battery) {
+        a->percent = scePowerGetBatteryLifePercent();
+        a->charging = scePowerIsBatteryCharging() > 0;
+        a->mv = scePowerGetBatteryVolt();
+        a->celsius = battery_celsius(scePowerGetBatteryTemp());
+        a->mah_left = scePowerGetBatteryRemainCapacity();
+        a->mah_full = scePowerGetBatteryFullCapacity();
+    }
+    a->ram_free = sceKernelTotalFreeMemSize();
 }
 
 /* USB-logg (issue #29): hålls i minnet medan datorn äger minneskortet – en skrivning då kan

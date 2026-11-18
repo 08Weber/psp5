@@ -17,6 +17,7 @@
 #include "config.h"
 #include "theme.h"
 #include "osd.h"
+#include "datetime.h"
 #include "ui.h" /* bilderna i PICTURE */
 
 #define TITLE_X     16.0f
@@ -41,19 +42,21 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_SUBPAGE, IT_DATETIME } ItemType;
 
 typedef struct {
     const char *label;
     ItemType type;
     unsigned char *value;        /* TOGGLE/CHOICE */
-    const char **opts;           /* CHOICE */
+    const char *const *opts;     /* CHOICE */
     int nopts;
-    int action;                  /* ACTION: SA_*, THEME: temats index */
+    int action;                  /* ACTION: SA_*, THEME: temats index, SUBPAGE: SUB_* */
     int confirm;                 /* ACTION: kräver ✕ två gånger */
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
+    int immediate;               /* systeminställning som gäller direkt (inget att spara) */
+    void (*set)(int opt);        /* valfri setter för IT_CHOICE */
 } Item;
 
 typedef struct {
@@ -64,8 +67,10 @@ typedef struct {
 } Category;
 
 enum { CAT_PSP5, CAT_THEME, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
+enum { SUB_NONE, SUB_DATETIME, SUB_INFO };
 
 static Category s_cats[CAT_COUNT];
+static Category s_sub[2]; /* SUB_DATETIME, SUB_INFO */
 static unsigned char s_plugin_on[MAX_PLUGINS];
 /* Radbrytningen mäter texten många gånger – gör den bara när texten byts, inte varje bildruta */
 static const char *s_wrapped; /* texten som s_desc håller, NULL = inget */
@@ -73,8 +78,9 @@ static int s_wrapped_n;
 
 static struct {
     int cat, item[CAT_COUNT];
+    int subpage, sub_item[2];
     int focus;          /* 0 = kategorier, 1 = alternativ */
-    float scroll, open, time;
+    float scroll, sub_scroll, open, time;
     int confirm_item;   /* -1 = ingen */
     float confirm_time;
     int cfw_dirty, plugins_dirty, own_dirty, toast_pending;
@@ -90,6 +96,8 @@ static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz"
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
 static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_BATTERY[3];
 static const char *OPT_SCREEN_OFF[5], *OPT_AUTO_SLEEP[5]; /* minuter: se config.h */
+static const char *OPT_PSP_CONFIRM[2], *OPT_DST[3], *OPT_TIMEFMT[2];
+static const char *const OPT_DATEFMT[] = { "YYYY.MM.DD", "MM.DD.YYYY", "DD.MM.YYYY" };
 
 /* Bakgrundsbilder att välja bland: bilderna i PICTURE (som XMB:s Foto), en nivå undermappar.
  * Val 0 = ingen (temats bakgrund). Läses när inställningarna öppnas. */
@@ -130,6 +138,13 @@ static void build_options(void)
         OPT_SCREEN_OFF[i] = i ? screen_off[i] : off;
         OPT_AUTO_SLEEP[i] = i ? auto_sleep[i] : off;
     }
+    OPT_PSP_CONFIRM[0] = L(S_BTN_CROSS);
+    OPT_PSP_CONFIRM[1] = L(S_BTN_CIRCLE);
+    OPT_DST[DT_DST_REMOVE] = L(S_DT_DST_REMOVE);
+    OPT_DST[DT_DST_KEEP] = L(S_DT_DST_KEEP);
+    OPT_DST[DT_DST_ADD] = L(S_DT_DST_ADD);
+    OPT_TIMEFMT[DT_TIME_24] = L(S_DT_24H);
+    OPT_TIMEFMT[DT_TIME_12] = L(S_DT_12H);
     OPT_WALL[0] = off;
     for (int i = 0; i < s_nwall; i++)
         OPT_WALL[i + 1] = s_wall_name[i];
@@ -208,7 +223,7 @@ static void toggle(Category *c, const char *label, unsigned char *v)
     add(c, label, IT_TOGGLE)->value = v;
 }
 
-static void choice(Category *c, const char *label, unsigned char *v, const char **opts, int n)
+static void choice(Category *c, const char *label, unsigned char *v, const char *const *opts, int n)
 {
     Item *it = add(c, label, IT_CHOICE);
     it->value = v;
@@ -230,16 +245,140 @@ static void info(Category *c, const char *label, const char *value)
     snprintf(add(c, label, IT_INFO)->info, sizeof(((Item *)0)->info), "%s", value);
 }
 
+static void subpage(Category *c, const char *label, int page, const char *preview)
+{
+    Item *it = add(c, label, IT_SUBPAGE);
+    it->action = page;
+    if (preview)
+        snprintf(it->info, sizeof(it->info), "%s", preview);
+}
+
+/* --- made by medhatk - System Settings helpers --- */
+
+#define VOLUME_MAX    30
+#define BRIGHT_MAX    100
+#define BRIGHT_LEVELS 4
+
+static unsigned char s_psp_circle;
+static int s_confirm_circle;
+static unsigned char s_volume, s_bright;
+static char s_vol_text[VOLUME_MAX + 1][4];
+static const char *s_vol_opts[VOLUME_MAX + 1];
+static int s_br_levels[6], s_br_n;
+static char s_br_text[6][12];
+static const char *s_br_opts[6];
+static Item *s_br_item;
+
+static void br_build(int now)
+{
+    int n = 0;
+    for (int i = 0; i < BRIGHT_LEVELS; i++)
+        s_br_levels[n++] = i;
+    if (now >= BRIGHT_LEVELS)
+        s_br_levels[n++] = now;
+    s_br_n = n;
+    for (int i = 0; i < n; i++) {
+        snprintf(s_br_text[i], sizeof(s_br_text[i]), "%d", s_br_levels[i] + 1);
+        s_br_opts[i] = s_br_text[i];
+        if (s_br_levels[i] == now)
+            s_bright = i;
+    }
+    if (s_br_item) {
+        s_br_item->opts = s_br_opts;
+        s_br_item->nopts = n;
+    }
+}
+
+static void set_brightness(int idx)
+{
+    int now = sys_set_brightness(s_br_levels[idx]);
+    br_build(now >= 0 && now <= BRIGHT_MAX ? now : s_br_levels[s_bright]);
+}
+
+static void set_volume(int level)
+{
+    int now = sys_set_volume(level);
+    if (now >= 0 && now <= VOLUME_MAX)
+        s_volume = now;
+}
+
+static void set_button_assign(int opt)
+{
+    s_psp_circle = sys_set_confirm_is_circle(opt) ? 1 : 0;
+    s_confirm_circle = s_psp_circle;
+}
+
+static const char *model_name(void)
+{
+    int m = sys_model();
+    return m == 0 ? "PSP-1000" : m == 1 ? "PSP-2000"
+         : (m == 2 || m == 3 || m == 5 || m == 6 || m == 7 || m == 8) ? "PSP-3000"
+         : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
+}
+
+static void fmt_bytes(char *out, int size, unsigned long long b)
+{
+    if (b >= 1024ull * 1024 * 1024)
+        snprintf(out, size, "%.1f GB", (float)(b / (1024.0f * 1024.0f)) / 1024.0f);
+    else if (b >= 1024 * 1024)
+        snprintf(out, size, "%.1f MB", (float)b / (1024.0f * 1024.0f));
+    else
+        snprintf(out, size, "%u KB", (unsigned)(b / 1024));
+}
+
+static void fill_about(Category *c)
+{
+    SysAbout a;
+    char v[48];
+    c->count = 0;
+    sys_about(&a);
+    if (a.nickname[0])
+        info(c, L(S_ABOUT_NICKNAME), a.nickname);
+    info(c, L(S_ABOUT_MODEL), model_name());
+    snprintf(v, sizeof(v), "%u.%u%u", a.devkit >> 24, (a.devkit >> 16) & 0xFF, (a.devkit >> 8) & 0xFF);
+    info(c, L(S_ABOUT_SYSTEM), v);
+    if (sys_ark_version()) {
+        static char cfw[24];
+        snprintf(cfw, sizeof(cfw), "CFW (ARK-%d)", sys_ark_version());
+        info(c, cfw, sys_ark_full_version()[0] ? sys_ark_full_version() : "-");
+    }
+#ifdef PSP5_ARK4
+    info(c, "PSP5 REMAKE", "1.0.1 (ARK-4)");
+#else
+    info(c, "PSP5 REMAKE", "1.0.1 (ARK-5)");
+#endif
+    if (a.has_mac) {
+        snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
+        info(c, L(S_ABOUT_MAC), v);
+    }
+    fmt_bytes(v, sizeof(v), a.ram_free);
+    info(c, L(S_ABOUT_RAM_FREE), v);
+    if (a.battery) {
+        if (a.percent >= 0) {
+            snprintf(v, sizeof(v), a.charging ? "%d %%, %s" : "%d %%", a.percent, L(S_ABOUT_CHARGING));
+            info(c, L(S_ABOUT_BATTERY), v);
+        }
+        if (a.mv > 0) {
+            snprintf(v, sizeof(v), "%d.%02d V", a.mv / 1000, (a.mv % 1000) / 10);
+            info(c, L(S_ABOUT_VOLTAGE), v);
+        }
+        if (a.celsius >= 0) {
+            snprintf(v, sizeof(v), "%d °C", a.celsius);
+            info(c, L(S_ABOUT_TEMP), v);
+        }
+        if (a.mah_full > 0 && a.mah_left >= 0) {
+            snprintf(v, sizeof(v), "%d / %d mAh", a.mah_left, a.mah_full);
+            info(c, L(S_ABOUT_CAPACITY), v);
+        }
+    }
+}
+
 /* "ARK-5 · PSP-2000" – vilken CFW och modell psp5 upptäckte */
 static const char *system_name(void)
 {
     static char buf[40];
-    int m = sys_model();
-    const char *model = m == 0 ? "PSP-1000" : m == 1 ? "PSP-2000"
-                      : (m == 2 || m == 3 || m == 5 || m == 6 || m == 7 || m == 8) ? "PSP-3000"
-                      : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
     if (sys_ark_version())
-        snprintf(buf, sizeof(buf), "ARK-%d  ·  %s", sys_ark_version(), model);
+        snprintf(buf, sizeof(buf), "ARK-%d  ·  %s", sys_ark_version(), model_name());
     else
         snprintf(buf, sizeof(buf), "-");
     return buf;
@@ -308,8 +447,8 @@ static void build(int rebuild)
         if (g_cfw.mscache > 1) g_cfw.mscache = 1;
     }
     int nclock = ark4 ? CLOCK_333 + 1 : N(OPT_CLOCK);
-    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, (const char **)OPT_CLOCK, nclock);
-    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, (const char **)OPT_CLOCK, nclock);
+    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, OPT_CLOCK, nclock);
+    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, OPT_CLOCK, nclock);
     if (!psp1000) {
         if (ark4)
             toggle(c, L(S_EXTRA_MEM), &g_cfw.highmem);
@@ -324,6 +463,37 @@ static void build(int rebuild)
 
     c = &s_cats[CAT_SYSTEM];
     c->name = L(S_CAT_SYSTEM);
+    s_br_item = NULL;
+    {
+        int br = sys_brightness(), vol = sys_volume();
+        if (br >= 0 && br <= BRIGHT_MAX) {
+            br_build(br);
+            choice(c, L(S_BRIGHTNESS), &s_bright, s_br_opts, s_br_n);
+            Item *it = &c->items[c->count - 1];
+            it->set = set_brightness;
+            it->immediate = 1;
+            s_br_item = it;
+        }
+        if (vol >= 0 && vol <= VOLUME_MAX) {
+            for (int i = 0; i <= VOLUME_MAX; i++) {
+                snprintf(s_vol_text[i], sizeof(s_vol_text[i]), "%d", i);
+                s_vol_opts[i] = s_vol_text[i];
+            }
+            s_volume = vol;
+            choice(c, L(S_VOLUME), &s_volume, s_vol_opts, VOLUME_MAX + 1);
+            Item *it = &c->items[c->count - 1];
+            it->set = set_volume;
+            it->immediate = 1;
+        }
+    }
+    s_psp_circle = sys_confirm_is_circle() ? 1 : 0;
+    s_confirm_circle = s_psp_circle;
+    choice(c, L(S_BUTTON_ASSIGN), &s_psp_circle, OPT_PSP_CONFIRM, N(OPT_PSP_CONFIRM));
+    c->items[c->count - 1].set = set_button_assign;
+    c->items[c->count - 1].immediate = 1;
+    action(c, L(S_USB_MODE), SA_USB, 0);
+    subpage(c, L(S_DATETIME), SUB_DATETIME, NULL);
+    subpage(c, L(S_CAT_INFO), SUB_INFO, model_name());
     if (!psp1000)
         toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
@@ -380,6 +550,21 @@ static void build(int rebuild)
     action(c, L(S_RESTART), SA_RESTART, 1);
     action(c, L(S_SHUTDOWN), SA_SHUTDOWN, 1);
     action(c, L(S_RECOVERY), SA_RECOVERY, 1);
+
+    memset(s_sub, 0, sizeof(s_sub));
+    c = &s_sub[SUB_DATETIME - 1];
+    c->name = L(S_DATETIME);
+    add(c, L(S_DT_CURRENT), IT_DATETIME);
+    choice(c, L(S_DT_DST), &g_dt_dst, OPT_DST, N(OPT_DST));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_DATE_FORMAT), &g_dt_date, OPT_DATEFMT, N(OPT_DATEFMT));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_TIME_FORMAT), &g_dt_time, OPT_TIMEFMT, N(OPT_TIMEFMT));
+    c->items[c->count - 1].own = 1;
+
+    c = &s_sub[SUB_INFO - 1];
+    c->name = L(S_CAT_INFO);
+    fill_about(c);
 }
 
 void settings_open(void)
@@ -449,6 +634,8 @@ static int vertical(const UiInput *in, float dt)
 
 static void mark_dirty(const Item *it)
 {
+    if (it->immediate)
+        return;
     if (it->own) {
         S.own_dirty = 1;
     } else if (it->plugin) {
@@ -459,6 +646,16 @@ static void mark_dirty(const Item *it)
         S.toast_pending = 1;
     }
     S.save_timer = 0.35f; /* spara strax efter ändringen så att inget tappas vid direkt omstart (issue #23) */
+}
+
+static Category *active_cat(void)
+{
+    return S.subpage ? &s_sub[S.subpage - 1] : &s_cats[S.cat];
+}
+
+static int *active_sel(void)
+{
+    return S.subpage ? &S.sub_item[S.subpage - 1] : &S.item[S.cat];
 }
 
 /* Övre kanten för rad i i den högra listan (innan scroll). */
@@ -475,10 +672,12 @@ int settings_update(const UiInput *in, float dt)
     if (S.save_timer > 0 && (S.save_timer -= dt) <= 0)
         flush_dirty();
 
-    Category *c = &s_cats[S.cat];
-    int *sel = &S.item[S.cat];
+    Category *c = active_cat();
+    int *sel = active_sel();
     u32 p = in->pressed;
     int move = vertical(in, dt);
+    u32 ok_btn = s_confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
+    u32 back_btn = s_confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
 
     if (S.focus == 0) {
         if (move) {
@@ -488,11 +687,11 @@ int settings_update(const UiInput *in, float dt)
             S.cat = cat;
             S.confirm_item = -1;
         }
-        if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {
+        if ((p & (ok_btn | PSP_CTRL_RIGHT)) && c->count) {
             S.focus = 1;
             sound_play(SND_SELECT);
         }
-        if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
+        if (p & (back_btn | PSP_CTRL_TRIANGLE)) {
             sound_play(SND_BACK);
             return SA_CLOSE;
         }
@@ -508,11 +707,15 @@ int settings_update(const UiInput *in, float dt)
         }
         int change = 0;
         if (it->type == IT_CHOICE) {
-            if (p & (PSP_CTRL_RIGHT | PSP_CTRL_CROSS)) change = 1;
+            if (p & (PSP_CTRL_RIGHT | ok_btn)) change = 1;
             if (p & PSP_CTRL_LEFT) change = -1;
         }
         if (change) {
-            *it->value = (*it->value + change + it->nopts) % it->nopts;
+            int nv = (*it->value + change + it->nopts) % it->nopts;
+            if (it->set)
+                it->set(nv);
+            else
+                *it->value = nv;
             mark_dirty(it);
             sound_play(SND_TOGGLE);
             if (it->value == &g_lang_setting) {
@@ -521,17 +724,25 @@ int settings_update(const UiInput *in, float dt)
                     font_ensure_cjk();
                 build(1);
             }
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
+        } else if ((p & ok_btn) && it->type == IT_THEME) {
             if (g_theme != it->action) {
                 g_theme = it->action;
                 mark_dirty(it);
             }
             sound_play(SND_TOGGLE);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
+        } else if ((p & ok_btn) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
             sound_play(SND_TOGGLE);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
+        } else if ((p & ok_btn) && it->type == IT_SUBPAGE) {
+            if (it->action == SUB_INFO)
+                fill_about(&s_sub[SUB_INFO - 1]);
+            S.subpage = it->action;
+            S.sub_item[S.subpage - 1] = 0;
+            S.sub_scroll = 0;
+            S.confirm_item = -1;
+            sound_play(SND_SELECT);
+        } else if ((p & ok_btn) && it->type == IT_ACTION) {
             if (it->action == SA_USBNET) {
                 int r = sys_usbnet_probe(1200);
                 int st = sys_usbnet_state();
@@ -552,8 +763,14 @@ int settings_update(const UiInput *in, float dt)
                 sound_wait(400); /* låt ljudet höras innan något stängs */
                 return it->action;
             }
-        } else if ((p & PSP_CTRL_CIRCLE) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
-            S.focus = 0;
+        } else if ((p & back_btn) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
+            if (S.subpage) {
+                S.subpage = SUB_NONE;
+                c = active_cat();
+                sel = active_sel();
+            } else {
+                S.focus = 0;
+            }
             S.confirm_item = -1;
             sound_play(SND_BACK);
         } else if (p & PSP_CTRL_TRIANGLE) {
@@ -570,7 +787,10 @@ int settings_update(const UiInput *in, float dt)
         if (y > visible)
             target = y - visible;
     }
-    S.scroll = approach(S.scroll, target, 14.0f, dt);
+    if (S.subpage)
+        S.sub_scroll = approach(S.sub_scroll, target, 14.0f, dt);
+    else
+        S.scroll = approach(S.scroll, target, 14.0f, dt);
     return SA_NONE;
 }
 
@@ -708,11 +928,11 @@ static void draw_hints(const Theme *t, float a)
     float x = SCREEN_W - 16.0f - w, y = 257.0f;
     u32 label_col = fade(THEME_INK(t, text, RGBA(218, 224, 235, 238)), a);
     u32 dark_mark = fade(RGBA(18, 22, 30, 255), a);
-    theme_button(t, x + 6.5f, y, 6.5f, BTN_CROSS, 0, fade(LIGHT, 0.96f * a), dark_mark);
+    theme_button(t, x + 6.5f, y, 6.5f, s_confirm_circle ? BTN_CIRCLE : BTN_CROSS, 0, fade(LIGHT, 0.96f * a), dark_mark);
     x += 18.0f;
     text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, sel);
     x += text_width(0.56f, 0, sel) + 14.0f;
-    theme_button(t, x + 6.5f, y, 6.5f, BTN_CIRCLE, 0, fade(LIGHT, 0.96f * a), dark_mark);
+    theme_button(t, x + 6.5f, y, 6.5f, s_confirm_circle ? BTN_CROSS : BTN_CIRCLE, 0, fade(LIGHT, 0.96f * a), dark_mark);
     x += 18.0f;
     text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, back);
 }
@@ -736,6 +956,15 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
         break;
     case IT_INFO:
         snprintf(value, sizeof(value), "%s", it->info);
+        break;
+    case IT_DATETIME:
+        dt_text(value, sizeof(value), dt_now());
+        break;
+    case IT_SUBPAGE:
+        if (it->action == SUB_DATETIME)
+            dt_text(value, sizeof(value), dt_now());
+        else if (it->info[0])
+            snprintf(value, sizeof(value), "%s", it->info);
         break;
     case IT_THEME: {
         /* liten förhandsvisning, och en bock för temat som används */
@@ -778,13 +1007,16 @@ void settings_draw(void)
 {
     float a = S.open;
     float slide = (1.0f - a) * 10.0f;
-    const Category *c = &s_cats[S.cat];
+    const Category *c = active_cat();
+    int cur_sel = *active_sel();
+    float cur_scroll = S.subpage ? S.sub_scroll : S.scroll;
     const Theme *shown = shown_theme();
 
     gfx_begin(THEME_INK(shown, panel_alt, RGBA(9, 13, 19, 255)));
     draw_background(shown);
     ui_draw_top_bar_for(0, 1, a, S.time, shown, 0.0f);
-    text_draw(TITLE_X + slide, TITLE_Y, 0.90f, 1, fade(THEME_INK(shown, text, TEXT_MAIN), a), ALIGN_LEFT, L(S_SETTINGS));
+    text_draw(TITLE_X + slide, TITLE_Y, 0.90f, 1, fade(THEME_INK(shown, text, TEXT_MAIN), a), ALIGN_LEFT,
+              S.subpage ? c->name : L(S_SETTINGS));
 
     /* vänster kategorilista */
     for (int i = 0; i < CAT_COUNT; i++) {
@@ -831,7 +1063,7 @@ void settings_draw(void)
     gfx_ring(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 10.0f, card_border);
 
     gfx_clip(PANEL_X + 2.0f, LIST_TOP - 2.0f, PANEL_W - 4.0f, LIST_BOTTOM - LIST_TOP + 4.0f);
-    float top = LIST_TOP - S.scroll;
+    float top = LIST_TOP - cur_scroll;
     if (c->desc) {
         int n = wrap_desc(c->desc);
         float bh = desc_box_h(c);
@@ -859,7 +1091,7 @@ void settings_draw(void)
         float edge = clampf((y - (LIST_TOP - ROW_H * 0.5f)) / (ROW_H * 0.55f), 0.0f, 1.0f) *
                      clampf((LIST_BOTTOM - y) / (ROW_H * 0.55f), 0.0f, 1.0f);
         float ra = a * edge;
-        int selected = S.focus == 1 && i == S.item[S.cat];
+        int selected = S.focus == 1 && i == cur_sel;
         if (selected) {
             if (shown->ink) {
                 theme_sel_box(shown, RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(LIGHT, ra));
@@ -867,7 +1099,7 @@ void settings_draw(void)
                 gfx_round_rect(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, RGBA(30, 44, 66, (int)(175 * ra)));
                 gfx_ring(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(RGBA(236, 240, 246, 245), ra));
             }
-        } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
+        } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == cur_sel)) {
             u32 sep = shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(160 * ra)) : RGBA(44, 56, 74, (int)(190 * ra));
             gfx_rect(RIGHT_X + 6.0f, y + ROW_H - 0.5f, RIGHT_W - 12.0f, 1.0f, sep);
         }

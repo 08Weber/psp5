@@ -105,14 +105,6 @@ static int has_non_ascii(const EntryList *list)
     return 0;
 }
 
-static int confirm_is_circle(void)
-{
-    int v = 1;
-    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &v) < 0)
-        return 0;
-    return v == 0; /* 0 = ○ bekräftar (japansk inställning) */
-}
-
 static int take_ingame_mark(void)
 {
     SceIoStat st;
@@ -188,7 +180,7 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     loader_start(list);
     if (!s_safe)
         music_init(); /* läser in ms0:/MUSIC i bakgrunden */
-    ui_init(ui, list, confirm_is_circle(), launch_supported());
+    ui_init(ui, list, sys_confirm_is_circle(), launch_supported());
     if (s_pending_music[0]) {
         music_play_path(s_pending_music);
         s_pending_music[0] = 0;
@@ -663,6 +655,7 @@ int main(int argc, char *argv[])
                 preview_pause(0);
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
+                ui.confirm_circle = sys_confirm_is_circle();
                 if (g_hide_dupes != hide_dupes || g_all_games != all_games)
                     ui_relist(&ui, 0, 0); /* bygg om Spel och Spelbiblioteket */
                 if (home) {
@@ -673,6 +666,7 @@ int main(int argc, char *argv[])
                 }
             } else if (action != SA_NONE) {
                 settings_commit();
+                ui.confirm_circle = sys_confirm_is_circle();
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
                     in_settings = 0;

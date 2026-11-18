@@ -24,6 +24,7 @@
 #include "theme.h"
 #include "osd.h"
 #include "testrun.h"
+#include "datetime.h"
 #include "settings.h" /* SA_* för Control Center */
 #include "boot.h"      /* psp5-loggan */
 #include "icons.h"     /* sök- och inställningsikonerna */
@@ -2644,10 +2645,8 @@ void ui_draw_top_bar_for(int active_tab, int in_settings, float a, float anim_ti
     u32 main_fg = ink_over_art(t, t->ink ? t->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
     u32 dim_fg = ink_over_art(t, t->ink ? t->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
 
-    ScePspDateTime now;
-    char clock[8] = "";
-    if (read_clock(&now))
-        snprintf(clock, sizeof(clock), "%02d:%02d", now.hour, now.minute);
+    char clock[16] = "";
+    dt_clock_text(clock, sizeof(clock));
     float right_edge = SCREEN_W - 14.0f;
     text_draw(right_edge, 24.5f, 0.74f, 0, with_alpha(main_fg, a), ALIGN_RIGHT, clock);
     float cw = text_width(0.74f, 0, clock);
