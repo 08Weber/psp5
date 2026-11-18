@@ -2576,17 +2576,22 @@ static u32 mix(u32 a, u32 b, float t)
 
 /* Sök- och inställningsikoner uppe till höger i toppraden (som på PS5): förrenderade och
  * kantutjämnade i 16 × 16 (tools/make_icons.ps1 → icons.h), ritade pixel för pixel */
-static void draw_icon_n(const unsigned char *alpha, int n, Texture **tex, float cx, float cy, u32 c)
+static void draw_icon_wh(const unsigned char *alpha, int w, int h, Texture **tex, float x, float y, u32 c)
 {
-    if (!*tex && (*tex = tex_create(n, n, GU_PSM_8888))) {
+    if (!*tex && (*tex = tex_create(w, h, GU_PSM_8888))) {
         u32 *px = (*tex)->data;
-        for (int y = 0; y < n; y++)
-            for (int x = 0; x < n; x++)
-                px[y * (*tex)->stride + x] = RGBA(255, 255, 255, alpha[y * n + x]);
+        for (int row = 0; row < h; row++)
+            for (int col = 0; col < w; col++)
+                px[row * (*tex)->stride + col] = RGBA(255, 255, 255, alpha[row * w + col]);
         tex_flush(*tex);
     }
     if (*tex)
-        gfx_tex_1to1(*tex, cx - n / 2.0f, cy - n / 2.0f, c);
+        gfx_tex_1to1(*tex, x, y, c);
+}
+
+static void draw_icon_n(const unsigned char *alpha, int n, Texture **tex, float cx, float cy, u32 c)
+{
+    draw_icon_wh(alpha, n, n, tex, cx - n / 2.0f, cy - n / 2.0f, c);
 }
 
 static void draw_icon(const unsigned char *alpha, Texture **tex, float cx, float cy, u32 c)
@@ -3445,8 +3450,15 @@ static void draw_menu(Ui *ui)
     text_draw(fx, fy + 4.5f, 0.52f, 0, with_alpha(inv, a), ALIGN_LEFT, L(S_BACK));
 }
 
+static int is_shoulder_key(const char *key)
+{
+    return key && (key[0] == 'L' || key[0] == 'R') && key[1] == '\0';
+}
+
 static float key_cap_width(const char *key)
 {
+    if (is_shoulder_key(key))
+        return (float)ICON_SHLD_W;
     float w = text_width(0.42f, 1, key) + 8.0f;
     return w < 14.0f ? 14.0f : w;
 }
@@ -3455,6 +3467,24 @@ static float key_cap(float x, float y, const char *key, float a)
 {
     const Theme *t = theme_cur();
     float kw = key_cap_width(key);
+    if (is_shoulder_key(key)) {
+        static Texture *plate_tex, *l_tex, *r_tex;
+        float py = y - ICON_SHLD_H * 0.5f;
+        const unsigned char *glyph = key[0] == 'L' ? ICON_SHLD_L : ICON_SHLD_R;
+        Texture **gtex = key[0] == 'L' ? &l_tex : &r_tex;
+        if (t->ink) {
+            draw_icon_wh(ICON_SHLD_PLATE, ICON_SHLD_W, ICON_SHLD_H, &plate_tex, x, py + 1.0f,
+                         with_alpha(t->ink->shadow, 0.92f * a));
+            draw_icon_wh(ICON_SHLD_PLATE, ICON_SHLD_W, ICON_SHLD_H, &plate_tex, x, py,
+                         with_alpha(t->ink->panel_hi, 0.96f * a));
+            draw_icon_wh(glyph, ICON_SHLD_W, ICON_SHLD_H, gtex, x, py, with_alpha(t->ink->graphite, a));
+        } else {
+            draw_icon_wh(ICON_SHLD_PLATE, ICON_SHLD_W, ICON_SHLD_H, &plate_tex, x, py,
+                         with_alpha(LIGHT, 0.94f * a));
+            draw_icon_wh(glyph, ICON_SHLD_W, ICON_SHLD_H, gtex, x, py, with_alpha(DARK, a));
+        }
+        return kw;
+    }
     if (t->ink) {
         gfx_round_rect(x, y - 7.0f, kw, 14.0f, 3.0f, with_alpha(t->ink->shadow, 0.92f * a));
         gfx_round_rect(x + 1.0f, y - 6.0f, kw - 2.0f, 12.0f, 2.2f, with_alpha(t->ink->panel_hi, 0.96f * a));
@@ -3468,18 +3498,9 @@ static float key_cap(float x, float y, const char *key, float a)
 
 static void draw_outline_triangle_btn(float cx, float cy, float r, u32 color)
 {
-    draw_circle_stroke(cx, cy, r, 1.25f, color);
-
-    u32 cols[5] = { color, color, color, color, color };
-    float s = r * 0.48f;
-    float tri[10] = {
-        cx,          cy + s * 0.85f,
-        cx - s,      cy + s * 0.85f,
-        cx,          cy - s * 1.05f,
-        cx + s,      cy + s * 0.85f,
-        cx,          cy + s * 0.85f
-    };
-    gfx_stroke(tri, cols, 5, 1.15f);
+    static Texture *t;
+    (void)r;
+    draw_icon(ICON_BTN_OUTLINE_TRI, &t, cx, cy, color);
 }
 
 static float hints_width_for(float tab_size)
@@ -4951,14 +4972,11 @@ void ui_draw_standby(Ui *ui)
         ux = pwr_x - 22.0f - (14.0f + uw);
     if (ux < MARGIN)
         ux = MARGIN;
-    /* [medhatk] Custom house glyph representing the PSP HOME button */
-    float hx = ux + 5.0f;
-    float roof[6] = { hx, hy - 5.5f, hx - 5.5f, hy - 0.5f, hx + 5.5f, hy - 0.5f };
+    /* [medhatk] PlayStation logo glyph from Figma representing the PSP HOME/PS button */
+    static Texture *ps_tex;
     u32 hc = with_alpha(dim_col, 0.95f);
-    gfx_fan(hx, hy - 2.0f, roof, 3, hc);
-    gfx_rect(hx - 3.6f, hy - 0.5f, 7.2f, 5.2f, hc);
-    gfx_rect(hx - 1.1f, hy + 1.5f, 2.2f, 3.2f, ink_over_art(th, th->bottom, RGBA(12, 14, 18, 220), art_a));
-    text_draw(ux + 14.0f, hy + 4.0f, usz, 0, hc, ALIGN_LEFT, unlock);
+    draw_icon(ICON_PS_LOGO, &ps_tex, ux + 6.5f, hy, hc);
+    text_draw(ux + 15.0f, hy + 4.0f, usz, 0, hc, ALIGN_LEFT, unlock);
 
     /* [medhatk] Slide-up Power overlay (Sleep / Shut down) when Triangle is toggled */
     if (ui->sb_power_anim > 0.01f) {
