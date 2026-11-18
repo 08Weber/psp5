@@ -17,6 +17,7 @@
 #include "launch.h"
 #include "sound.h"
 #include "system.h"
+#include "theme.h"
 #include "testrun.h"
 
 #define NID_GET_PARAM     0x531C9778 /* sceImposeGetParam (ARK översätter) */
@@ -169,14 +170,17 @@ static void draw_camera(float cx, float cy, u32 c, u32 bg)
 
 void osd_draw(void)
 {
+    const Theme *t = theme_cur();
+    u32 bg_col = THEME_INK(t, graphite, RGBA(34, 35, 41, 255));
+    u32 fg_col = THEME_INK(t, text_inverse, RGBA(240, 240, 245, 255));
     if (s_shot_anim >= 0.01f) {
         float a = s_shot_anim;
         const char *msg = L(S_SCREENSHOT_SAVED);
         float tw = text_width(0.58f, 0, msg);
         float w = 44 + tw + 18, h = 32;
         float x = (SCREEN_W - w) / 2, y = 6 - (1 - a) * 10;
-        u32 bg = RGBA(34, 35, 41, (int)(255 * a));
-        u32 light = RGBA(240, 240, 245, (int)(255 * a));
+        u32 bg = COLOR_ALPHA(bg_col, (int)(255 * a));
+        u32 light = COLOR_ALPHA(fg_col, (int)(255 * a));
         gfx_glow(x, y + 2, w, h, 10, RGBA(0, 0, 0, (int)(130 * a)));
         gfx_round_rect(x, y, w, h, h / 2, bg);
         draw_camera(x + 22, y + h / 2, light, bg);
@@ -188,12 +192,13 @@ void osd_draw(void)
     float a = s_anim, w = 196, h = 34;
     float x = (SCREEN_W - w) / 2, y = 6 - (1 - a) * 10; /* glider ner uppifrån */
     gfx_glow(x, y + 2, w, h, 10, RGBA(0, 0, 0, (int)(130 * a)));
-    gfx_round_rect(x, y, w, h, h / 2, RGBA(34, 35, 41, (int)(255 * a)));
-    u32 light = RGBA(240, 240, 245, (int)(255 * a)), dim = RGBA(240, 240, 245, (int)(70 * a));
+    gfx_round_rect(x, y, w, h, h / 2, COLOR_ALPHA(bg_col, (int)(255 * a)));
+    u32 light = COLOR_ALPHA(fg_col, (int)(255 * a)), dim = COLOR_ALPHA(fg_col, (int)(70 * a));
     draw_speaker(x + 16, y + h / 2, s_level, s_muted, light, dim);
     /* stapeln som på PS5: tunn ljus fyllning på en svag bana */
     float bx = x + 46, bw = w - 46 - 42, by = y + h / 2 - 2;
-    gfx_round_rect(bx, by, bw, 4, 2, RGBA(255, 255, 255, (int)(45 * a)));
+    u32 track = t->ink ? COLOR_ALPHA(fg_col, (int)(55 * a)) : RGBA(255, 255, 255, (int)(45 * a));
+    gfx_round_rect(bx, by, bw, 4, 2, track);
     if (s_level > 0.005f)
         gfx_round_rect(bx, by, fmaxf(4, bw * s_level), 4, 2, light);
     char num[8];

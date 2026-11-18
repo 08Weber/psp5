@@ -162,6 +162,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt);
 void ui_draw(Ui *ui);
 /* Enhetlig topprad (Games, Apps, Library, Music, kugghjul, batteri, klocka) som delas med inställningarna. */
 void ui_draw_top_bar(int active_tab, int in_settings, float alpha, float anim_time);
+void ui_draw_top_bar_for(int active_tab, int in_settings, float alpha, float anim_time, const Theme *t, float art_a);
 /* Lugn Figma-bakgrund (mörk gradient, mjuka vågor och PS-vattenstämpel) som delas med inställningarna. */
 void ui_draw_calm_backdrop(const Theme *t, float time, const float accent[3], int allow_wallpaper);
 /* Enhetlig dockad fotlist längs nederkanten som delas med inställningarna. */

@@ -951,30 +951,42 @@ static void text_update(const UiInput *in, float dt)
 
 static void text_view_draw(float a)
 {
+    const Theme *t = theme_cur();
     static const float neutral[3] = { 120, 120, 120 };
-    theme_backdrop(theme_cur(), s_time, neutral, 1, 1);
+    theme_backdrop(t, s_time, neutral, 1, 1);
     char name[96];
     text_ellipsis(name, sizeof(name), s_items[s_sel].name, 0.72f, LIST_W);
-    text_draw(LIST_X + 4, 36, 0.72f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, name);
+    text_draw(LIST_X + 4, 36, 0.72f, 0, fade(THEME_INK(t, text, TEXT_MAIN), a), ALIGN_LEFT, name);
     float top = 52, h = TEXT_VIEW_ROWS * 17.0f + 12;
-    gfx_round_rect(LIST_X, top, LIST_W, h, 8, RGBA(18, 19, 24, (int)(175 * a)));
+    if (t->ink) {
+        gfx_round_rect(LIST_X, top, LIST_W, h, 8, COLOR_ALPHA(t->ink->border, (int)(235 * a)));
+        gfx_round_rect(LIST_X + 1, top + 1, LIST_W - 2, h - 2, 7.2f, COLOR_ALPHA(t->ink->panel, (int)(242 * a)));
+    } else {
+        gfx_round_rect(LIST_X, top, LIST_W, h, 8, RGBA(18, 19, 24, (int)(175 * a)));
+    }
     gfx_clip(LIST_X + 6, top + 4, LIST_W - 16, h - 8);
     for (int i = (int)s_text_scroll; i < s_text_n && i <= (int)s_text_scroll + TEXT_VIEW_ROWS; i++) {
         float y = top + 18 + (i - s_text_scroll) * 17.0f;
-        text_draw(LIST_X + 10, y, 0.5f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, s_text_lines[i]);
+        text_draw(LIST_X + 10, y, 0.5f, 0, fade(THEME_INK(t, text, TEXT_MAIN), a), ALIGN_LEFT, s_text_lines[i]);
     }
     gfx_clip_reset();
     if (s_text_n > TEXT_VIEW_ROWS) {
         float bh = h - 12, th = clampf(bh * TEXT_VIEW_ROWS / s_text_n, 12, bh);
         float ty = top + 6 + (bh - th) * s_text_scroll / (s_text_n - TEXT_VIEW_ROWS);
-        gfx_round_rect(LIST_X + LIST_W - 6, ty, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
+        u32 bar = t->ink ? COLOR_ALPHA(t->ink->shadow, 140) : RGBA(255, 255, 255, 70);
+        gfx_round_rect(LIST_X + LIST_W - 6, ty, 3, th, 1.5f, fade(bar, a));
     }
     const char *back = L(S_BACK);
     float w = 18 + text_width(0.56f, 0, back);
     float x = SCREEN_W - 24 - w, y = 246;
-    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, fade(LIGHT, a), fade(DARK, a));
-    text_draw(x + 18, y + 4.5f, 0.56f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, back);
+    if (t->ink) {
+        gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, COLOR_ALPHA(t->ink->border, (int)(230 * a)));
+        gfx_round_rect(x - 8, y - 10, w + 16, 20, 10, COLOR_ALPHA(t->ink->panel, (int)(235 * a)));
+    } else {
+        gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
+    }
+    theme_button(t, x + 6.5f, y, 6.5f, BTN_CIRCLE, 0, fade(LIGHT, a), fade(DARK, a));
+    text_draw(x + 18, y + 4.5f, 0.56f, 0, fade(THEME_INK(t, text, TEXT_MAIN), a), ALIGN_LEFT, back);
 }
 
 static int view_load(void)
@@ -1027,23 +1039,26 @@ static void view_update(const UiInput *in)
 
 static void view_draw(void)
 {
+    const Theme *t = theme_cur();
     if (s_view)
         gfx_tex(s_view, 0, 0, SCREEN_W, SCREEN_H, RGBA(255, 255, 255, 255));
     gfx_gradient_v(0, 0, SCREEN_W, 50, RGBA(0, 0, 0, 150), RGBA(0, 0, 0, 0));
     gfx_gradient_v(0, SCREEN_H - 60, SCREEN_W, 60, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 170));
+    u32 fg = THEME_INK(t, text_inverse, TEXT_MAIN);
+    u32 arrow = THEME_INK(t, text_inverse, LIGHT);
     char name[80];
     text_ellipsis(name, sizeof(name), s_items[s_sel].shown, 0.6f, SCREEN_W - 2 * LIST_X);
-    text_draw(LIST_X, 26, 0.6f, 0, TEXT_MAIN, ALIGN_LEFT, name);
+    text_draw(LIST_X, 26, 0.6f, 0, fg, ALIGN_LEFT, name);
     float x = LIST_X, y = 250;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, LIGHT, DARK);
-    text_draw(x + 17, y + 4.5f, 0.54f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_SET_WALLPAPER));
+    theme_button(t, x + 6.5f, y, 6.5f, BTN_CROSS, 1, LIGHT, DARK);
+    text_draw(x + 17, y + 4.5f, 0.54f, 0, fg, ALIGN_LEFT, L(S_SET_WALLPAPER));
     x += 17 + text_width(0.54f, 0, L(S_SET_WALLPAPER)) + 14;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, LIGHT, DARK);
-    text_draw(x + 17, y + 4.5f, 0.54f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_BACK));
+    theme_button(t, x + 6.5f, y, 6.5f, BTN_CIRCLE, 1, LIGHT, DARK);
+    text_draw(x + 17, y + 4.5f, 0.54f, 0, fg, ALIGN_LEFT, L(S_BACK));
     float l[6] = { SCREEN_W - LIST_X - 22, y, SCREEN_W - LIST_X - 16, y - 4.5f, SCREEN_W - LIST_X - 16, y + 4.5f };
-    gfx_fan(SCREEN_W - LIST_X - 19, y, l, 3, LIGHT);
+    gfx_fan(SCREEN_W - LIST_X - 19, y, l, 3, arrow);
     float r[6] = { SCREEN_W - LIST_X, y, SCREEN_W - LIST_X - 6, y - 4.5f, SCREEN_W - LIST_X - 6, y + 4.5f };
-    gfx_fan(SCREEN_W - LIST_X - 3, y, r, 3, LIGHT);
+    gfx_fan(SCREEN_W - LIST_X - 3, y, r, 3, arrow);
 }
 
 void files_open(void)
@@ -1196,16 +1211,16 @@ static u32 type_color(const char *ext)
     return RGBA(104, 106, 116, 255);
 }
 
-static void draw_icon(float x, float y, const FileEntry *e, float a)
+static void draw_icon(float x, float y, const FileEntry *e, const Theme *t, float a)
 {
     if (e->kind == KIND_DEVICE) {
-        gfx_round_rect(x, y + 3, 18, 13, 2.5f, fade(RGBA(214, 214, 220, 255), a));
-        gfx_rect(x + 3, y + 6, 8, 2, fade(RGBA(90, 92, 100, 255), a));
+        gfx_round_rect(x, y + 3, 18, 13, 2.5f, fade(THEME_INK(t, panel_deep, RGBA(214, 214, 220, 255)), a));
+        gfx_rect(x + 3, y + 6, 8, 2, fade(THEME_INK(t, graphite, RGBA(90, 92, 100, 255)), a));
         return;
     }
     if (e->kind == KIND_DIR) {
-        gfx_round_rect(x, y + 2, 8, 5, 1.5f, fade(RGBA(168, 170, 180, 255), a));
-        gfx_round_rect(x, y + 4, 18, 13, 2.5f, fade(RGBA(222, 222, 228, 255), a));
+        gfx_round_rect(x, y + 2, 8, 5, 1.5f, fade(THEME_INK(t, shadow, RGBA(168, 170, 180, 255)), a));
+        gfx_round_rect(x, y + 4, 18, 13, 2.5f, fade(THEME_INK(t, panel_deep, RGBA(222, 222, 228, 255)), a));
         return;
     }
     const char *dot = strrchr(e->name, '.');
@@ -1221,16 +1236,17 @@ static void draw_icon(float x, float y, const FileEntry *e, float a)
     }
 }
 
-static void draw_check(float cx, float cy, float a)
+static void draw_check(float cx, float cy, const Theme *t, float a)
 {
-    gfx_circle(cx, cy, 6, fade(theme_toggle_on(theme_cur()), a));
+    gfx_circle(cx, cy, 6, fade(theme_toggle_on(t), a));
     float xy[6] = { cx - 3, cy, cx - 1, cy + 2.2f, cx + 3, cy - 2.4f };
-    u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
+    u32 chk = THEME_INK(t, knob, LIGHT);
+    u32 col[3] = { fade(chk, a), fade(chk, a), fade(chk, a) };
     gfx_stroke(xy, col, 3, 1.5f);
 }
 
 /* Knapptips nere till höger, som i inställningarna */
-static void draw_hints(float a)
+static void draw_hints(const Theme *t, float a)
 {
     struct { int btn; StrId text; } h[4];
     int n = 0;
@@ -1245,27 +1261,35 @@ static void draw_hints(float a)
     for (int i = 0; i < n; i++)
         w += 18 + text_width(0.56f, 0, L(h[i].text)) + 14;
     float x = SCREEN_W - 24 - w, y = 246;
-    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
+    if (t->ink) {
+        gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, COLOR_ALPHA(t->ink->border, (int)(230 * a)));
+        gfx_round_rect(x - 8, y - 10, w + 16, 20, 10, COLOR_ALPHA(t->ink->panel, (int)(235 * a)));
+    } else {
+        gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
+    }
+    u32 lbl = fade(THEME_INK(t, text, TEXT_MAIN), a);
     for (int i = 0; i < n; i++) {
-        gfx_button(x + 6.5f, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
+        theme_button(t, x + 6.5f, y, 6.5f, h[i].btn, 0, fade(LIGHT, a), fade(DARK, a));
         x += 18;
-        text_draw(x, y + 4.5f, 0.56f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(h[i].text));
+        text_draw(x, y + 4.5f, 0.56f, 0, lbl, ALIGN_LEFT, L(h[i].text));
         x += text_width(0.56f, 0, L(h[i].text)) + 14;
     }
 }
 
-static void draw_header(float a, float slide)
+static void draw_header(const Theme *t, float a, float slide)
 {
-    text_draw(LIST_X + 4 + slide, 34, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_FILES));
+    u32 main = fade(THEME_INK(t, text, TEXT_MAIN), a);
+    u32 dim = fade(THEME_INK(t, text_dim, TEXT_DIM), a);
+    text_draw(LIST_X + 4 + slide, 34, 0.95f, 0, main, ALIGN_LEFT, L(S_FILES));
     if (s_total) { /* ledigt utrymme och en tunn stapel, som PS5:s lagringsvy */
         char num[24], line[64];
         fmt_size(num, sizeof(num), s_free);
         snprintf(line, sizeof(line), L(S_F_FREE), num);
         float right = LIST_X + LIST_W;
-        text_draw(right, 28, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, line);
+        text_draw(right, 28, 0.5f, 0, dim, ALIGN_RIGHT, line);
         float bw = 120, used = 1 - (float)s_free / (float)s_total;
-        gfx_round_rect(right - bw, 34, bw, 4, 2, fade(RGBA(255, 255, 255, 40), a));
-        gfx_round_rect(right - bw, 34, bw * clampf(used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a));
+        gfx_round_rect(right - bw, 34, bw, 4, 2, fade(THEME_INK(t, panel_deep, RGBA(255, 255, 255, 40)), a));
+        gfx_round_rect(right - bw, 34, bw * clampf(used, 0.02f, 1), 4, 2, fade(t->accent, a));
     }
     if (s_path[0]) { /* sökvägen, kortad från vänster */
         const char *p = s_path;
@@ -1274,14 +1298,14 @@ static void draw_header(float a, float slide)
             p = strchr(p + 1, '/');
         char line[MAX_PATH + 4];
         snprintf(line, sizeof(line), p == s_path ? "%s" : "...%s", p);
-        text_draw(LIST_X + 4 + slide, 52, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, line);
+        text_draw(LIST_X + 4 + slide, 52, 0.5f, 0, dim, ALIGN_LEFT, line);
     }
 }
 
-static void draw_list(float a, float slide)
+static void draw_list(const Theme *t, float a, float slide)
 {
     if (!s_count) {
-        text_draw(SCREEN_W / 2, 140, 0.66f, 0, fade(TEXT_DIM, a), ALIGN_CENTER, L(S_F_EMPTY));
+        text_draw(SCREEN_W / 2, 140, 0.66f, 0, fade(THEME_INK(t, text_dim, TEXT_DIM), a), ALIGN_CENTER, L(S_F_EMPTY));
         return;
     }
     int any = marked_count() > 0;
@@ -1293,36 +1317,44 @@ static void draw_list(float a, float slide)
         if (y > bottom)
             break;
         int sel = i == s_sel && !s_menu;
-        if (e->marked)
-            gfx_rect(LIST_X, y, LIST_W, ROW_H, fade(COLOR_ALPHA(theme_cur()->accent, 46), a));
+        if (e->marked) {
+            u32 mk = t->ink ? COLOR_ALPHA(t->ink->panel_deep, 130) : COLOR_ALPHA(t->accent, 46);
+            gfx_rect(LIST_X, y, LIST_W, ROW_H, fade(mk, a));
+        }
         if (sel) {
-            gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
-            gfx_frame(LIST_X, y, LIST_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), a));
+            gfx_rect(LIST_X, y, LIST_W, ROW_H,
+                     t->ink ? COLOR_ALPHA(t->ink->sel_fill, (int)(255 * a)) : RGBA(255, 255, 255, (int)(16 * a)));
+            gfx_frame(LIST_X, y, LIST_W, ROW_H, 1.3f, fade(THEME_INK(t, sel_edge, RGBA(232, 232, 236, 230)), a));
         } else if (i < s_count - 1 && i + 1 != s_sel) {
-            gfx_rect(LIST_X + 4, y + ROW_H - 0.5f, LIST_W - 8, 1, RGBA(255, 255, 255, (int)(22 * a)));
+            u32 sep = t->ink ? COLOR_ALPHA(t->ink->border, (int)(170 * a)) : RGBA(255, 255, 255, (int)(22 * a));
+            gfx_rect(LIST_X + 4, y + ROW_H - 0.5f, LIST_W - 8, 1, sep);
         }
         float x = LIST_X + 8 + slide;
         if (any) {
             if (e->marked)
-                draw_check(x + 6, y + ROW_H / 2, a);
-            else
-                gfx_ring(x, y + ROW_H / 2 - 6, 12, 12, 6, fade(RGBA(255, 255, 255, 90), a));
+                draw_check(x + 6, y + ROW_H / 2, t, a);
+            else {
+                u32 ring = t->ink ? COLOR_ALPHA(t->ink->shadow, 175) : RGBA(255, 255, 255, 90);
+                gfx_ring(x, y + ROW_H / 2 - 6, 12, 12, 6, fade(ring, a));
+            }
             x += 18;
         }
-        draw_icon(x, y + 2, e, a);
-        text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, e->shown);
+        draw_icon(x, y + 2, e, t, a);
+        text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(sel ? THEME_INK(t, sel_ink, TEXT_MAIN) : THEME_INK(t, text, TEXT_MAIN), a),
+                  ALIGN_LEFT, e->shown);
         if (e->size[0])
-            text_draw(LIST_X + LIST_W - 10, y + 16, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, e->size);
+            text_draw(LIST_X + LIST_W - 10, y + 16, 0.5f, 0, fade(THEME_INK(t, text_dim, TEXT_DIM), a), ALIGN_RIGHT, e->size);
     }
     gfx_clip_reset();
     if (s_count > ROWS) { /* rullningslist */
         float h = ROWS * ROW_H, th = clampf(h * ROWS / s_count, 12, h);
         float ty = LIST_TOP + (h - th) * s_scroll / (s_count - ROWS);
-        gfx_round_rect(LIST_X + LIST_W + 6, ty, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
+        u32 bar = t->ink ? COLOR_ALPHA(t->ink->shadow, 140) : RGBA(255, 255, 255, 70);
+        gfx_round_rect(LIST_X + LIST_W + 6, ty, 3, th, 1.5f, fade(bar, a));
     }
 }
 
-static void draw_menu(void)
+static void draw_menu(const Theme *t)
 {
     float a = s_menu_anim;
     if (a <= 0)
@@ -1331,17 +1363,22 @@ static void draw_menu(void)
     float h = 30 + s_menu_n * MENU_ROW + 8;
     float x = SCREEN_W - 24 - MENU_W, y = 238 - h + (1 - a) * 10;
     gfx_glow(x, y, MENU_W, h, 10, RGBA(0, 0, 0, (int)(150 * a)));
-    gfx_round_rect(x, y, MENU_W, h, 9, fade(PANEL, a));
+    if (t->ink) {
+        gfx_round_rect(x, y, MENU_W, h, 9, fade(t->ink->border, a));
+        gfx_round_rect(x + 1, y + 1, MENU_W - 2, h - 2, 8.2f, fade(t->ink->panel, a));
+    } else {
+        gfx_round_rect(x, y, MENU_W, h, 9, fade(PANEL, a));
+    }
     char buf[64], title[96];
     text_ellipsis(title, sizeof(title), menu_title(buf, sizeof(buf)), 0.5f, MENU_W - 24);
-    text_draw(x + 12, y + 19, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, title);
+    text_draw(x + 12, y + 19, 0.5f, 0, fade(THEME_INK(t, text_dim, TEXT_DIM), a), ALIGN_LEFT, title);
     for (int i = 0; i < s_menu_n; i++) {
         float ry = y + 26 + i * MENU_ROW;
         int act = s_menu_act[i];
-        u32 col = act == A_DELETE_YES ? DANGER : TEXT_MAIN;
+        u32 col = act == A_DELETE_YES ? THEME_INK(t, err, DANGER) : THEME_INK(t, text, TEXT_MAIN);
         if (i == s_menu_sel) {
-            gfx_round_rect(x + 6, ry, MENU_W - 12, MENU_ROW - 2, 7, fade(LIGHT, 0.95f * a));
-            col = act == A_DELETE_YES ? RGBA(200, 50, 40, 255) : DARK;
+            theme_sel_box(t, x + 6, ry, MENU_W - 12, MENU_ROW - 2, 7, fade(LIGHT, 0.95f * a));
+            col = act == A_DELETE_YES ? THEME_INK(t, err, RGBA(200, 50, 40, 255)) : THEME_INK(t, sel_ink, DARK);
         }
         char lb[64];
         const char *label = act_label(act, lb, sizeof(lb));
@@ -1349,32 +1386,38 @@ static void draw_menu(void)
     }
 }
 
-static void draw_progress(void)
+static void draw_progress(const Theme *t)
 {
     if (W.thread < 0)
         return;
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 120));
     float w = 300, h = 96, x = (SCREEN_W - w) / 2, y = 84;
     gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, 150));
-    gfx_round_rect(x, y, w, h, 9, PANEL);
+    if (t->ink) {
+        gfx_round_rect(x, y, w, h, 9, t->ink->border);
+        gfx_round_rect(x + 1, y + 1, w - 2, h - 2, 8.2f, t->ink->panel);
+    } else {
+        gfx_round_rect(x, y, w, h, 9, PANEL);
+    }
     StrId title = W.op == OP_COPY ? S_F_COPYING : W.op == OP_MOVE ? S_F_MOVING : S_F_DELETING;
-    text_draw(x + 16, y + 26, 0.66f, 0, TEXT_MAIN, ALIGN_LEFT, L(title));
+    text_draw(x + 16, y + 26, 0.66f, 0, THEME_INK(t, text, TEXT_MAIN), ALIGN_LEFT, L(title));
     char name[96];
     text_ellipsis(name, sizeof(name), W.current, 0.5f, w - 32);
-    text_draw(x + 16, y + 44, 0.5f, 0, TEXT_DIM, ALIGN_LEFT, name);
+    text_draw(x + 16, y + 44, 0.5f, 0, THEME_INK(t, text_dim, TEXT_DIM), ALIGN_LEFT, name);
     float f = W.total ? clampf((float)W.done / (float)W.total, 0, 1) : 0;
-    gfx_round_rect(x + 16, y + 54, w - 32, 6, 3, RGBA(255, 255, 255, 40));
+    gfx_round_rect(x + 16, y + 54, w - 32, 6, 3, THEME_INK(t, panel_deep, RGBA(255, 255, 255, 40)));
     if (f > 0)
-        gfx_round_rect(x + 16, y + 54, (w - 32) * f, 6, 3, theme_cur()->accent);
+        gfx_round_rect(x + 16, y + 54, (w - 32) * f, 6, 3, t->accent);
     char pct[8];
     snprintf(pct, sizeof(pct), "%d %%", (int)(f * 100));
-    text_draw(x + w - 16, y + 26, 0.56f, 0, TEXT_DIM, ALIGN_RIGHT, pct);
-    gfx_button(x + 22.5f, y + h - 16, 6.5f, BTN_CIRCLE, LIGHT, DARK);
-    text_draw(x + 34, y + h - 11.5f, 0.54f, 0, TEXT_MAIN, ALIGN_LEFT, L(S_F_CANCEL));
+    text_draw(x + w - 16, y + 26, 0.56f, 0, THEME_INK(t, text_dim, TEXT_DIM), ALIGN_RIGHT, pct);
+    theme_button(t, x + 22.5f, y + h - 16, 6.5f, BTN_CIRCLE, 0, LIGHT, DARK);
+    text_draw(x + 34, y + h - 11.5f, 0.54f, 0, THEME_INK(t, text, TEXT_MAIN), ALIGN_LEFT, L(S_F_CANCEL));
 }
 
 static void draw_scene(void)
 {
+    const Theme *t = theme_cur();
     float a = s_open, slide = (1 - a) * 10;
     if (s_viewing) {
         view_draw();
@@ -1382,25 +1425,28 @@ static void draw_scene(void)
         text_view_draw(a);
     } else {
         static const float neutral[3] = { 120, 120, 120 };
-        theme_backdrop(theme_cur(), s_time, neutral, 1, 1);
-        draw_header(a, slide);
-        draw_list(a, slide);
+        theme_backdrop(t, s_time, neutral, 1, 1);
+        draw_header(t, a, slide);
+        draw_list(t, a, slide);
         if (s_clip_n) { /* urklippet nere till vänster */
             char line[64];
             snprintf(line, sizeof(line), "%s: %d", L(s_clip_move ? S_F_MOVE : S_F_COPY), s_clip_n);
-            gfx_round_rect(LIST_X, 238, 12, 15, 2, fade(RGBA(214, 214, 220, 255), a));
-            gfx_rect(LIST_X + 3, 236, 6, 4, fade(RGBA(150, 152, 160, 255), a));
-            text_draw(LIST_X + 18, 250.5f, 0.54f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
+            gfx_round_rect(LIST_X, 238, 12, 15, 2, fade(THEME_INK(t, panel_deep, RGBA(214, 214, 220, 255)), a));
+            gfx_rect(LIST_X + 3, 236, 6, 4, fade(THEME_INK(t, shadow, RGBA(150, 152, 160, 255)), a));
+            text_draw(LIST_X + 18, 250.5f, 0.54f, 0, fade(THEME_INK(t, text, TEXT_MAIN), a), ALIGN_LEFT, line);
         }
-        draw_hints(a * (1 - s_menu_anim));
-        draw_menu();
-        draw_progress();
+        draw_hints(t, a * (1 - s_menu_anim));
+        draw_menu(t);
+        draw_progress(t);
     }
     if (s_toast_time > 0) {
         float ta = clampf(s_toast_time / 0.4f, 0, 1);
         float w = text_width(0.6f, 0, s_toast) + 30;
-        gfx_round_rect((SCREEN_W - w) / 2, 128, w, 26, 7, RGBA(44, 45, 52, (int)(245 * ta)));
-        text_draw(SCREEN_W / 2, 145, 0.6f, 0, RGBA(240, 240, 245, (int)(255 * ta)), ALIGN_CENTER, s_toast);
+        gfx_round_rect((SCREEN_W - w) / 2, 128, w, 26, 7,
+                       COLOR_ALPHA(THEME_INK(t, graphite, RGBA(44, 45, 52, 255)), (int)(245 * ta)));
+        text_draw(SCREEN_W / 2, 145, 0.6f, 0,
+                  COLOR_ALPHA(THEME_INK(t, text_inverse, RGBA(240, 240, 245, 255)), (int)(255 * ta)),
+                  ALIGN_CENTER, s_toast);
     }
     osd_draw();
     if (a < 1)
@@ -1409,7 +1455,7 @@ static void draw_scene(void)
 
 void files_draw(void)
 {
-    gfx_begin(RGBA(20, 20, 24, 255));
+    gfx_begin(THEME_INK(theme_cur(), panel_alt, RGBA(20, 20, 24, 255)));
     draw_scene();
     gfx_end();
 }

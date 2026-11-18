@@ -692,24 +692,27 @@ static void draw_cat_icon(int cat, float cx, float cy, u32 col)
         ui_draw_mask_icon(UI_ICON_CAT_PSP5 + cat, cx, cy, col);
 }
 
-static void draw_toggle(float x, float y, int on, u32 on_color, float a)
+static void draw_toggle(float x, float y, int on, u32 on_color, const Theme *t, float a)
 {
-    gfx_round_rect(x, y, 26.0f, 14.0f, 7.0f, fade(on ? on_color : RGBA(68, 79, 96, 245), a));
-    gfx_circle(on ? x + 19.0f : x + 7.0f, y + 7.0f, 5.0f, fade(on ? LIGHT : RGBA(208, 214, 224, 255), a));
+    u32 off_col = THEME_INK(t, toggle_off, RGBA(68, 79, 96, 245));
+    u32 knob_on = THEME_INK(t, knob, LIGHT);
+    u32 knob_off = THEME_INK(t, knob, RGBA(208, 214, 224, 255));
+    gfx_round_rect(x, y, 26.0f, 14.0f, 7.0f, fade(on ? on_color : off_col, a));
+    gfx_circle(on ? x + 19.0f : x + 7.0f, y + 7.0f, 5.0f, fade(on ? knob_on : knob_off, a));
 }
 
-static void draw_hints(float a)
+static void draw_hints(const Theme *t, float a)
 {
     const char *sel = L(S_SELECT), *back = L(S_BACK);
     float w = 13.0f + 5.0f + text_width(0.56f, 0, sel) + 14.0f + 13.0f + 5.0f + text_width(0.56f, 0, back);
     float x = SCREEN_W - 16.0f - w, y = 257.0f;
-    u32 label_col = fade(RGBA(218, 224, 235, 238), a);
+    u32 label_col = fade(THEME_INK(t, text, RGBA(218, 224, 235, 238)), a);
     u32 dark_mark = fade(RGBA(18, 22, 30, 255), a);
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, fade(LIGHT, 0.96f * a), dark_mark);
+    theme_button(t, x + 6.5f, y, 6.5f, BTN_CROSS, 0, fade(LIGHT, 0.96f * a), dark_mark);
     x += 18.0f;
     text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, sel);
     x += text_width(0.56f, 0, sel) + 14.0f;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, fade(LIGHT, 0.96f * a), dark_mark);
+    theme_button(t, x + 6.5f, y, 6.5f, BTN_CIRCLE, 0, fade(LIGHT, 0.96f * a), dark_mark);
     x += 18.0f;
     text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, back);
 }
@@ -721,7 +724,7 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
     u32 on_col = shown == theme_get(0) ? RGBA(37, 99, 210, 255) : theme_toggle_on(shown);
     switch (it->type) {
     case IT_TOGGLE:
-        draw_toggle(right - 26.0f, y + 5.5f, *it->value != 0, on_col, a);
+        draw_toggle(right - 26.0f, y + 5.5f, *it->value != 0, on_col, shown, a);
         right -= 34.0f;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
@@ -741,7 +744,8 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
         if (it->action == g_theme) {
             float cx = right - 6.0f, cy = y + 12.5f;
             float xy[6] = { cx - 5.0f, cy, cx - 1.5f, cy + 3.5f, cx + 5.0f, cy - 4.0f };
-            u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
+            u32 chk = THEME_INK(shown, graphite, LIGHT);
+            u32 col[3] = { fade(chk, a), fade(chk, a), fade(chk, a) };
             gfx_stroke(xy, col, 3, 1.8f);
             right -= 16.0f;
         }
@@ -758,14 +762,15 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
     if (value[0]) {
         float vs = text_fit(0.56f, 0.44f, 0, RIGHT_W * 0.55f, value);
         value_w = text_width(vs, 0, value) + 12.0f;
-        u32 col = S.confirm_item == index ? RGBA(255, 190, 120, 255)
-                : selected                ? RGBA(240, 244, 252, 255)
-                                          : RGBA(168, 180, 198, 235);
+        u32 col = S.confirm_item == index ? THEME_INK(shown, warn, RGBA(255, 190, 120, 255))
+                : selected                ? THEME_INK(shown, sel_ink, RGBA(240, 244, 252, 255))
+                                          : THEME_INK(shown, text_dim, RGBA(168, 180, 198, 235));
         text_draw(right, y + 16.5f, vs, 0, fade(col, a), ALIGN_RIGHT, value);
     }
     /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
     float ls = text_fit(0.58f, 0.46f, 0, right - value_w - (RIGHT_X + 10.0f), it->label);
-    u32 lcol = selected ? TEXT_MAIN : RGBA(226, 232, 240, 240);
+    u32 lcol = selected ? THEME_INK(shown, sel_ink, TEXT_MAIN)
+                        : THEME_INK(shown, text, RGBA(226, 232, 240, 240));
     text_draw(RIGHT_X + 10.0f, y + 16.5f, ls, 0, fade(lcol, a), ALIGN_LEFT, it->label);
 }
 
@@ -774,12 +779,12 @@ void settings_draw(void)
     float a = S.open;
     float slide = (1.0f - a) * 10.0f;
     const Category *c = &s_cats[S.cat];
-
-    gfx_begin(RGBA(9, 13, 19, 255));
     const Theme *shown = shown_theme();
+
+    gfx_begin(THEME_INK(shown, panel_alt, RGBA(9, 13, 19, 255)));
     draw_background(shown);
-    ui_draw_top_bar(0, 1, a, S.time);
-    text_draw(TITLE_X + slide, TITLE_Y, 0.90f, 1, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
+    ui_draw_top_bar_for(0, 1, a, S.time, shown, 0.0f);
+    text_draw(TITLE_X + slide, TITLE_Y, 0.90f, 1, fade(THEME_INK(shown, text, TEXT_MAIN), a), ALIGN_LEFT, L(S_SETTINGS));
 
     /* vänster kategorilista */
     for (int i = 0; i < CAT_COUNT; i++) {
@@ -787,14 +792,27 @@ void settings_draw(void)
         int selected = i == S.cat;
         if (selected) {
             float pa = S.focus == 0 ? 0.96f : 0.90f;
-            gfx_round_rect(LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(LIGHT, pa * a));
-            u32 dark_col = fade(RGBA(18, 22, 30, 255), a);
+            u32 dark_col;
+            if (shown->ink) {
+                if (S.focus == 0) {
+                    theme_sel_box(shown, LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(LIGHT, a));
+                    dark_col = fade(shown->ink->sel_ink, a);
+                } else {
+                    gfx_round_rect(LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(shown->ink->border, 0.92f * a));
+                    gfx_round_rect(LEFT_X + 1.0f, y + 1.0f, LEFT_W - 2.0f, CAT_H - 2.0f, 6.2f,
+                                   fade(shown->ink->panel, 0.92f * a));
+                    dark_col = fade(shown->ink->text, a);
+                }
+            } else {
+                gfx_round_rect(LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(LIGHT, pa * a));
+                dark_col = fade(RGBA(18, 22, 30, 255), a);
+            }
             draw_cat_icon(i, LEFT_X + 14.0f, y + CAT_H * 0.5f, dark_col);
             float cs = text_fit(0.60f, 0.48f, S.focus == 0, LEFT_W - 34.0f, s_cats[i].name);
             text_draw(LEFT_X + 26.0f + slide, y + 16.5f, cs, S.focus == 0, dark_col, ALIGN_LEFT, s_cats[i].name);
         } else {
-            float dim_a = S.focus ? 0.58f : 0.88f;
-            u32 dim_col = fade(RGBA(154, 166, 186, 235), a * dim_a);
+            float dim_a = S.focus ? (shown->ink ? 0.72f : 0.58f) : (shown->ink ? 0.95f : 0.88f);
+            u32 dim_col = fade(THEME_INK(shown, text_dim, RGBA(154, 166, 186, 235)), a * dim_a);
             draw_cat_icon(i, LEFT_X + 14.0f, y + CAT_H * 0.5f, dim_col);
             float cs = text_fit(0.60f, 0.48f, 0, LEFT_W - 34.0f, s_cats[i].name);
             text_draw(LEFT_X + 26.0f + slide, y + 16.5f, cs, 0, dim_col, ALIGN_LEFT, s_cats[i].name);
@@ -803,8 +821,12 @@ void settings_draw(void)
 
     /* höger inställningskort */
     int def_theme = shown == theme_get(0);
-    u32 card_bg = def_theme ? RGBA(16, 22, 32, (int)(232 * a)) : RGBA(14, 18, 26, (int)(208 * a));
-    u32 card_border = def_theme ? RGBA(56, 72, 98, (int)(195 * a)) : COLOR_ALPHA(shown->accent, (int)(135 * a));
+    u32 card_bg = shown->ink ? COLOR_ALPHA(shown->ink->panel, (int)(242 * a))
+                : def_theme  ? RGBA(16, 22, 32, (int)(232 * a))
+                             : RGBA(14, 18, 26, (int)(208 * a));
+    u32 card_border = shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(235 * a))
+                    : def_theme  ? RGBA(56, 72, 98, (int)(195 * a))
+                                 : COLOR_ALPHA(shown->accent, (int)(135 * a));
     gfx_round_rect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 10.0f, card_bg);
     gfx_ring(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 10.0f, card_border);
 
@@ -816,13 +838,17 @@ void settings_draw(void)
         float edge = clampf((top + bh - LIST_TOP) / (bh * 0.65f), 0.0f, 1.0f);
         float ba = a * edge;
         if (ba > 0.02f) {
-            gfx_round_rect(RIGHT_X, top, RIGHT_W, bh, 7.0f, RGBA(24, 34, 48, (int)(200 * ba)));
-            gfx_ring(RIGHT_X, top, RIGHT_W, bh, 7.0f, RGBA(70, 92, 124, (int)(125 * ba)));
-            draw_info_icon(RIGHT_X + 15.0f, top + bh * 0.5f, RGBA(168, 182, 204, (int)(235 * ba)));
+            gfx_round_rect(RIGHT_X, top, RIGHT_W, bh, 7.0f,
+                           shown->ink ? COLOR_ALPHA(shown->ink->panel_alt, (int)(225 * ba)) : RGBA(24, 34, 48, (int)(200 * ba)));
+            gfx_ring(RIGHT_X, top, RIGHT_W, bh, 7.0f,
+                     shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(200 * ba)) : RGBA(70, 92, 124, (int)(125 * ba)));
+            draw_info_icon(RIGHT_X + 15.0f, top + bh * 0.5f,
+                           shown->ink ? COLOR_ALPHA(shown->ink->graphite_soft, (int)(235 * ba)) : RGBA(168, 182, 204, (int)(235 * ba)));
             float text_top = top + (bh - n * desc_line_h()) * 0.5f + 9.0f;
+            u32 desc_col = shown->ink ? COLOR_ALPHA(shown->ink->text_dim, (int)(250 * ba)) : RGBA(178, 190, 208, (int)(238 * ba));
             for (int l = 0; l < n; l++)
                 text_draw(RIGHT_X + 29.0f + slide, text_top + l * desc_line_h(), 0.50f, 0,
-                          RGBA(178, 190, 208, (int)(238 * ba)), ALIGN_LEFT, s_desc[l]);
+                          desc_col, ALIGN_LEFT, s_desc[l]);
         }
     }
     for (int i = 0; i < c->count; i++) {
@@ -835,23 +861,31 @@ void settings_draw(void)
         float ra = a * edge;
         int selected = S.focus == 1 && i == S.item[S.cat];
         if (selected) {
-            gfx_round_rect(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, RGBA(30, 44, 66, (int)(175 * ra)));
-            gfx_ring(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(RGBA(236, 240, 246, 245), ra));
+            if (shown->ink) {
+                theme_sel_box(shown, RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(LIGHT, ra));
+            } else {
+                gfx_round_rect(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, RGBA(30, 44, 66, (int)(175 * ra)));
+                gfx_ring(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(RGBA(236, 240, 246, 245), ra));
+            }
         } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
-            gfx_rect(RIGHT_X + 6.0f, y + ROW_H - 0.5f, RIGHT_W - 12.0f, 1.0f, RGBA(44, 56, 74, (int)(190 * ra)));
+            u32 sep = shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(160 * ra)) : RGBA(44, 56, 74, (int)(190 * ra));
+            gfx_rect(RIGHT_X + 6.0f, y + ROW_H - 0.5f, RIGHT_W - 12.0f, 1.0f, sep);
         }
         draw_item(&c->items[i], i, y, selected, shown, ra);
     }
     gfx_clip_reset();
 
     /* Figma: inställningarna har ingen dockad fotlist, bara fria knapptips */
-    draw_hints(a);
+    draw_hints(shown, a);
 
     if (S.toast_time > 0) {
         float ta = clampf(S.toast_time / 0.4f, 0.0f, 1.0f);
         float w = text_width(0.6f, 0, S.toast) + 30.0f;
-        gfx_round_rect((SCREEN_W - w) / 2.0f, 128.0f, w, 26.0f, 7.0f, RGBA(44, 45, 52, (int)(245 * ta)));
-        text_draw(SCREEN_W / 2.0f, 145.0f, 0.6f, 0, RGBA(240, 240, 245, (int)(255 * ta)), ALIGN_CENTER, S.toast);
+        gfx_round_rect((SCREEN_W - w) / 2.0f, 128.0f, w, 26.0f, 7.0f,
+                       COLOR_ALPHA(THEME_INK(shown, graphite, RGBA(44, 45, 52, 255)), (int)(245 * ta)));
+        text_draw(SCREEN_W / 2.0f, 145.0f, 0.6f, 0,
+                  COLOR_ALPHA(THEME_INK(shown, text_inverse, RGBA(240, 240, 245, 255)), (int)(255 * ta)),
+                  ALIGN_CENTER, S.toast);
     }
     osd_draw();
     /* in-toning */

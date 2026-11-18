@@ -5,7 +5,31 @@
 #include "gfx.h"
 
 /* Bakgrundens mönster */
-enum { DECO_SPOT, DECO_PS1, DECO_PS2, DECO_PS3, DECO_PS4 };
+enum { DECO_SPOT, DECO_PS1, DECO_PS2, DECO_PS3, DECO_PS4, DECO_ANNIV };
+
+/* Gränssnittets färgroller (text, ytor, markering, reglage) för ljusa teman.
+ * Alla färger är ogenomskinliga RGBA(); ritvägen lägger på sin egen alfa/toning.
+ *
+ * De befintliga mörka temana har ink = NULL: varje ritväg använder då exakt den färg
+ * den alltid har använt (se THEME_INK), så de ser pixel för pixel ut som förut. Det
+ * behövs eftersom samma roll i dag har något olika värden i olika vyer (t.ex. huvudtext
+ * 242/242/246 i ui.c men 238/238/242 i settings.c och files.c). */
+typedef struct {
+    u32 text, text_dim, text_muted; /* text på temats bakgrund och ytor */
+    u32 text_inverse;               /* text på mörka ytor (grafit, OSD, dimmer) */
+    u32 panel, panel_alt;           /* kort/paneler och sekundära ytor */
+    u32 panel_deep, panel_hi;       /* betonad yta och ljus framhävd yta */
+    u32 border, border_hi;          /* tunna kanter och ljusa skiljelinjer */
+    u32 graphite, graphite_soft;    /* mörka ytor: primärknappar, viktiga reglage */
+    u32 shadow;                     /* diskret djup */
+    u32 sel_fill, sel_ink, sel_edge;/* markerat objekt: yta, text/ikon, kontrastkant */
+    u32 toggle_off, knob;           /* avslaget reglage och reglagets knopp */
+    u32 sym[4];                     /* handkontrollens symboler, se THEME_SYM_* */
+    u32 ok, warn, err;              /* status, underordnade det grå */
+} ThemeInk;
+
+/* sym[]-ordning */
+enum { THEME_SYM_CROSS, THEME_SYM_SQUARE, THEME_SYM_CIRCLE, THEME_SYM_TRIANGLE };
 
 /* Ett färgtema: PS5:s egna konsolfärger (skalen) och de fyra äldre konsolernas
  * utseende, som PS5:s inställning Utseende. Färgerna är RGBA() (ABGR). */
@@ -21,9 +45,14 @@ typedef struct {
     u32 card;           /* kort som inte har laddat sin bild än */
     u8 deco;
     u8 tone;            /* hur mycket valt spels färgton färgar bakgrunden (0–100 %) */
+    const ThemeInk *ink;/* gränssnittets färgroller, NULL = ritvägens egna (mörka) färger */
 } Theme;
 
-enum { THEME_FIRST_CLASSIC = 12 }; /* PS1–PS4 kommer efter PS5:s färger */
+enum { THEME_FIRST_CLASSIC = 13 }; /* PS1–PS4 kommer efter PS5:s färger och Anniversary */
+
+/* Färgroll för ett tema: temats egen roll om det har en palett, annars `legacy` –
+ * ritvägens nuvarande färg, oförändrad för alla befintliga teman. */
+#define THEME_INK(t, role, legacy) ((t)->ink ? (t)->ink->role : (legacy))
 
 /* Valt tema (index) och om spelens bilder visas bakom korten. Sparas i psp5.cfg. */
 extern unsigned char g_theme;
@@ -42,5 +71,10 @@ void theme_backdrop(const Theme *t, float time, const float tone[3], int setting
 void theme_swatch(const Theme *t, float x, float y, float w, float h, float a);
 /* Temats färg för ett påslaget reglage */
 u32 theme_toggle_on(const Theme *t);
+/* Knappsymbol i temats färger: befintliga teman använder exakt plate/mark.
+ * on_dark = 1 på mörk yta/artwork (ingen extra mörk ytterkant runt ljus knapp). */
+void theme_button(const Theme *t, float cx, float cy, float r, int kind, int on_dark, u32 plate, u32 mark);
+/* Markerad rad/kapsel: befintliga teman ritar legacy_fill, ljusa teman får sel_edge + sel_fill. */
+void theme_sel_box(const Theme *t, float x, float y, float w, float h, float r, u32 legacy_fill);
 
 #endif

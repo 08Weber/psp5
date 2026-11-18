@@ -323,19 +323,25 @@ static void usb_mode(void)
         osd_update(1 / 60.0f);
 
         int state = sys_usb_state();
-        gfx_begin(RGBA(20, 20, 24, 255));
+        const Theme *th = theme_cur();
+        gfx_begin(THEME_INK(th, panel_alt, RGBA(20, 20, 24, 255)));
         static const float neutral[3] = { 120, 120, 120 };
-        theme_backdrop(theme_cur(), t, neutral, 1, 1); /* som inställningarna */
-        text_draw(28, 34, 0.95f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_MODE));
+        theme_backdrop(th, t, neutral, 1, 1); /* som inställningarna */
+        u32 usb_main = THEME_INK(th, text, RGBA(238, 238, 242, 255));
+        u32 usb_dim = THEME_INK(th, text_dim, RGBA(160, 162, 172, 255));
+        text_draw(28, 34, 0.95f, 0, usb_main, ALIGN_LEFT, L(S_USB_MODE));
         float pulse = 0.6f + 0.4f * sinf(t * 3);
-        gfx_circle(SCREEN_W / 2, 120, 26, RGBA(255, 255, 255, state == 2 ? 40 : (int)(30 * pulse)));
-        gfx_circle(SCREEN_W / 2, 120, 9, state == 2 ? RGBA(120, 220, 150, 255) : RGBA(236, 236, 240, (int)(255 * pulse)));
-        text_draw(SCREEN_W / 2, 176, 0.75f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER,
+        u32 ring_base = THEME_INK(th, shadow, RGBA(255, 255, 255, 255));
+        gfx_circle(SCREEN_W / 2, 120, 26, COLOR_ALPHA(ring_base, state == 2 ? (th->ink ? 70 : 40) : (int)((th->ink ? 55 : 30) * pulse)));
+        u32 ok_col = THEME_INK(th, ok, RGBA(120, 220, 150, 255));
+        u32 wait_col = THEME_INK(th, graphite, RGBA(236, 236, 240, 255));
+        gfx_circle(SCREEN_W / 2, 120, 9, state == 2 ? ok_col : COLOR_ALPHA(wait_col, (int)(255 * pulse)));
+        text_draw(SCREEN_W / 2, 176, 0.75f, 0, usb_main, ALIGN_CENTER,
                   L(state == 2 ? S_USB_CONNECTED : S_USB_WAITING));
-        text_draw(SCREEN_W / 2, 196, 0.56f, 0, RGBA(160, 162, 172, 255), ALIGN_CENTER,
+        text_draw(SCREEN_W / 2, 196, 0.56f, 0, usb_dim, ALIGN_CENTER,
                   L(S_USB_EJECT));
-        gfx_button(SCREEN_W / 2 - 40, 246, 6.5f, BTN_CIRCLE, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
-        text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
+        theme_button(th, SCREEN_W / 2 - 40, 246, 6.5f, BTN_CIRCLE, 0, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+        text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, usb_main, ALIGN_LEFT, L(S_USB_EXIT));
         osd_draw();
         if (t < 0.25f) /* tonas in från svart, som filhanteraren */
             gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - t / 0.25f))));

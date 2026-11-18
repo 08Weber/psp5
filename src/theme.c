@@ -8,13 +8,60 @@
 #include <math.h>
 #include <string.h>
 #include "theme.h"
+#include "image.h"
+#include "anniv_bg.h"
 
 #define PI 3.14159265f
 #define C(r, g, b) RGBA(r, g, b, 255)
+#define HEX(h) C(((h) >> 16) & 0xFF, ((h) >> 8) & 0xFF, (h) & 0xFF)
 
 unsigned char g_theme = 0;
 unsigned char g_theme_art = 1;
 
+/* --- PlayStation 30th Anniversary ---
+ * Originalkonsolens (1994) varmgrå matta plast, grafitgrå detaljer och handkontrollens
+ * fyra färger som små kännetecken. Projektets egna digitala tolkningar av hårdvaran –
+ * inte Sonys officiella färgvärden. Hela paletten finns bara här. */
+#define ANNIV_BG            HEX(0xC7C6C0)
+#define ANNIV_SURFACE       HEX(0xD2D1CB)
+#define ANNIV_SURFACE_ALT   HEX(0xBDBCB6)
+#define ANNIV_SURFACE_DEEP  HEX(0xA9A8A2)
+#define ANNIV_SURFACE_LIGHT HEX(0xDEDDD7)
+#define ANNIV_GRAPHITE      HEX(0x292929)
+#define ANNIV_GRAPHITE_SOFT HEX(0x383838)
+#define ANNIV_BORDER        HEX(0xA4A39D)
+#define ANNIV_BORDER_LIGHT  HEX(0xE7E5DF)
+#define ANNIV_SHADOW        HEX(0x55534F)
+#define ANNIV_TEXT          HEX(0x292929)
+#define ANNIV_TEXT_2        HEX(0x55544F)
+#define ANNIV_TEXT_MUTED    HEX(0x74736D)
+#define ANNIV_TEXT_INVERSE  HEX(0xF1F0EA)
+#define ANNIV_CROSS         HEX(0x1769AA) /* blå ✕ */
+#define ANNIV_SQUARE        HEX(0x813A8C) /* lila □ */
+#define ANNIV_CIRCLE        HEX(0xC73543) /* röd ○ */
+#define ANNIV_TRIANGLE      HEX(0x579B49) /* grön △ */
+#define ANNIV_OK            HEX(0x4F8060)
+#define ANNIV_WARN          HEX(0xA77A35)
+#define ANNIV_ERR           HEX(0xB54A45)
+
+static const ThemeInk INK_ANNIV = {
+    .text = ANNIV_TEXT, .text_dim = ANNIV_TEXT_2, .text_muted = ANNIV_TEXT_MUTED,
+    .text_inverse = ANNIV_TEXT_INVERSE,
+    .panel = ANNIV_SURFACE, .panel_alt = ANNIV_SURFACE_ALT,
+    .panel_deep = ANNIV_SURFACE_DEEP, .panel_hi = ANNIV_SURFACE_LIGHT,
+    .border = ANNIV_BORDER, .border_hi = ANNIV_BORDER_LIGHT,
+    .graphite = ANNIV_GRAPHITE, .graphite_soft = ANNIV_GRAPHITE_SOFT,
+    .shadow = ANNIV_SHADOW,
+    /* markerat: ljusare yta, mörk kant och grafittext – inte bara en färg */
+    .sel_fill = ANNIV_SURFACE_LIGHT, .sel_ink = ANNIV_GRAPHITE, .sel_edge = ANNIV_GRAPHITE,
+    .toggle_off = ANNIV_SURFACE_DEEP, .knob = ANNIV_TEXT_INVERSE,
+    .sym = { [THEME_SYM_CROSS] = ANNIV_CROSS, [THEME_SYM_SQUARE] = ANNIV_SQUARE,
+             [THEME_SYM_CIRCLE] = ANNIV_CIRCLE, [THEME_SYM_TRIANGLE] = ANNIV_TRIANGLE },
+    .ok = ANNIV_OK, .warn = ANNIV_WARN, .err = ANNIV_ERR,
+};
+
+/* De 16 befintliga temana anger inte `ink` och får därmed NULL (C nollställer
+ * utelämnade fält): ritvägarna behåller exakt sina nuvarande färger. */
 static const Theme THEMES[] = {
     /* code, namn, top, bottom, stop, sbottom, glow, haze, sheen, accent, card, deco, tone */
     { "ps5", "PS5", C(20, 20, 26), C(12, 12, 16), C(48, 46, 50), C(22, 23, 29),
@@ -41,6 +88,11 @@ static const Theme THEMES[] = {
       RGBA(146, 244, 232, 78), RGBA(42, 182, 172, 42), RGBA(126, 126, 255, 40), C(66, 214, 204), C(20, 60, 62), DECO_SPOT, 8 },
     { "pearl", "Chroma Pearl", C(72, 68, 78), C(19, 17, 23), C(94, 90, 100), C(27, 25, 31),
       RGBA(255, 242, 248, 86), RGBA(204, 192, 224, 42), RGBA(172, 222, 255, 44), C(238, 228, 242), C(64, 60, 70), DECO_SPOT, 10 },
+    /* PlayStation 30th Anniversary: ljust och matt, nästan ingen toning, inget glänsande ljus.
+     * Accenten är grafit (reglage/förlopp), inte PS-blå. Spelets färg tonar inte det grå. */
+    { "anniv30", "PlayStation 30th Anniversary", ANNIV_BG, ANNIV_SURFACE_ALT, ANNIV_BG, ANNIV_SURFACE_ALT,
+      RGBA(0xDE, 0xDD, 0xD7, 40), RGBA(0xA9, 0xA8, 0xA2, 28), 0, ANNIV_GRAPHITE_SOFT, ANNIV_SURFACE_ALT,
+      DECO_ANNIV, 0, &INK_ANNIV },
     /* PS1–PS4, som PS5:s Utseende */
     { "ps1", "PS1", C(108, 108, 116), C(42, 42, 48), C(116, 116, 124), C(46, 46, 52),
       RGBA(244, 244, 248, 56), RGBA(176, 176, 186, 30), 0, C(224, 224, 232), C(80, 80, 88), DECO_PS1, 0 },
@@ -80,7 +132,38 @@ static u32 scaled(u32 c, float k, int a)
 
 u32 theme_toggle_on(const Theme *t)
 {
-    return scaled(t->accent, 0.63f, 255);
+    return t->ink ? t->ink->graphite : scaled(t->accent, 0.63f, 255);
+}
+
+void theme_button(const Theme *t, float cx, float cy, float r, int kind, int on_dark, u32 plate, u32 mark)
+{
+    if (!t || !t->ink) {
+        gfx_button(cx, cy, r, kind, plate, mark);
+        return;
+    }
+    int pa = (plate >> 24) & 0xFF;
+    int ma = (mark >> 24) & 0xFF;
+    int sym = kind == BTN_CROSS    ? THEME_SYM_CROSS
+            : kind == BTN_SQUARE   ? THEME_SYM_SQUARE
+            : kind == BTN_CIRCLE   ? THEME_SYM_CIRCLE
+                                   : THEME_SYM_TRIANGLE;
+    if (!on_dark && pa > 4)
+        gfx_circle(cx, cy, r + 0.7f, COLOR_ALPHA(t->ink->shadow, (pa * 165) / 255));
+    gfx_button(cx, cy, r, kind, COLOR_ALPHA(t->ink->knob, pa), COLOR_ALPHA(t->ink->sym[sym], ma));
+}
+
+void theme_sel_box(const Theme *t, float x, float y, float w, float h, float r, u32 legacy_fill)
+{
+    if (!t || !t->ink) {
+        gfx_round_rect(x, y, w, h, r, legacy_fill);
+        return;
+    }
+    int a = (legacy_fill >> 24) & 0xFF;
+    if (a <= 0)
+        return;
+    float ir = r > 1.5f ? r - 0.8f : r;
+    gfx_round_rect(x, y, w, h, r, COLOR_ALPHA(t->ink->sel_edge, a));
+    gfx_round_rect(x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f, ir, COLOR_ALPHA(t->ink->sel_fill, a));
 }
 
 /* --- mönster --- */
@@ -186,16 +269,47 @@ static void deco_ps4(float time, float a)
     gfx_blend_add(0);
 }
 
+static Texture *s_anniv_bg;
+static int s_anniv_bg_tried;
+
+static Texture *anniv_bg_tex(void)
+{
+    if (!s_anniv_bg && !s_anniv_bg_tried) {
+        s_anniv_bg_tried = 1;
+        Image img;
+        if (img_decode_cover(ANNIV_BG_JPG, ANNIV_BG_JPG_SIZE, &img, SCREEN_H)) {
+            s_anniv_bg = img_to_texture(&img, GU_PSM_8888);
+            img_free(&img);
+        }
+    }
+    return s_anniv_bg;
+}
+
 void theme_backdrop(const Theme *t, float time, const float tone[3], int settings, float a)
 {
+    if (t->deco == DECO_ANNIV) {
+        Texture *bg = anniv_bg_tex();
+        if (bg) {
+            gfx_tex(bg, 0, 0, SCREEN_W, SCREEN_H, RGBA(255, 255, 255, 255));
+            return;
+        }
+    }
     if (settings) {
         gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, t->stop, t->sbottom);
-        gfx_gradient_h(SCREEN_W / 2, 0, SCREEN_W / 2, SCREEN_H, scaled(t->sbottom, 0.8f, 0), scaled(t->sbottom, 0.8f, 150));
-        /* strålkastarljus uppe till vänster och ett svagt dis nere */
-        gfx_glow(70, -60, 60, 60, 120, alpha(t->glow, 0.84f));
-        gfx_glow(90, -30, 20, 30, 40, RGBA(ch(t->glow, 0) + (255 - ch(t->glow, 0)) / 2, ch(t->glow, 1) + (255 - ch(t->glow, 1)) / 2,
-                                           ch(t->glow, 2) + (255 - ch(t->glow, 2)) / 2, 50));
-        gfx_glow(-30, 236, 280, 30, 46, alpha(t->haze, 0.93f));
+        if (t->ink) {
+            /* ljusa teman: mycket diskret tonal skiftning åt höger, inget kraftigt mörkande */
+            gfx_gradient_h(SCREEN_W / 2, 0, SCREEN_W / 2, SCREEN_H,
+                           COLOR_ALPHA(t->ink->panel_deep, 0), COLOR_ALPHA(t->ink->panel_deep, 36));
+            gfx_glow(70, -60, 60, 60, 120, alpha(t->glow, 0.75f));
+            gfx_glow(-30, 236, 280, 30, 46, alpha(t->haze, 0.85f));
+        } else {
+            gfx_gradient_h(SCREEN_W / 2, 0, SCREEN_W / 2, SCREEN_H, scaled(t->sbottom, 0.8f, 0), scaled(t->sbottom, 0.8f, 150));
+            /* strålkastarljus uppe till vänster och ett svagt dis nere */
+            gfx_glow(70, -60, 60, 60, 120, alpha(t->glow, 0.84f));
+            gfx_glow(90, -30, 20, 30, 40, RGBA(ch(t->glow, 0) + (255 - ch(t->glow, 0)) / 2, ch(t->glow, 1) + (255 - ch(t->glow, 1)) / 2,
+                                               ch(t->glow, 2) + (255 - ch(t->glow, 2)) / 2, 50));
+            gfx_glow(-30, 236, 280, 30, 46, alpha(t->haze, 0.93f));
+        }
     } else {
         float k = t->tone / 100.0f;
         gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H,
@@ -226,6 +340,16 @@ void theme_swatch(const Theme *t, float x, float y, float w, float h, float a)
     /* en liten "skärm" med temats toning och accentfärgen som en list – inte rund som ett reglage */
     gfx_rect(x, y, w, h, alpha(t->top, a));
     gfx_gradient_v(x, y + h * 0.35f, w, h * 0.65f, alpha(COLOR_ALPHA(t->bottom, 0), a), alpha(t->bottom, a));
+    if (t->ink) {
+        /* ljust tema: grafitlist + handkontrollens fyra färger som små kännetecken + mörk ram */
+        static const int order[4] = { THEME_SYM_TRIANGLE, THEME_SYM_CIRCLE, THEME_SYM_CROSS, THEME_SYM_SQUARE };
+        gfx_rect(x + 3, y + 3, w - 6, h - 9, alpha(COLOR_ALPHA(t->ink->panel_hi, 190), a));
+        gfx_rect(x + 3, y + h - 4, w - 22, 2, alpha(t->ink->graphite, a));
+        for (int i = 0; i < 4; i++)
+            gfx_rect(x + w - 17.5f + i * 4.0f, y + h - 4, 2.5f, 2, alpha(t->ink->sym[order[i]], a));
+        gfx_frame(x, y, w, h, 1, alpha(COLOR_ALPHA(t->ink->shadow, 220), a));
+        return;
+    }
     gfx_rect(x + 3, y + h - 4, w - 6, 2, alpha(t->accent, a));
     if (t->deco != DECO_SPOT) { /* klassiska konsoler: en liten våg som kännetecken */
         float l[6] = { x + 3, y + h * 0.55f, x + w * 0.5f, y + h * 0.3f, x + w - 3, y + h * 0.5f };
