@@ -3561,8 +3561,9 @@ static void draw_hints(Ui *ui)
     text_draw(x, y + 4.5f, tab_sz, 0, label_col, ALIGN_LEFT, tab);
     if (show_settings) {
         x += text_width(tab_sz, 0, tab) + 12.0f;
-        draw_outline_triangle_btn(x + 6.5f, y, 6.0f,
-                                  t->ink ? COLOR_ALPHA(t->ink->graphite, (int)(240 * a)) : RGBA(226, 232, 240, (int)(235 * a)));
+        u32 tri_col = t->ink ? COLOR_ALPHA(t->ink->sym[THEME_SYM_TRIANGLE], (int)(245 * a))
+                             : RGBA(74, 222, 128, (int)(235 * a));
+        draw_outline_triangle_btn(x + 6.5f, y, 6.0f, tri_col);
         text_draw(x + 17.0f, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, L(S_SETTINGS));
         x += 17.0f + text_width(0.56f, 0, L(S_SETTINGS));
     } else if (conf) {

@@ -36,10 +36,10 @@ unsigned char g_theme_art = 1;
 #define ANNIV_TEXT_2        HEX(0x55544F)
 #define ANNIV_TEXT_MUTED    HEX(0x74736D)
 #define ANNIV_TEXT_INVERSE  HEX(0xF1F0EA)
-#define ANNIV_CROSS         HEX(0x1769AA) /* blå ✕ */
-#define ANNIV_SQUARE        HEX(0x813A8C) /* lila □ */
-#define ANNIV_CIRCLE        HEX(0xC73543) /* röd ○ */
-#define ANNIV_TRIANGLE      HEX(0x579B49) /* grön △ */
+#define ANNIV_CROSS         HEX(0x1C94E8) /* sky blue ✕ */
+#define ANNIV_SQUARE        HEX(0xDC4896) /* pink □ */
+#define ANNIV_CIRCLE        HEX(0xD83848) /* red ○ */
+#define ANNIV_TRIANGLE      HEX(0x28A85E) /* green △ */
 #define ANNIV_OK            HEX(0x4F8060)
 #define ANNIV_WARN          HEX(0xA77A35)
 #define ANNIV_ERR           HEX(0xB54A45)
@@ -135,14 +135,33 @@ u32 theme_toggle_on(const Theme *t)
     return t->ink ? t->ink->graphite : scaled(t->accent, 0.63f, 255);
 }
 
+static u32 ps_sym_color(int kind, int light_plate)
+{
+    if (light_plate) {
+        switch (kind) {
+        case BTN_CROSS:    return ANNIV_CROSS;
+        case BTN_SQUARE:   return ANNIV_SQUARE;
+        case BTN_CIRCLE:   return ANNIV_CIRCLE;
+        default:           return ANNIV_TRIANGLE;
+        }
+    }
+    switch (kind) {
+    case BTN_CROSS:    return HEX(0x56C2FF); /* sky blue ✕ */
+    case BTN_SQUARE:   return HEX(0xF472B6); /* pink □ */
+    case BTN_CIRCLE:   return HEX(0xFB5A68); /* red ○ */
+    default:           return HEX(0x4ADE80); /* green △ */
+    }
+}
+
 void theme_button(const Theme *t, float cx, float cy, float r, int kind, int on_dark, u32 plate, u32 mark)
 {
-    if (!t || !t->ink) {
-        gfx_button(cx, cy, r, kind, plate, mark);
-        return;
-    }
     int pa = (plate >> 24) & 0xFF;
     int ma = (mark >> 24) & 0xFF;
+    if (!t || !t->ink) {
+        int light_plate = (ch(plate, 0) + ch(plate, 1) + ch(plate, 2)) > 384;
+        gfx_button(cx, cy, r, kind, plate, COLOR_ALPHA(ps_sym_color(kind, light_plate), ma));
+        return;
+    }
     int sym = kind == BTN_CROSS    ? THEME_SYM_CROSS
             : kind == BTN_SQUARE   ? THEME_SYM_SQUARE
             : kind == BTN_CIRCLE   ? THEME_SYM_CIRCLE
