@@ -1,4 +1,4 @@
-**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) brings improved game icon & PMF card-preview fitting, the restored procedural UI sound engine, Standby Screen rendering & brightness normalization, and the full **PS5 UI overhaul**. Your existing settings, covers, pins and music stay when you update from psp5 or v1.0.0.
+**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) introduces the **PlayStation 30th Anniversary Theme** with classic four-colour button symbols and shoulder-button icons, plus expanded **System Settings** (Brightness, Volume, Cross/Circle Button Assign, USB Mode, Date & Time formatting, and detailed System Information). Your existing settings, covers, pins and music stay when you update from psp5 or an earlier PSP5 REMAKE release.
 
 > [!NOTE]
 > **Based on psp5 by 08Weber**
@@ -17,19 +17,20 @@ Not sure which ARK you have? Press **SELECT** in the XMB: ARK's menu shows *ARK 
 
 ## What's new in __VERSION__
 
-**Standby Screen Rendering & Brightness Fix**
-- Removed Standby-specific automatic brightness step-down/restore so your chosen system brightness is always preserved.
-- Restored continuous normal vblank rendering in `standby_mode()` (removing the 10 FPS / 100ms idle throttling), fixing intermittent black-screen transitions while preserving the theme/wallpaper clock, Now Playing card, Power menu, and `HOME` unlock.
+**Expanded System Settings (`Settings → System`)**
+- **Brightness & Sound Volume**: Adjust screen brightness and main system volume directly from *Settings → System* through the kernel's Impose service.
+- **Button Assign (`✕` / `○`)**: Swap confirm/cancel between Cross and Circle with immediate launcher & Settings UI feedback and PSP system registry persistence.
+- **USB Mode**: Toggle USB Mass Storage directly from *Settings → System* (as well as *Power and USB* and Control Center).
+- **Date & Time Sub-page**: Configure Daylight Saving (`-1 hr`, `As is`, `+1 hr`), Date format (`YYYY-MM-DD`, `DD/MM/YYYY`, `MM/DD/YYYY`), and Time format (`24-hour` / `12-hour`), saved in `psp5.cfg` and reflected live in the top bar clock without altering the PSP's hardware RTC.
+- **System Information Sub-page**: Inspect PSP nickname, model name, full ARK version, Wi-Fi MAC address, free RAM, and live battery level, charging state, voltage, temperature (`°C`), and capacity (`mAh`).
+- Localized across all 10 supported UI languages.
 
-**Game Icon Fitting & PMF Card Previews**
-- Automatically trims transparent and symmetric black letterbox/pillarbox margins on game icons (`src/art.c`), cover-fits wide icons to the 16:9 card, and centers narrow/square icons cleanly (`icons3` cache refresh).
-- Aspect-crops and rounded-corner-masks `ICON1.PMF` video previews (`src/preview.c`, `src/gfx.c`) so animated previews align seamlessly inside rounded game cards.
-
-**Procedural UI Sound Engine Restored**
-- Restored the original lightweight procedural synthesized UI sound engine (`src/sound.c`), removing the large embedded FLAC/zlib sound blob for a cleaner, smaller EBOOT.
+**PlayStation 30th Anniversary Theme & Classic Icons**
+- Added the **30th Anniversary** theme with an embedded classic grey Anniversary backdrop, light grey card surfaces, and adaptive dark ink contrast across the launcher, Settings, File Manager, and Control Center.
+- Added classic four-colour PlayStation button symbols (`✕`, `○`, `□`, `△`), PlayStation logo icon, and custom `L` / `R` shoulder-button keycaps.
 
 **Full PSP5 REMAKE Features Included**
-- Custom **PSP5™** boot logo & **Welcome Back** startup backdrop, unified PS5 top navigation bar & outline icons, dedicated **Apps** tab, **Now playing** mini-card in Control Center, and **Standby Screen** with **△** Sleep / Shut down power overlay.
+- Custom **PSP5™** boot logo & **Welcome Back** startup backdrop, unified PS5 top navigation bar & outline icons, dedicated **Apps** tab, automatic game icon border trimming & rounded `ICON1.PMF` video card previews, procedural UI sound engine, **Now playing** mini-card in Control Center, and **Standby Screen** with **△** Sleep / Shut down power overlay.
 
 ## Thank you
 

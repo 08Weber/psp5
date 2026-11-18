@@ -63,9 +63,11 @@ Pressing ✕ (or START) starts the game the same way ARK's own menu does, so upd
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
 so the game gets the whole PSP.
 
-**Settings** is laid out like the PS5's settings pages. From there you can change ARK's CFW options (CPU speed,
-extra memory, caches, USB charging and so on), turn plugins on and off, connect over USB, restart, shut down,
-jump to the XMB or open ARK's recovery menu.
+**Settings** is laid out like the PS5's settings pages. From there you can adjust **System** settings (screen
+brightness, sound volume, Cross/Circle confirm button assignment, USB mode, Date & Time display format and
+Daylight Saving offset, and a full System Information page with PSP model, nickname, ARK version, MAC address,
+free RAM, and battery health/temperature/voltage), change ARK's CFW options (CPU speed, extra memory, caches,
+USB charging and so on), turn plugins on and off, restart, shut down, jump to the XMB or open ARK's recovery menu.
 
 A few other things I cared about:
 
@@ -79,8 +81,10 @@ A few other things I cared about:
   Swedish, so you pick it under *Settings → PSP5 REMAKE → Language*.
 - **It has themes.** *Settings → Theme* has the colours of the PS5 console covers (Midnight Black, Cosmic Red,
   Nova Pink, Starlight Blue, Galactic Purple, Volcanic Red, Cobalt Blue, Sterling Silver and the Chroma
-  colours), and – like the PS5's own *Appearance* setting – the look of the PS1, PS2, PS3 and PS4: the grey
-  console with its button symbols, the dark towers and glowing orbs, the XMB wave and the blue PS4 waves.
+  colours), the **PlayStation 30th Anniversary** classic grey theme with its dedicated backdrop and classic
+  four-colour PlayStation button symbols, and – like the PS5's own *Appearance* setting – the look of the PS1,
+  PS2, PS3 and PS4: the grey console with its button symbols, the dark towers and glowing orbs, the XMB wave and
+  the blue PS4 waves.
   Highlight a theme to preview it and press ✕ to use it. You can also turn the game art in the background off,
   so the theme is always visible – or pick a **wallpaper** of your own: any JPEG or PNG in `PICTURE` (the
   XMB's Photo folder) under *Settings → Theme → Wallpaper*.
@@ -134,6 +138,14 @@ On top of 08Weber's original psp5 foundation above, the **PSP5 REMAKE** fork inc
   - Crops and rounded-corner-masks animated `ICON1.PMF` video previews (`preview_frame_sub`, `gfx_tex_sub`) to fit seamlessly inside the rounded 16:9 game card.
 - **Procedural UI Sound Engine** (`src/sound.c`, `src/sound.h`):
   Restored the lightweight procedural synthesized UI sound engine (sine tones, filtered noise, and envelopes generated at startup with zero external audio assets or embedded FLAC blobs).
+- **PlayStation 30th Anniversary Theme & Classic Button Symbols** (`src/theme.c`, `src/theme.h`, `src/anniv_bg.h`, `src/icons.h`, `src/ui.c`, `tools/make_anniv_bg.ps1`, `tools/make_icons.ps1`):
+  - Added the **30th Anniversary** theme featuring an embedded classic grey PlayStation 30th Anniversary backdrop (`res/ANNIV30_BG.JPG` → `src/anniv_bg.h`), light grey surfaces, and dark ink accents across cards, dialogs, Settings, File Manager, and Control Center.
+  - Added authentic four-colour PlayStation action button symbols (`✕`, `○`, `□`, `△` via `ps_sym_color`), PlayStation emblem texture, and custom `L` / `R` shoulder-button icons across footer hints and menus.
+- **Expanded System Settings, Date & Time, and System Information** (`src/system.c`, `src/system.h`, `src/settings.c`, `src/datetime.c`, `src/datetime.h`, `src/config.c`, `src/lang.c`):
+  - Added direct **Brightness** and **Volume** controls inside *Settings → System* via the kernel's Impose service (`sceImposeGetParam` / `sceImposeSetParam`).
+  - Added **Button assign** (`Cross` / `Circle` confirm button swap) with live UI hint updates and PSP registry persistence (`/CONFIG/SYSTEM/XMB/button_assign`), plus direct **USB mode** access in *Settings → System*.
+  - Added an in-card **Date and time** sub-page (`src/datetime.c`) to configure Daylight Saving (`-1 hr`, `As is`, `+1 hr`), Date format (`YYYY-MM-DD`, `DD/MM/YYYY`, `MM/DD/YYYY`), and Time format (`24-hour` / `12-hour`), persisted in `psp5.cfg` and reflected live in the top status bar clock without modifying the PSP's hardware RTC.
+  - Added an in-card **System information** sub-page displaying PSP nickname, model, full ARK CFW version, Wi-Fi MAC address, free RAM, and live battery percentage, charging status, voltage, temperature (`°C`), and remaining capacity (`mAh`).
 - **Control Center & Standby Screen Enhancements** (`src/ui.c`, `src/main.c`, `src/system.c`, `src/osd.c`, `tools/tests/standby.txt`):
   - Added a **Now playing** mini-card directly inside the Control Center dock alongside the quick actions.
   - Updated the **Standby Screen** to match the active theme or the user's selected custom wallpaper, and placed a compact square **Now playing** music card (cover art, track title/artist, progress bar, and controls) below the large clock.
