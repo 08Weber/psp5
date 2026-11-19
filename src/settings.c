@@ -555,6 +555,7 @@ static void build(int rebuild)
         storage_preview(prev, sizeof(prev));
         subpage(c, L(S_STORAGE), SUB_STORAGE, prev);
     }
+    action(c, L(S_SAVEDATA), SA_SAVEDATA, 0);
     if (!psp1000)
         toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
@@ -835,6 +836,11 @@ int settings_update(const UiInput *in, float dt)
                 S.toast_time = 2.4f;
                 sound_play(ok ? SND_SELECT : SND_ERROR);
                 return SA_NONE;
+            }
+            if (it->action == SA_SAVEDATA) {
+                S.confirm_item = -1;
+                sound_play(SND_DETAIL_IN);
+                return SA_SAVEDATA;
             }
             if (it->confirm && S.confirm_item != *sel) {
                 S.confirm_item = *sel;

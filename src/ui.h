@@ -9,7 +9,8 @@
 
 /* [medhatk] UI_STANDBY returned by Control Center triggers standby_mode() in main.c */
 enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */, UI_STANDBY,
-       UI_INFO /* options menu -> Information: main.c opens info_open() for ui_selected() */ };
+       UI_INFO /* options menu -> Information: main.c opens info_open() for ui_selected() */,
+       UI_SAVEDATA /* options menu -> Saved Data: main.c opens savedata_open() filtered by game_id */ };
 enum { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC, TAB_PICTURES, TAB_MEDIA, TAB_VIDEO, TAB_SEARCH, TAB_COUNT };
 
 typedef struct {
@@ -113,6 +114,7 @@ typedef struct {
     int menu_sel;        /* valt alternativ i menyn */
     int menu_rows;       /* menyns rader när den sist var öppen – höjden står still medan den tonas ut */
     int want_info;       /* Information was chosen in the options menu (ui_update returns UI_INFO)  */
+    int want_savedata;   /* Saved Data was chosen in the options menu (ui_update returns UI_SAVEDATA) */
     int moving;          /* Flytta: ← → flyttar valt kort i raden (egen ordning, issue #31) */
 
     /* spelets logga (PIC0) – laddas och tonas in med bakgrunden */

@@ -29,6 +29,7 @@
 #include "preview.h"
 #include "info.h"
 #include "lastplayed.h"
+#include "savedata.h"
 
 PSP_MODULE_INFO("PSP5_REMAKE", PSP_MODULE_USER, 0, 1); /* [medhatk] Renamed module info for PSP5 REMAKE */
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -581,6 +582,7 @@ int main(int argc, char *argv[])
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
     int in_info = 0; /* the Game / App Information screen is open */
+    int in_savedata = 0; /* the Saved Data Manager screen is open */
     unsigned char hide_dupes = 0, all_games = 0; /* hur flikarna byggdes när inställningarna öppnades */
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
@@ -598,7 +600,7 @@ int main(int argc, char *argv[])
             dark = 0;
             idle = 0;
             if (g_boot_anim && ui.launch < 0 && !s_safe) {
-                sleep_and_wake(&ui, in_settings || in_info);
+                sleep_and_wake(&ui, in_settings || in_info || in_savedata);
                 old = ~0u; /* knappen som hoppade över startskärmen räknas inte */
                 last = sceKernelGetSystemTimeWide();
             } else {
@@ -651,6 +653,24 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        if (in_savedata) {
+            UiInput none = { 0, 0, 128, 128 };
+            int close = savedata_update(&in, dt);
+            ui_update(&ui, &none, dt);
+            if (close) {
+                savedata_close();
+                in_savedata = 0;
+                if (!in_settings)
+                    preview_pause(0);
+                if (in_settings)
+                    settings_draw();
+                else
+                    ui_draw(&ui);
+            } else {
+                savedata_draw();
+            }
+            continue;
+        }
         if (in_settings) {
             /* HOME eller SELECT stänger inställningarna och öppnar Control Center;
              * L och R stegar vidare längs toppraden (← Musik, → Spel) */
@@ -673,6 +693,13 @@ int main(int argc, char *argv[])
                     sound_play(SND_SWIPE);
                     ui_set_tab(&ui, (lr & PSP_CTRL_LTRIGGER) ? TAB_MUSIC : TAB_GAMES);
                 }
+            } else if (action == SA_SAVEDATA) {
+                settings_commit();
+                ui.confirm_circle = sys_confirm_is_circle();
+                savedata_open(NULL, NULL, ui.confirm_circle);
+                in_savedata = 1;
+                old = in.held;
+                continue;
             } else if (action != SA_NONE) {
                 settings_commit();
                 ui.confirm_circle = sys_confirm_is_circle();
@@ -763,6 +790,14 @@ int main(int argc, char *argv[])
             in_info = 1;
             continue;
         }
+        if (action == UI_SAVEDATA && ui_selected(&ui) >= 0) {
+            const Entry *chosen = &list.items[ui_selected(&ui)];
+            preview_pause(1);
+            savedata_open(chosen->game_id, chosen->title, sys_confirm_is_circle());
+            sound_play(SND_DETAIL_IN);
+            in_savedata = 1;
+            continue;
+        }
         if (action == UI_LAUNCH && ui_selected(&ui) >= 0) {
             Entry chosen = list.items[ui_selected(&ui)];
             lastplayed_note_launch(&chosen); /* shown as "Last played" in Information */
@@ -784,6 +819,8 @@ int main(int argc, char *argv[])
     /* HOME → Avsluta: till XMB (även när psp5 är ARK:s launcher) */
     if (in_settings)
         settings_commit();
+    if (in_savedata)
+        savedata_close();
     if (in_info)
         info_close();
     app_stop(&list, &ui);

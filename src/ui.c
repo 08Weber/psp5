@@ -760,14 +760,29 @@ void ui_relist(Ui *ui, int removed_front, int added_front)
 
 /* □-menyn för valt kort: Fäst, Flytta (i Spel-raden: fästa kort, eller alla när raden visar
  * alla spel – issue #31) och i biblioteket sorteringen */
-enum { MI_PIN, MI_MOVE, MI_SORT, MI_INFO };
+enum { MI_PIN, MI_MOVE, MI_SORT, MI_INFO, MI_SAVEDATA };
 
-static int menu_items(const Ui *ui, int out[4])
+static int has_valid_game_id(const Entry *e)
+{
+    if (!e || e->type == ENTRY_HOMEBREW || !e->game_id[0])
+        return 0;
+    int len = 0;
+    for (const char *p = e->game_id; *p; p++, len++) {
+        unsigned char c = (unsigned char)*p;
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+            return 0;
+    }
+    return len >= 4;
+}
+
+static int menu_items(const Ui *ui, int out[5])
 {
     int n = 0;
     int sel = ui_selected(ui);
     if (sel >= 0 && ui->list->items[sel].type == ENTRY_UMD) { /* the disc: only Information (it cannot be pinned or moved) */
         out[n++] = MI_INFO;
+        if (has_valid_game_id(&ui->list->items[sel]))
+            out[n++] = MI_SAVEDATA;
         return n;
     }
     out[n++] = MI_PIN;
@@ -776,24 +791,27 @@ static int menu_items(const Ui *ui, int out[4])
         out[n++] = MI_MOVE;
     if (ui->tab == TAB_LIBRARY)
         out[n++] = MI_SORT;
+    if (sel >= 0 && has_valid_game_id(&ui->list->items[sel]))
+        out[n++] = MI_SAVEDATA;
     return n;
 }
 
 static int menu_count(const Ui *ui)
 {
-    int items[4];
+    int items[5];
     return menu_items(ui, items);
 }
 
 static const char *menu_label(const Ui *ui, int k, char *buf, int size)
 {
-    int items[4];
+    int items[5];
     if (k >= menu_items(ui, items)) /* menyn tonas ut och har just tappat en rad */
         return "";
     switch (items[k]) {
-    case MI_PIN:  return L(meta(ui_selected(ui))->pinned ? S_UNPIN : S_PIN);
-    case MI_MOVE: return L(S_F_MOVE);
-    case MI_INFO: return L(S_INFO);
+    case MI_PIN:      return L(meta(ui_selected(ui))->pinned ? S_UNPIN : S_PIN);
+    case MI_MOVE:     return L(S_F_MOVE);
+    case MI_INFO:     return L(S_INFO);
+    case MI_SAVEDATA: return L(S_SAVEDATA);
     }
     snprintf(buf, size, "%s: %s", L(S_SORT), L(ui->lib_sort ? S_SORT_RECENT : S_SORT_NAME));
     return buf;
@@ -861,7 +879,7 @@ static void arrange_step(Ui *ui, int dir)
 
 static void menu_choose(Ui *ui)
 {
-    int i = ui_selected(ui), items[4];
+    int i = ui_selected(ui), items[5];
     menu_items(ui, items);
     switch (items[ui->menu_sel]) {
     case MI_PIN:
@@ -878,6 +896,10 @@ static void menu_choose(Ui *ui)
     case MI_INFO:
         ui->menu_open = 0;
         ui->want_info = 1; /* ui_update hands UI_INFO to main.c */
+        break;
+    case MI_SAVEDATA:
+        ui->menu_open = 0;
+        ui->want_savedata = 1; /* ui_update hands UI_SAVEDATA to main.c */
         break;
     case MI_MOVE:
         ui->menu_open = 0;
@@ -2094,6 +2116,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             if (ui->want_info) {
                 ui->want_info = 0;
                 return UI_INFO;
+            }
+            if (ui->want_savedata) {
+                ui->want_savedata = 0;
+                return UI_SAVEDATA;
             }
         } else if (in->pressed & back) {
             ui->menu_open = 0;
