@@ -19,6 +19,7 @@
 #include "osd.h"
 #include "art.h"
 #include "config.h"
+#include "datetime.h"
 
 #define LIST_X   24.0f
 #define LIST_W   432.0f
@@ -30,6 +31,7 @@
 #define MAX_PATH 512
 #define MAX_CLIP 64          /* shortcut: högst 64 markerade objekt åt gången – höj om det inte räcker */
 #define COPY_BUF (128 * 1024)
+#define MAX_WALK_DEPTH 16
 
 #define TEXT_MAIN RGBA(238, 238, 242, 255)
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
@@ -45,6 +47,7 @@ typedef struct {
     char shown[96];  /* namnet kortat för listan */
     char size[24];   /* storlek (enhet: ledigt utrymme) */
     u64 bytes;
+    u32 mtime;
     u8 kind, marked;
 } FileEntry;
 
@@ -60,32 +63,53 @@ static float s_toast_time;
 static u64 s_free, s_total;   /* enheten som visas */
 static const char *s_devs[2];
 static int s_ndev;
+static int s_confirm_circle;
 
 /* --- urklipp --- */
 static char *s_clip[MAX_CLIP];
 static int s_clip_n, s_clip_move;
 
 /* --- meny --- */
-enum { M_NONE, M_OPTIONS, M_DELETE };
-enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL };
+enum { M_NONE, M_OPTIONS, M_DELETE, M_RENAME_CONFLICT };
+enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL, A_RENAME_REPLACE };
 static int s_menu, s_menu_sel, s_menu_n, s_menu_act[8];
 static float s_menu_anim;
 
+static char s_ren_from[MAX_PATH], s_ren_to[MAX_PATH], s_ren_name[256];
+static u64 s_ren_src_size, s_ren_dst_size;
+static u32 s_ren_src_time, s_ren_dst_time;
+
 /* --- arbetstråden --- */
 enum { OP_COPY, OP_MOVE, OP_DELETE };
-enum { R_OK, R_FAILED, R_NO_SPACE, R_CANCELLED };
+enum { R_OK, R_FAILED, R_NO_SPACE, R_CANCELLED, R_SRC_KEEP };
+enum { CONF_NONE, CONF_FILE_FILE, CONF_DIR_DIR, CONF_TYPE_MISMATCH };
+enum { ACT_NONE, ACT_REPLACE, ACT_MERGE, ACT_SKIP, ACT_RENAME, ACT_CANCEL };
 static struct {
-    SceUID thread;
-    volatile int running, cancel, result;
+    SceUID thread, sema;
+    volatile int running, cancel, result, waiting;
     int op, n;
     char *src[MAX_CLIP];
     char dest[MAX_PATH];
     volatile u64 done, total; /* byte (kopiera/flytta) eller objekt (radera) */
     char current[128];
     unsigned char *buf;
-} W = { .thread = -1 };
 
+    int conf_kind, conf_src_dir, conf_dst_dir;
+    char conf_name[128];
+    u64 conf_src_size, conf_dst_size;
+    u32 conf_src_time, conf_dst_time;
+    volatile int decision, apply_all;
+    int auto_act[4];
+    volatile int skipped_any, src_keep;
+} W = { .thread = -1, .sema = -1 };
+
+static int s_conf_shown, s_conf_sel, s_conf_apply;
 static int s_osk_done;
+
+static u32 ok_mask(void)   { return s_confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS; }
+static u32 back_mask(void) { return s_confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE; }
+static int ok_btn(void)    { return s_confirm_circle ? BTN_CIRCLE : BTN_CROSS; }
+static int back_btn(void)  { return s_confirm_circle ? BTN_CROSS : BTN_CIRCLE; }
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static u32 fade(u32 c, float a) { return COLOR_ALPHA(c, (int)(((c >> 24) & 0xFF) * clampf(a, 0, 1))); }
@@ -122,13 +146,23 @@ static void parent_of(char *out, int size, const char *path)
         *s = 0;
 }
 
-static int same_device(const char *a, const char *b) { return !strncmp(a, b, 4); }
+static int same_device(const char *a, const char *b) { return !strncasecmp(a, b, 4); }
+static int same_path(const char *a, const char *b)   { return !strcasecmp(a, b); }
 
 /* path är dir eller ligger i den */
 static int is_inside(const char *path, const char *dir)
 {
     int n = strlen(dir);
-    return !strncmp(path, dir, n) && (path[n] == 0 || path[n] == '/');
+    while (n > 0 && dir[n - 1] == '/')
+        n--;
+    return !strncasecmp(path, dir, n) && (path[n] == 0 || path[n] == '/');
+}
+
+static u32 pack_time_dt(const ScePspDateTime *t)
+{
+    if (!t || t->year < 1980 || t->year > 2043 || t->month < 1 || t->month > 12 || t->day < 1 || t->day > 31)
+        return 0;
+    return dt_pack(t->year, t->month, t->day, t->hour, t->minute, t->second);
 }
 
 static int dev_present(const char *root)
@@ -197,6 +231,7 @@ static int read_dir(const char *path, FileEntry **out)
             snprintf(e->name, sizeof(e->name), "%s", ent.d_name);
             e->kind = FIO_S_ISDIR(ent.d_stat.st_mode) ? KIND_DIR : KIND_FILE;
             e->bytes = ent.d_stat.st_size;
+            e->mtime = pack_time_dt(&ent.d_stat.sce_st_mtime);
         }
         memset(&ent, 0, sizeof(ent));
     }
@@ -208,44 +243,135 @@ static int read_dir(const char *path, FileEntry **out)
 /* ---------------------------------------------------------------------- */
 /* arbetstråden: kopiera, flytta, radera */
 
-static void unique_dest(char *out, int size, const char *dir, const char *name, int is_dir)
+/* Hittar ett ledigt namn "namn (2).ext" .. "namn (999).ext". 1 = ledigt hittades, 0 = alla upptagna. */
+static int unique_dest(char *out, int size, const char *dir, const char *name, int is_dir)
 {
     join(out, size, dir, name);
+    SceIoStat st;
+    if (sceIoGetstat(out, &st) < 0)
+        return 1;
     const char *dot = is_dir ? NULL : strrchr(name, '.');
     if (dot == name)
         dot = NULL;
     int stem = dot ? (int)(dot - name) : (int)strlen(name);
-    SceIoStat st;
-    for (int k = 2; sceIoGetstat(out, &st) >= 0 && k < 1000; k++) {
+    for (int k = 2; k < 1000; k++) {
         char alt[300];
         snprintf(alt, sizeof(alt), "%.*s (%d)%s", stem, name, k, dot ? dot : "");
         join(out, size, dir, alt);
+        if (sceIoGetstat(out, &st) < 0)
+            return 1;
     }
+    out[0] = 0;
+    return 0;
 }
 
-static void tree_size(const char *path, int is_dir, u64 bytes, u64 *total_bytes, u64 *items)
+static int temp_sibling(char *out, int size, const char *dir, const char *prefix)
+{
+    SceIoStat st;
+    for (int k = 0; k < 1000; k++) {
+        char tmp[48];
+        snprintf(tmp, sizeof(tmp), "%s%d", prefix, k);
+        join(out, size, dir, tmp);
+        if (sceIoGetstat(out, &st) < 0)
+            return 1;
+    }
+    out[0] = 0;
+    return 0;
+}
+
+static void tree_size(const char *path, int is_dir, u64 bytes, u64 *total_bytes, u64 *items, int depth)
 {
     ++*items;
     if (!is_dir) {
         *total_bytes += bytes;
         return;
     }
+    if (depth >= MAX_WALK_DEPTH)
+        return;
     FileEntry *list;
     int n = read_dir(path, &list);
     for (int i = 0; i < n; i++) {
         char child[MAX_PATH];
         join(child, sizeof(child), path, list[i].name);
-        tree_size(child, list[i].kind == KIND_DIR, list[i].bytes, total_bytes, items);
+        tree_size(child, list[i].kind == KIND_DIR, list[i].bytes, total_bytes, items, depth + 1);
     }
     free(list);
 }
 
-static int copy_file(const char *src, const char *dst)
+/* count = 1: räknas i förloppet (radering), force_cleanup = 1: städa även om W.cancel är satt */
+static int delete_tree(const char *path, int is_dir, int count, int force_cleanup, int depth)
 {
+    if (!force_cleanup && W.cancel)
+        return R_CANCELLED;
+    if (depth > MAX_WALK_DEPTH)
+        return R_FAILED;
+    int r = R_OK;
+    if (is_dir) {
+        FileEntry *list;
+        int n = read_dir(path, &list);
+        if (n < 0)
+            return R_FAILED;
+        for (int i = 0; i < n && r == R_OK; i++) {
+            char child[MAX_PATH];
+            join(child, sizeof(child), path, list[i].name);
+            r = delete_tree(child, list[i].kind == KIND_DIR, count, force_cleanup, depth + 1);
+        }
+        free(list);
+        if (r == R_OK && sceIoRmdir(path) < 0)
+            r = R_FAILED;
+    } else if (sceIoRemove(path) < 0) {
+        r = R_FAILED;
+    }
+    if (count && r == R_OK)
+        W.done++;
+    return r;
+}
+
+static int ask_conflict(int kind, const char *name,
+                        int src_dir, u64 src_size, u32 src_time,
+                        int dst_dir, u64 dst_size, u32 dst_time)
+{
+    if (W.cancel)
+        return ACT_CANCEL;
+    if (kind >= 0 && kind < 4 && W.auto_act[kind] != ACT_NONE)
+        return W.auto_act[kind];
+    W.conf_kind = kind;
+    W.conf_src_dir = src_dir;
+    W.conf_dst_dir = dst_dir;
+    W.conf_src_size = src_size;
+    W.conf_dst_size = dst_size;
+    W.conf_src_time = src_time;
+    W.conf_dst_time = dst_time;
+    snprintf(W.conf_name, sizeof(W.conf_name), "%s", name);
+    W.decision = ACT_NONE;
+    W.apply_all = 0;
+    W.waiting = 1;
+    sceKernelWaitSema(W.sema, 1, NULL);
+    W.waiting = 0;
+    if (W.cancel || W.decision == ACT_CANCEL || W.decision == ACT_NONE) {
+        W.cancel = 1;
+        return ACT_CANCEL;
+    }
+    if (W.apply_all && kind >= 0 && kind < 4)
+        W.auto_act[kind] = W.decision;
+    return W.decision;
+}
+
+/* Kopierar src -> dst säkert via temporär fil (.psp5tmp_N) och vid ersättning (.psp5bak_N + rollback). */
+static int copy_file_atomic(const char *src, const char *dst_dir, const char *dst, int is_replace, u64 src_size)
+{
+    u64 free_b, total_b;
+    if (dev_space(dst_dir, &free_b, &total_b) && src_size + 1024 * 1024 > free_b)
+        return R_NO_SPACE;
+
+    char tmp[MAX_PATH];
+    if (!temp_sibling(tmp, sizeof(tmp), dst_dir, ".psp5tmp_"))
+        return R_FAILED;
+
     SceUID in = sceIoOpen(src, PSP_O_RDONLY, 0);
     if (in < 0)
         return R_FAILED;
-    SceUID out = sceIoOpen(dst, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    SceUID out = sceIoOpen(tmp, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (out < 0) {
         sceIoClose(in);
         return R_FAILED;
@@ -271,52 +397,194 @@ static int copy_file(const char *src, const char *dst)
     }
     sceIoClose(in);
     sceIoClose(out);
-    if (r != R_OK)
-        sceIoRemove(dst); /* ingen halv fil kvar */
-    return r;
-}
-
-static int copy_tree(const char *src, const char *dst, int is_dir)
-{
-    if (!is_dir)
-        return copy_file(src, dst);
-    if (sceIoMkdir(dst, 0777) < 0)
-        return R_FAILED;
-    FileEntry *list;
-    int n = read_dir(src, &list), r = n < 0 ? R_FAILED : R_OK;
-    for (int i = 0; i < n && r == R_OK; i++) {
-        char s[MAX_PATH], d[MAX_PATH];
-        join(s, sizeof(s), src, list[i].name);
-        join(d, sizeof(d), dst, list[i].name);
-        r = copy_tree(s, d, list[i].kind == KIND_DIR);
+    if (r != R_OK) {
+        sceIoRemove(tmp);
+        return r;
     }
-    free(list);
-    return r;
+
+    if (!is_replace) {
+        if (sceIoRename(tmp, dst) < 0) {
+            sceIoRemove(tmp);
+            return R_FAILED;
+        }
+        return R_OK;
+    }
+
+    char bak[MAX_PATH];
+    if (!temp_sibling(bak, sizeof(bak), dst_dir, ".psp5bak_")) {
+        sceIoRemove(tmp);
+        return R_FAILED;
+    }
+    if (sceIoRename(dst, bak) < 0) {
+        sceIoRemove(tmp);
+        return R_FAILED;
+    }
+    if (sceIoRename(tmp, dst) < 0) {
+        sceIoRename(bak, dst); /* rollback */
+        sceIoRemove(tmp);
+        return R_FAILED;
+    }
+    sceIoRemove(bak);
+    return R_OK;
 }
 
-/* count = 1: räknas i förloppet (radering), 0: del av en flytt */
-static int delete_tree(const char *path, int is_dir, int count)
+static int move_file_to(const char *src, const char *dst_dir, const char *dst, int is_replace, u64 src_size)
+{
+    if (same_device(src, dst_dir)) {
+        if (!is_replace) {
+            if (sceIoRename(src, dst) >= 0)
+                return R_OK;
+        } else {
+            char bak[MAX_PATH];
+            if (temp_sibling(bak, sizeof(bak), dst_dir, ".psp5bak_") && sceIoRename(dst, bak) >= 0) {
+                if (sceIoRename(src, dst) >= 0) {
+                    sceIoRemove(bak);
+                    return R_OK;
+                }
+                sceIoRename(bak, dst); /* rollback */
+            }
+        }
+    }
+    int r = copy_file_atomic(src, dst_dir, dst, is_replace, src_size);
+    if (r != R_OK)
+        return r;
+    if (sceIoRemove(src) < 0) {
+        W.src_keep = 1;
+        return R_SRC_KEEP;
+    }
+    return R_OK;
+}
+
+static int process_item(const char *src, const char *dst_dir, const char *target_name,
+                        int top_level, int copy_only, int depth, int *item_skipped)
 {
     if (W.cancel)
         return R_CANCELLED;
-    int r = R_OK;
-    if (is_dir) {
-        FileEntry *list;
-        int n = read_dir(path, &list);
-        for (int i = 0; i < n && r == R_OK; i++) {
-            char child[MAX_PATH];
-            join(child, sizeof(child), path, list[i].name);
-            r = delete_tree(child, list[i].kind == KIND_DIR, count);
-        }
-        free(list);
-        if (r == R_OK && sceIoRmdir(path) < 0)
-            r = R_FAILED;
-    } else if (sceIoRemove(path) < 0) {
-        r = R_FAILED;
+    if (depth > MAX_WALK_DEPTH)
+        return R_FAILED;
+
+    SceIoStat src_st;
+    memset(&src_st, 0, sizeof(src_st));
+    if (sceIoGetstat(src, &src_st) < 0)
+        return R_FAILED;
+    int src_dir = FIO_S_ISDIR(src_st.st_mode) != 0;
+    u64 src_size = src_st.st_size;
+    u32 src_time = pack_time_dt(&src_st.sce_st_mtime);
+
+    snprintf(W.current, sizeof(W.current), "%s", target_name);
+
+    char parent[MAX_PATH], dst[MAX_PATH];
+    parent_of(parent, sizeof(parent), src);
+
+    if (top_level && same_path(parent, dst_dir)) {
+        if (W.op == OP_MOVE && !copy_only)
+            return R_OK; /* flytt till samma mapp: redan här */
+        if (!unique_dest(dst, sizeof(dst), dst_dir, target_name, src_dir))
+            return R_FAILED;
+    } else {
+        join(dst, sizeof(dst), dst_dir, target_name);
     }
-    if (count)
-        W.done++;
-    return r;
+
+    if (src_dir && is_inside(dst_dir, src))
+        return R_FAILED; /* mapp in i sig själv */
+
+    SceIoStat dst_st;
+    memset(&dst_st, 0, sizeof(dst_st));
+    int exists = (!top_level || !same_path(parent, dst_dir)) && sceIoGetstat(dst, &dst_st) >= 0;
+    int is_replace = 0, merging = 0;
+
+    if (exists) {
+        int dst_dir_flag = FIO_S_ISDIR(dst_st.st_mode) != 0;
+        u64 dst_size = dst_st.st_size;
+        u32 dst_time = pack_time_dt(&dst_st.sce_st_mtime);
+        int kind = (!src_dir && !dst_dir_flag) ? CONF_FILE_FILE
+                 : (src_dir && dst_dir_flag)   ? CONF_DIR_DIR
+                                               : CONF_TYPE_MISMATCH;
+        int act = ask_conflict(kind, target_name, src_dir, src_size, src_time, dst_dir_flag, dst_size, dst_time);
+        if (act == ACT_CANCEL)
+            return R_CANCELLED;
+        if (act == ACT_SKIP) {
+            W.skipped_any = 1;
+            if (item_skipped)
+                *item_skipped = 1;
+            return R_OK;
+        }
+        if (act == ACT_RENAME) {
+            if (!unique_dest(dst, sizeof(dst), dst_dir, target_name, src_dir))
+                return R_FAILED;
+        } else if (act == ACT_REPLACE && kind == CONF_FILE_FILE) {
+            is_replace = 1;
+        } else if (act == ACT_MERGE && kind == CONF_DIR_DIR) {
+            merging = 1;
+        } else {
+            return R_FAILED;
+        }
+    }
+
+    if (!src_dir) {
+        if (W.op == OP_MOVE && !copy_only)
+            return move_file_to(src, dst_dir, dst, is_replace, src_size);
+        return copy_file_atomic(src, dst_dir, dst, is_replace, src_size);
+    }
+
+    /* src är en mapp */
+    if (!merging && W.op == OP_MOVE && !copy_only && same_device(src, dst_dir)) {
+        if (sceIoRename(src, dst) >= 0)
+            return R_OK;
+    }
+
+    int created_dir = 0;
+    if (!merging) {
+        if (sceIoMkdir(dst, 0777) < 0)
+            return R_FAILED;
+        created_dir = 1;
+    }
+
+    FileEntry *list = NULL;
+    int n = read_dir(src, &list);
+    if (n < 0) {
+        if (created_dir)
+            sceIoRmdir(dst);
+        return R_FAILED;
+    }
+
+    int r = R_OK, sub_skipped = 0;
+    int child_copy_only = copy_only || (created_dir && W.op == OP_MOVE);
+    for (int i = 0; i < n && r == R_OK; i++) {
+        char child_src[MAX_PATH];
+        join(child_src, sizeof(child_src), src, list[i].name);
+        int sk = 0;
+        r = process_item(child_src, dst, list[i].name, 0, child_copy_only, depth + 1, &sk);
+        if (sk)
+            sub_skipped = 1;
+    }
+    free(list);
+
+    if (r != R_OK) {
+        if (created_dir)
+            delete_tree(dst, 1, 0, 1, depth); /* städa bara mapp som vi själva skapade i denna operation */
+        return r;
+    }
+
+    if (sub_skipped && item_skipped)
+        *item_skipped = 1;
+
+    if (W.op == OP_MOVE && !copy_only) {
+        if (created_dir) {
+            /* Hela den nya mappen är färdigkopierad och verifierad -> ta bort källan */
+            if (delete_tree(src, 1, 0, 0, depth) != R_OK) {
+                W.src_keep = 1;
+                return R_SRC_KEEP;
+            }
+        } else if (!sub_skipped) {
+            /* Merge där alla barn flyttades: ta bort tom källmapp */
+            if (sceIoRmdir(src) < 0) {
+                W.src_keep = 1;
+                return R_SRC_KEEP;
+            }
+        }
+    }
+    return R_OK;
 }
 
 static int worker(SceSize args, void *argp)
@@ -331,9 +599,9 @@ static int worker(SceSize args, void *argp)
             continue;
         }
         is_dir[i] = FIO_S_ISDIR(st.st_mode) != 0;
-        /* en flytt på samma enhet är bara ett namnbyte – inget att kopiera */
+        /* en flytt på samma enhet utan konflikt är bara ett namnbyte, men vid merge/fallback räknar vi storlek */
         if (W.op != OP_MOVE || !same_device(W.src[i], W.dest))
-            tree_size(W.src[i], is_dir[i], st.st_size, &bytes, &items);
+            tree_size(W.src[i], is_dir[i], st.st_size, &bytes, &items, 0);
     }
     W.total = W.op == OP_DELETE ? items : bytes;
     u64 free_b, total_b;
@@ -343,28 +611,17 @@ static int worker(SceSize args, void *argp)
     for (int i = 0; i < W.n && r == R_OK; i++) {
         if (is_dir[i] < 0)
             continue;
-        snprintf(W.current, sizeof(W.current), "%s", base_name(W.src[i]));
+        const char *bname = base_name(W.src[i]);
+        snprintf(W.current, sizeof(W.current), "%s", bname);
         if (W.op == OP_DELETE) {
-            r = delete_tree(W.src[i], is_dir[i], 1);
+            r = delete_tree(W.src[i], is_dir[i], 1, 0, 0);
             continue;
         }
-        char parent[MAX_PATH], dst[MAX_PATH];
-        parent_of(parent, sizeof(parent), W.src[i]);
-        if (W.op == OP_MOVE && !strcmp(parent, W.dest))
-            continue; /* redan här */
-        if (is_dir[i] && is_inside(W.dest, W.src[i])) {
-            r = R_FAILED; /* en mapp in i sig själv */
-            break;
-        }
-        unique_dest(dst, sizeof(dst), W.dest, base_name(W.src[i]), is_dir[i]);
-        if (W.op == OP_MOVE && same_device(W.src[i], W.dest) && sceIoRename(W.src[i], dst) >= 0)
-            continue;
-        r = copy_tree(W.src[i], dst, is_dir[i]);
-        if (r != R_OK)
-            delete_tree(dst, is_dir[i], 0); /* städa bort det som hann kopieras */
-        else if (W.op == OP_MOVE)
-            r = delete_tree(W.src[i], is_dir[i], 0);
+        int sk = 0;
+        r = process_item(W.src[i], W.dest, bname, 1, 0, 0, &sk);
     }
+    if (r == R_OK && W.src_keep)
+        r = R_SRC_KEEP;
     W.result = r;
     W.running = 0;
     return 0;
@@ -381,10 +638,17 @@ static void start_op(int op, char **paths, int n, const char *dest)
     W.done = W.total = 0;
     W.current[0] = 0;
     W.cancel = 0;
+    W.waiting = 0;
     W.result = R_OK;
+    W.skipped_any = 0;
+    W.src_keep = 0;
+    for (int i = 0; i < 4; i++)
+        W.auto_act[i] = ACT_NONE;
+    s_conf_shown = 0;
     W.buf = op == OP_DELETE ? NULL : malloc(COPY_BUF);
+    W.sema = sceKernelCreateSema("psp5_fconf", 0, 0, 1, NULL);
     W.running = 1;
-    W.thread = (op == OP_DELETE || W.buf)
+    W.thread = ((op == OP_DELETE || W.buf) && W.sema >= 0)
                    ? sceKernelCreateThread("psp5_files", worker, 0x28, 0x10000, PSP_THREAD_ATTR_USER, NULL)
                    : -1;
     if (W.thread >= 0 && sceKernelStartThread(W.thread, 0, NULL) < 0) {
@@ -393,8 +657,13 @@ static void start_op(int op, char **paths, int n, const char *dest)
     }
     if (W.thread < 0) { /* ingen tråd: ingenting har ändrats */
         W.running = 0;
+        if (W.sema >= 0) {
+            sceKernelDeleteSema(W.sema);
+            W.sema = -1;
+        }
         for (int i = 0; i < W.n; i++)
             free(W.src[i]);
+        W.n = 0;
         free(W.buf);
         W.buf = NULL;
         toast(L(S_F_FAILED));
@@ -407,9 +676,17 @@ static void stop_op(void)
     if (W.thread < 0)
         return;
     W.cancel = 1;
+    if (W.sema >= 0)
+        sceKernelSignalSema(W.sema, 1);
     sceKernelWaitThreadEnd(W.thread, NULL);
     sceKernelDeleteThread(W.thread);
     W.thread = -1;
+    if (W.sema >= 0) {
+        sceKernelDeleteSema(W.sema);
+        W.sema = -1;
+    }
+    W.waiting = 0;
+    s_conf_shown = 0;
     for (int i = 0; i < W.n; i++)
         free(W.src[i]);
     W.n = 0;
@@ -655,6 +932,10 @@ static void open_menu(int kind)
             add_act(A_DELETE);
         }
         add_act(A_NEWDIR);
+    } else if (kind == M_RENAME_CONFLICT) {
+        add_act(A_RENAME_REPLACE);
+        add_act(A_CANCEL);
+        s_menu_sel = 1; /* Avbryt är förvalt */
     } else {
         add_act(A_DELETE_YES);
         add_act(A_CANCEL);
@@ -666,13 +947,14 @@ static void open_menu(int kind)
 static const char *act_label(int act, char *buf, int size)
 {
     switch (act) {
-    case A_PASTE:      snprintf(buf, size, "%s (%d)", L(S_F_PASTE), s_clip_n); return buf;
-    case A_COPY:       return L(S_F_COPY);
-    case A_MOVE:       return L(S_F_MOVE);
-    case A_RENAME:     return L(S_F_RENAME);
+    case A_PASTE:          snprintf(buf, size, "%s (%d)", L(S_F_PASTE), s_clip_n); return buf;
+    case A_COPY:           return L(S_F_COPY);
+    case A_MOVE:           return L(S_F_MOVE);
+    case A_RENAME:         return L(S_F_RENAME);
     case A_DELETE:
-    case A_DELETE_YES: return L(S_F_DELETE);
-    case A_NEWDIR:     return L(S_F_NEWDIR);
+    case A_DELETE_YES:     return L(S_F_DELETE);
+    case A_NEWDIR:         return L(S_F_NEWDIR);
+    case A_RENAME_REPLACE: return L(S_F_REPLACE);
     }
     return L(S_F_CANCEL);
 }
@@ -680,6 +962,8 @@ static const char *act_label(int act, char *buf, int size)
 /* Det menyn gäller: det valda namnet eller "3 objekt" */
 static const char *menu_title(char *buf, int size)
 {
+    if (s_menu == M_RENAME_CONFLICT)
+        return L(S_F_FILE_EXISTS);
     int n = marked_count();
     if (n > 1) {
         snprintf(buf, size, L(S_F_ITEMS), n);
@@ -707,14 +991,43 @@ static void rename_selected(void)
     }
     join(from, sizeof(from), s_path, s_items[idx].name);
     join(to, sizeof(to), s_path, name);
-    SceIoStat st;
-    if (strcasecmp(name, s_items[idx].name) != 0 && sceIoGetstat(to, &st) >= 0) {
-        /* PSP:ns FAT-drivrutin byter inte namn över en befintlig fil (t.ex. VBOOT_ARKMENU.PBP → VBOOT.PBP, issue #22) */
-        if (FIO_S_ISDIR(st.st_mode) || sceIoRemove(to) < 0) {
+
+    /* Bara skiftlägesändring på samma fil/mapp (FAT är skiftlägesokänsligt) */
+    if (!strcasecmp(name, s_items[idx].name)) {
+        char bak[MAX_PATH];
+        if (!temp_sibling(bak, sizeof(bak), s_path, ".psp5bak_") || sceIoRename(from, bak) < 0) {
             toast(L(S_F_FAILED));
             sound_play(SND_ERROR);
             return;
         }
+        if (sceIoRename(bak, to) < 0) {
+            sceIoRename(bak, from);
+            toast(L(S_F_FAILED));
+            sound_play(SND_ERROR);
+            return;
+        }
+        load(name, s_sel);
+        return;
+    }
+
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(to, &st) >= 0) {
+        /* Tillåt aldrig att ersätta en mapp eller ersätta en fil med en mapp */
+        if (s_items[idx].kind == KIND_DIR || FIO_S_ISDIR(st.st_mode)) {
+            toast(L(S_F_TYPE_CONFLICT));
+            sound_play(SND_ERROR);
+            return;
+        }
+        snprintf(s_ren_from, sizeof(s_ren_from), "%s", from);
+        snprintf(s_ren_to, sizeof(s_ren_to), "%s", to);
+        snprintf(s_ren_name, sizeof(s_ren_name), "%s", name);
+        s_ren_src_size = s_items[idx].bytes;
+        s_ren_dst_size = st.st_size;
+        s_ren_src_time = s_items[idx].mtime;
+        s_ren_dst_time = pack_time_dt(&st.sce_st_mtime);
+        open_menu(M_RENAME_CONFLICT);
+        return;
     }
     if (sceIoRename(from, to) < 0) {
         toast(L(S_F_FAILED));
@@ -735,7 +1048,8 @@ static void new_folder(void)
         return;
     }
     join(path, sizeof(path), s_path, name);
-    if (sceIoMkdir(path, 0777) < 0) {
+    SceIoStat st;
+    if (sceIoGetstat(path, &st) >= 0 || sceIoMkdir(path, 0777) < 0) {
         toast(L(S_F_FAILED));
         sound_play(SND_ERROR);
         return;
@@ -764,6 +1078,24 @@ static void run_act(int act)
     case A_RENAME:
         rename_selected();
         break;
+    case A_RENAME_REPLACE: {
+        char bak[MAX_PATH];
+        if (!temp_sibling(bak, sizeof(bak), s_path, ".psp5bak_") || sceIoRename(s_ren_to, bak) < 0) {
+            toast(L(S_F_FAILED));
+            sound_play(SND_ERROR);
+            break;
+        }
+        if (sceIoRename(s_ren_from, s_ren_to) < 0) {
+            sceIoRename(bak, s_ren_to); /* rollback */
+            toast(L(S_F_FAILED));
+            sound_play(SND_ERROR);
+            break;
+        }
+        sceIoRemove(bak);
+        sound_play(SND_TOAST);
+        load(s_ren_name, s_sel);
+        break;
+    }
     case A_NEWDIR:
         new_folder();
         break;
@@ -985,7 +1317,7 @@ static void text_view_draw(float a)
     } else {
         gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
     }
-    theme_button(t, x + 6.5f, y, 6.5f, BTN_CIRCLE, 0, fade(LIGHT, a), fade(DARK, a));
+    theme_button(t, x + 6.5f, y, 6.5f, back_btn(), 0, fade(LIGHT, a), fade(DARK, a));
     text_draw(x + 18, y + 4.5f, 0.56f, 0, fade(THEME_INK(t, text, TEXT_MAIN), a), ALIGN_LEFT, back);
 }
 
@@ -1017,7 +1349,7 @@ static void view_update(const UiInput *in)
             break;
         }
     }
-    if (in->pressed & PSP_CTRL_CROSS) {
+    if (in->pressed & ok_mask()) {
         char path[MAX_PATH];
         join(path, sizeof(path), s_path, s_items[s_sel].name);
         if (strlen(path) >= sizeof(g_wallpaper)) { /* får inte plats i psp5.cfg */
@@ -1029,7 +1361,7 @@ static void view_update(const UiInput *in)
         config_save(g_data_dir);
         toast(L(S_WALLPAPER_SET));
         sound_play(SND_TOAST);
-    } else if (in->pressed & PSP_CTRL_CIRCLE) {
+    } else if (in->pressed & back_mask()) {
         s_viewing = 0;
         tex_free(s_view);
         s_view = NULL;
@@ -1050,10 +1382,10 @@ static void view_draw(void)
     text_ellipsis(name, sizeof(name), s_items[s_sel].shown, 0.6f, SCREEN_W - 2 * LIST_X);
     text_draw(LIST_X, 26, 0.6f, 0, fg, ALIGN_LEFT, name);
     float x = LIST_X, y = 250;
-    theme_button(t, x + 6.5f, y, 6.5f, BTN_CROSS, 1, LIGHT, DARK);
+    theme_button(t, x + 6.5f, y, 6.5f, ok_btn(), 1, LIGHT, DARK);
     text_draw(x + 17, y + 4.5f, 0.54f, 0, fg, ALIGN_LEFT, L(S_SET_WALLPAPER));
     x += 17 + text_width(0.54f, 0, L(S_SET_WALLPAPER)) + 14;
-    theme_button(t, x + 6.5f, y, 6.5f, BTN_CIRCLE, 1, LIGHT, DARK);
+    theme_button(t, x + 6.5f, y, 6.5f, back_btn(), 1, LIGHT, DARK);
     text_draw(x + 17, y + 4.5f, 0.54f, 0, fg, ALIGN_LEFT, L(S_BACK));
     float l[6] = { SCREEN_W - LIST_X - 22, y, SCREEN_W - LIST_X - 16, y - 4.5f, SCREEN_W - LIST_X - 16, y + 4.5f };
     gfx_fan(SCREEN_W - LIST_X - 19, y, l, 3, arrow);
@@ -1061,8 +1393,61 @@ static void view_draw(void)
     gfx_fan(SCREEN_W - LIST_X - 3, y, r, 3, arrow);
 }
 
+static int conflict_actions(int kind, int out[4])
+{
+    int n = 0;
+    if (kind == CONF_FILE_FILE) {
+        out[n++] = ACT_REPLACE;
+        out[n++] = ACT_SKIP;
+        out[n++] = ACT_RENAME;
+        out[n++] = ACT_CANCEL;
+    } else if (kind == CONF_DIR_DIR) {
+        out[n++] = ACT_MERGE;
+        out[n++] = ACT_RENAME;
+        out[n++] = ACT_SKIP;
+        out[n++] = ACT_CANCEL;
+    } else {
+        out[n++] = ACT_RENAME;
+        out[n++] = ACT_SKIP;
+        out[n++] = ACT_CANCEL;
+    }
+    return n;
+}
+
+static const char *conflict_act_label(int act)
+{
+    switch (act) {
+    case ACT_REPLACE: return L(S_F_REPLACE);
+    case ACT_MERGE:   return L(S_F_MERGE);
+    case ACT_SKIP:    return L(S_F_SKIP);
+    case ACT_RENAME:  return L(S_F_KEEP_BOTH);
+    }
+    return L(S_F_CANCEL);
+}
+
+static void fmt_conflict_meta(char *out, int size, const char *tag, int is_dir, u64 bytes, u32 packed_time)
+{
+    char tbuf[32] = "";
+    if (packed_time)
+        dt_text_stored(tbuf, sizeof(tbuf), packed_time);
+    if (is_dir) {
+        if (tbuf[0])
+            snprintf(out, size, "%s: %s", tag, tbuf);
+        else
+            snprintf(out, size, "%s", tag);
+    } else {
+        char sbuf[24];
+        fmt_size(sbuf, sizeof(sbuf), bytes);
+        if (tbuf[0])
+            snprintf(out, size, "%s: %s · %s", tag, sbuf, tbuf);
+        else
+            snprintf(out, size, "%s: %s", tag, sbuf);
+    }
+}
+
 void files_open(void)
 {
+    s_confirm_circle = sys_confirm_is_circle();
     s_ndev = 0;
     if (!sys_ms_is_ef() && dev_present("ms0:/"))
         s_devs[s_ndev++] = "ms0:/";
@@ -1070,18 +1455,19 @@ void files_open(void)
         s_devs[s_ndev++] = "ef0:/";
     s_open = s_menu_anim = s_toast_time = 0;
     s_menu = M_NONE;
+    s_conf_shown = 0;
     s_repeat_dir = 0;
     enter(s_ndev == 1 ? s_devs[0] : "", NULL);
 }
 
 static void finish_op(void)
 {
-    int op = W.op, r = W.result;
+    int op = W.op, r = W.result, skipped = W.skipped_any;
     stop_op();
-    if (op == OP_MOVE && r == R_OK)
+    if (op == OP_MOVE && r == R_OK && !skipped)
         clear_clip();
-    static const StrId msg[] = { S_F_DONE, S_F_FAILED, S_F_NO_SPACE, S_F_CANCELLED };
-    toast(L(msg[r]));
+    static const StrId msg[] = { S_F_DONE, S_F_FAILED, S_F_NO_SPACE, S_F_CANCELLED, S_F_SRC_KEEP };
+    toast(L(msg[r >= 0 && r < 5 ? r : R_FAILED]));
     sound_play(r == R_OK ? SND_TOAST : SND_ERROR);
     char keep[256] = "";
     if (s_count)
@@ -1091,17 +1477,56 @@ static void finish_op(void)
 
 int files_update(const UiInput *in, float dt)
 {
+    s_confirm_circle = sys_confirm_is_circle();
     s_time += dt;
     s_open = clampf(s_open + dt * 4, 0, 1);
     s_menu_anim = clampf(s_menu_anim + (s_menu ? 7 : -7) * dt, 0, 1);
     if (s_toast_time > 0)
         s_toast_time -= dt;
 
-    if (W.thread >= 0) { /* åtgärd pågår: bara ○ (avbryt) */
-        if (!W.running)
+    if (W.thread >= 0) {
+        if (!W.running) {
             finish_op();
-        else if (in->pressed & PSP_CTRL_CIRCLE)
-            W.cancel = 1;
+        } else if (W.waiting) {
+            int acts[4];
+            int n_acts = conflict_actions(W.conf_kind, acts);
+            if (!s_conf_shown) {
+                s_conf_shown = 1;
+                s_conf_sel = 0;
+                s_conf_apply = 0;
+                sound_play(SND_OPEN);
+            }
+            int move = vertical(in, dt);
+            if (move && n_acts > 0) {
+                int next = (s_conf_sel + move + n_acts) % n_acts;
+                if (next != s_conf_sel)
+                    sound_play(SND_MOVE);
+                s_conf_sel = next;
+            }
+            if (in->pressed & PSP_CTRL_SQUARE) {
+                s_conf_apply ^= 1;
+                sound_play(s_conf_apply ? SND_TOGGLE : SND_TOGGLE_OFF);
+            } else if (in->pressed & ok_mask()) {
+                W.decision = acts[s_conf_sel];
+                W.apply_all = (W.decision != ACT_CANCEL) ? s_conf_apply : 0;
+                if (W.decision == ACT_CANCEL)
+                    W.cancel = 1;
+                s_conf_shown = 0;
+                sound_play(W.decision == ACT_CANCEL ? SND_CLOSE : SND_SELECT);
+                sceKernelSignalSema(W.sema, 1);
+            } else if (in->pressed & back_mask()) {
+                W.decision = ACT_CANCEL;
+                W.apply_all = 0;
+                W.cancel = 1;
+                s_conf_shown = 0;
+                sound_play(SND_CLOSE);
+                sceKernelSignalSema(W.sema, 1);
+            }
+        } else {
+            s_conf_shown = 0;
+            if (in->pressed & back_mask())
+                W.cancel = 1;
+        }
         return 0;
     }
 
@@ -1121,9 +1546,9 @@ int files_update(const UiInput *in, float dt)
                 sound_play(SND_MOVE);
             s_menu_sel = next;
         }
-        if (in->pressed & PSP_CTRL_CROSS)
+        if (in->pressed & ok_mask())
             run_act(s_menu_act[s_menu_sel]);
-        else if (in->pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
+        else if (in->pressed & (back_mask() | PSP_CTRL_TRIANGLE)) {
             s_menu = M_NONE;
             sound_play(SND_CLOSE);
         }
@@ -1149,7 +1574,7 @@ int files_update(const UiInput *in, float dt)
     s_scroll += (s_top - s_scroll) * clampf(dt * 16, 0, 1);
 
     FileEntry *e = s_count ? &s_items[s_sel] : NULL;
-    if (in->pressed & PSP_CTRL_CROSS) {
+    if (in->pressed & ok_mask()) {
         if (e && e->kind != KIND_FILE) {
             char path[MAX_PATH];
             join(path, sizeof(path), s_path, e->name);
@@ -1185,7 +1610,7 @@ int files_update(const UiInput *in, float dt)
             s_sel++;
     } else if ((in->pressed & PSP_CTRL_TRIANGLE) && s_path[0]) {
         open_menu(M_OPTIONS);
-    } else if (in->pressed & PSP_CTRL_CIRCLE) {
+    } else if (in->pressed & back_mask()) {
         if (!go_up())
             return 1;
         sound_play(SND_BACK);
@@ -1251,12 +1676,12 @@ static void draw_hints(const Theme *t, float a)
     struct { int btn; StrId text; } h[4];
     int n = 0;
     if (!s_path[0] || (s_count && can_open(&s_items[s_sel])))
-        h[n++] = (typeof(h[0])){ BTN_CROSS, S_F_OPEN };
+        h[n++] = (typeof(h[0])){ ok_btn(), S_F_OPEN };
     if (s_path[0]) {
         h[n++] = (typeof(h[0])){ BTN_SQUARE, S_F_MARK };
         h[n++] = (typeof(h[0])){ BTN_TRIANGLE, S_OPTIONS };
     }
-    h[n++] = (typeof(h[0])){ BTN_CIRCLE, S_BACK };
+    h[n++] = (typeof(h[0])){ back_btn(), S_BACK };
     float w = -14;
     for (int i = 0; i < n; i++)
         w += 18 + text_width(0.56f, 0, L(h[i].text)) + 14;
@@ -1360,6 +1785,37 @@ static void draw_menu(const Theme *t)
     if (a <= 0)
         return;
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * a)));
+    if (s_menu == M_RENAME_CONFLICT) {
+        float w = 316, h = 152, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2 + (1 - a) * 10;
+        gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, (int)(150 * a)));
+        if (t->ink) {
+            gfx_round_rect(x, y, w, h, 9, fade(t->ink->border, a));
+            gfx_round_rect(x + 1, y + 1, w - 2, h - 2, 8.2f, fade(t->ink->panel, a));
+        } else {
+            gfx_round_rect(x, y, w, h, 9, fade(PANEL, a));
+        }
+        text_draw(x + 14, y + 20, 0.58f, 0, fade(THEME_INK(t, text, TEXT_MAIN), a), ALIGN_LEFT, L(S_F_FILE_EXISTS));
+        char nm[96], l1[112], l2[112];
+        text_ellipsis(nm, sizeof(nm), s_ren_name, 0.52f, w - 28);
+        text_draw(x + 14, y + 36, 0.52f, 0, fade(t->accent, a), ALIGN_LEFT, nm);
+        fmt_conflict_meta(l1, sizeof(l1), L(S_F_SOURCE), 0, s_ren_src_size, s_ren_src_time);
+        fmt_conflict_meta(l2, sizeof(l2), L(S_F_EXISTING), 0, s_ren_dst_size, s_ren_dst_time);
+        text_draw(x + 14, y + 53, 0.45f, 0, fade(THEME_INK(t, text_dim, TEXT_DIM), a), ALIGN_LEFT, l1);
+        text_draw(x + 14, y + 68, 0.45f, 0, fade(THEME_INK(t, text_dim, TEXT_DIM), a), ALIGN_LEFT, l2);
+        for (int i = 0; i < s_menu_n; i++) {
+            float ry = y + 80 + i * MENU_ROW;
+            int act = s_menu_act[i];
+            u32 col = act == A_RENAME_REPLACE ? THEME_INK(t, err, DANGER) : THEME_INK(t, text, TEXT_MAIN);
+            if (i == s_menu_sel) {
+                theme_sel_box(t, x + 8, ry, w - 16, MENU_ROW - 2, 7, fade(LIGHT, 0.95f * a));
+                col = act == A_RENAME_REPLACE ? THEME_INK(t, err, RGBA(200, 50, 40, 255)) : THEME_INK(t, sel_ink, DARK);
+            }
+            char lb[64];
+            const char *label = act_label(act, lb, sizeof(lb));
+            text_draw(x + 18, ry + 17, text_fit(0.58f, 0.45f, 0, w - 36, label), 0, fade(col, a), ALIGN_LEFT, label);
+        }
+        return;
+    }
     float h = 30 + s_menu_n * MENU_ROW + 8;
     float x = SCREEN_W - 24 - MENU_W, y = 238 - h + (1 - a) * 10;
     gfx_glow(x, y, MENU_W, h, 10, RGBA(0, 0, 0, (int)(150 * a)));
@@ -1386,10 +1842,68 @@ static void draw_menu(const Theme *t)
     }
 }
 
+static void draw_conflict(const Theme *t)
+{
+    int acts[4];
+    int n_acts = conflict_actions(W.conf_kind, acts);
+    float row_h = 24.0f;
+    float w = 332.0f, h = 104.0f + n_acts * row_h;
+    float x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2;
+
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 140));
+    gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, 160));
+    if (t->ink) {
+        gfx_round_rect(x, y, w, h, 9, t->ink->border);
+        gfx_round_rect(x + 1, y + 1, w - 2, h - 2, 8.2f, t->ink->panel);
+    } else {
+        gfx_round_rect(x, y, w, h, 9, PANEL);
+    }
+
+    StrId tid = W.conf_kind == CONF_FILE_FILE ? S_F_FILE_EXISTS
+              : W.conf_kind == CONF_DIR_DIR   ? S_F_DIR_EXISTS
+                                              : S_F_TYPE_CONFLICT;
+    text_draw(x + 14, y + 20, 0.58f, 0, THEME_INK(t, text, TEXT_MAIN), ALIGN_LEFT, L(tid));
+
+    char nm[96], l1[112], l2[112];
+    text_ellipsis(nm, sizeof(nm), W.conf_name, 0.52f, w - 28);
+    text_draw(x + 14, y + 36, 0.52f, 0, t->accent, ALIGN_LEFT, nm);
+
+    fmt_conflict_meta(l1, sizeof(l1), L(S_F_SOURCE), W.conf_src_dir, W.conf_src_size, W.conf_src_time);
+    fmt_conflict_meta(l2, sizeof(l2), L(S_F_EXISTING), W.conf_dst_dir, W.conf_dst_size, W.conf_dst_time);
+    text_draw(x + 14, y + 52, 0.45f, 0, THEME_INK(t, text_dim, TEXT_DIM), ALIGN_LEFT, l1);
+    text_draw(x + 14, y + 66, 0.45f, 0, THEME_INK(t, text_dim, TEXT_DIM), ALIGN_LEFT, l2);
+
+    for (int i = 0; i < n_acts; i++) {
+        float ry = y + 74 + i * row_h;
+        int act = acts[i];
+        u32 col = act == ACT_REPLACE ? THEME_INK(t, err, DANGER) : THEME_INK(t, text, TEXT_MAIN);
+        if (i == s_conf_sel) {
+            theme_sel_box(t, x + 8, ry, w - 16, row_h - 2, 7, LIGHT);
+            col = act == ACT_REPLACE ? THEME_INK(t, err, RGBA(200, 50, 40, 255)) : THEME_INK(t, sel_ink, DARK);
+        }
+        const char *label = conflict_act_label(act);
+        text_draw(x + 18, ry + 16, text_fit(0.56f, 0.44f, 0, w - 36, label), 0, col, ALIGN_LEFT, label);
+    }
+
+    float fy = y + h - 14;
+    if (s_conf_apply) {
+        draw_check(x + 20, fy, t, 1.0f);
+    } else {
+        u32 ring = t->ink ? COLOR_ALPHA(t->ink->shadow, 175) : RGBA(255, 255, 255, 90);
+        gfx_ring(x + 14, fy - 6, 12, 12, 6, ring);
+    }
+    theme_button(t, x + 36, fy, 6.0f, BTN_SQUARE, 0, LIGHT, DARK);
+    text_draw(x + 46, fy + 4.0f, 0.48f, 0, THEME_INK(t, text, TEXT_MAIN), ALIGN_LEFT, L(S_F_APPLY_ALL));
+}
+
 static void draw_progress(const Theme *t)
 {
     if (W.thread < 0)
         return;
+    if (W.waiting) {
+        draw_conflict(t);
+        return;
+    }
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 120));
     float w = 300, h = 96, x = (SCREEN_W - w) / 2, y = 84;
     gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, 150));
@@ -1411,7 +1925,7 @@ static void draw_progress(const Theme *t)
     char pct[8];
     snprintf(pct, sizeof(pct), "%d %%", (int)(f * 100));
     text_draw(x + w - 16, y + 26, 0.56f, 0, THEME_INK(t, text_dim, TEXT_DIM), ALIGN_RIGHT, pct);
-    theme_button(t, x + 22.5f, y + h - 16, 6.5f, BTN_CIRCLE, 0, LIGHT, DARK);
+    theme_button(t, x + 22.5f, y + h - 16, 6.5f, back_btn(), 0, LIGHT, DARK);
     text_draw(x + 34, y + h - 11.5f, 0.54f, 0, THEME_INK(t, text, TEXT_MAIN), ALIGN_LEFT, L(S_F_CANCEL));
 }
 
