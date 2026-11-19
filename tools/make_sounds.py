@@ -16,32 +16,32 @@ SOUND_DIR = os.path.join(ROOT, "Deck-UI_Sound")
 OUT_HEADER = os.path.join(ROOT, "src", "deck_sounds.h")
 TARGET_RATE = 44100
 
-# (C enum suffix, FLAC filename, target playback peak [0.0 - 0.60])
+# (C enum suffix, FLAC filename, target playback peak [0.0 - 0.88])
 SOUND_MAP = [
-    ("MOVE",       "Deck UI Navigation.flac",          0.26),
-    ("TILE",       "Deck UI Tile Scroll.flac",         0.28),
-    ("BUMPER",     "Deck UI Bumper End 02.flac",       0.26),
-    ("SWIPE",      "Deck UI Tab Transition 01.flac",   0.24),
-    ("SELECT",     "Confirmation Positive.flac",       0.32),
-    ("BACK",       "Deck UI Misc 10.flac",             0.26),
-    ("TOGGLE",     "Deck UI Switch Toggle On.flac",    0.30),
-    ("TOGGLE_OFF", "Deck UI Switch Toggle Off.flac",   0.30),
-    ("SLIDER_UP",  "Deck UI Slider Up.flac",           0.26),
-    ("SLIDER_DN",  "Deck UI Slider Down.flac",         0.26),
-    ("OPEN",       "Deck UI Show Modal.flac",          0.28),
-    ("CLOSE",      "Deck UI Hide Modal.flac",          0.28),
-    ("SIDE_IN",    "Deck UI Side Menu Fly In.flac",    0.28),
-    ("SIDE_OUT",   "Deck UI Side Menu Fly Out.flac",   0.28),
-    ("DETAIL_IN",  "Deck UI Into Game Detail.flac",    0.30),
-    ("DETAIL_OUT", "Deck UI Out Of Game Detail.flac",  0.28),
-    ("TYPE",       "Deck UI Typing.flac",              0.24),
-    ("TOAST",      "Deck UI Toast.flac",               0.32),
-    ("MSG_TOAST",  "Deck UI Message Toast.flac",       0.30),
-    ("VOLUME",     "Deck UI Volume.flac",              0.30),
-    ("MUSIC_ACT",  "Deck UI Misc 01.flac",             0.24),
-    ("LAUNCH",     "Deck UI Launch Game.flac",         0.38),
-    ("ERROR",      "Confirmation Negative.flac",       0.30),
-    ("BOOT",       "Steam Os Startup.flac",            0.42),
+    ("MOVE",       "Deck UI Navigation.flac",          0.68),
+    ("TILE",       "Deck UI Tile Scroll.flac",         0.76),
+    ("BUMPER",     "Deck UI Bumper End 02.flac",       0.66),
+    ("SWIPE",      "Deck UI Tab Transition 01.flac",   0.68),
+    ("SELECT",     "Confirmation Positive.flac",       0.74),
+    ("BACK",       "Deck UI Misc 10.flac",             0.62),
+    ("TOGGLE",     "Deck UI Switch Toggle On.flac",    0.76),
+    ("TOGGLE_OFF", "Deck UI Switch Toggle Off.flac",   0.82),
+    ("SLIDER_UP",  "Deck UI Slider Up.flac",           0.78),
+    ("SLIDER_DN",  "Deck UI Slider Down.flac",         0.74),
+    ("OPEN",       "Deck UI Show Modal.flac",          0.78),
+    ("CLOSE",      "Deck UI Hide Modal.flac",          0.78),
+    ("SIDE_IN",    "Deck UI Side Menu Fly In.flac",    0.88),
+    ("SIDE_OUT",   "Deck UI Side Menu Fly Out.flac",   0.88),
+    ("DETAIL_IN",  "Deck UI Into Game Detail.flac",    0.80),
+    ("DETAIL_OUT", "Deck UI Out Of Game Detail.flac",  0.80),
+    ("TYPE",       "Deck UI Typing.flac",              0.74),
+    ("TOAST",      "Deck UI Toast.flac",               0.72),
+    ("MSG_TOAST",  "Deck UI Message Toast.flac",       0.74),
+    ("VOLUME",     "Deck UI Volume.flac",              0.72),
+    ("MUSIC_ACT",  "Deck UI Misc 01.flac",             0.68),
+    ("LAUNCH",     "Deck UI Launch Game.flac",         0.85),
+    ("ERROR",      "Confirmation Negative.flac",       0.74),
+    ("BOOT",       "Steam Os Startup.flac",            0.86),
 ]
 
 IMA_INDEX_TABLE = [
@@ -316,10 +316,12 @@ def resample_linear(samples, src_rate, dst_rate):
 
 
 def trim_and_normalize(samples, rate, target_peak):
-    thr = 40  # ~-58 dB threshold
     n = len(samples)
+    peak_raw = max((abs(x) for x in samples), default=0)
+    lead_thr = max(40, int(peak_raw * 0.025))
+    thr = 40  # ~-58 dB threshold for smooth reverb tail
     first = 0
-    while first < n and abs(samples[first]) < thr:
+    while first < n and abs(samples[first]) < lead_thr:
         first += 1
     last = n - 1
     while last > first and abs(samples[last]) < thr:
@@ -332,7 +334,11 @@ def trim_and_normalize(samples, rate, target_peak):
     if not seg:
         return [0], 256
 
-    # Smooth 8ms fade-out at end to prevent any stop-click
+    # Smooth 3ms fade-in (if trimmed mid-attack) and 8ms fade-out to prevent clicks
+    if first > pre:
+        in_n = min(len(seg), int(0.003 * rate))
+        for i in range(in_n):
+            seg[i] = int(round(seg[i] * (i + 1) / max(1, in_n)))
     fade_n = min(len(seg), int(0.008 * rate))
     for i in range(fade_n):
         idx = len(seg) - fade_n + i
