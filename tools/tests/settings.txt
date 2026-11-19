@@ -36,6 +36,8 @@ wait 6
 press down
 wait 6
 press down
+wait 6
+press down
 wait 20
 shot 05-system-scrolled
 press circle

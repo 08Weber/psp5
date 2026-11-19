@@ -80,5 +80,7 @@ void text_draw(float x, float y, float size, int bold, u32 color, int align, con
 float text_fit(float size, float min_size, int bold, float max_w, const char *s);
 /* Kortar texten med "..." tills den ryms inom max_w */
 void text_ellipsis(char *out, int out_size, const char *s, float size, float max_w);
+/* Radbryter texten till högst max_lines rader (var och en högst 95 byte) inom max_w. */
+int text_wrap(const char *s, float size, float max_w, char lines[][96], int max_lines);
 
 #endif

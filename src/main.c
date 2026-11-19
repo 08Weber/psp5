@@ -27,6 +27,8 @@
 #include "osd.h"
 #include "files.h"
 #include "preview.h"
+#include "info.h"
+#include "lastplayed.h"
 
 PSP_MODULE_INFO("PSP5_REMAKE", PSP_MODULE_USER, 0, 1); /* [medhatk] Renamed module info for PSP5 REMAKE */
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -409,6 +411,7 @@ static int run_action(int action, EntryList *list, Ui *ui)
         if (launch_umd_video(iso) < 0) {
             start_confirmed(); /* psp5 fortsätter som vanligt */
             ui_toast(ui, L(S_VIDEO_FAILED));
+            sound_play(SND_ERROR);
             return 0;
         }
     }
@@ -541,6 +544,7 @@ int main(int argc, char *argv[])
     int failed = start_begin(); /* först av allt – före allt som kan hänga sig */
     art_init(DATA_DIR);
     config_load(DATA_DIR); /* ljud och språk */
+    lastplayed_load(DATA_DIR); /* when psp5 last started each game (Information) */
     sys_init(s_self);
     osd_init(); /* volymindikatorn behöver ARK */
     sys_home_init(); /* HOME öppnar Control Center (behöver ARK) */
@@ -566,14 +570,17 @@ int main(int argc, char *argv[])
     EntryList list = { 0 };
     Ui ui;
     app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
-    if (s_safe)
+    if (s_safe) {
         ui_toast(&ui, L(S_SAFE_START));
+        sound_play(SND_MSG_TOAST);
+    }
 #ifdef PSP5_TEST
     sound_dump("ms0:/PSP5/shots/sounds"); /* testbygge: ljuden som WAV */
 #endif
 
     s_sleeping = s_resumed = 0; /* viloläge under startskärmen räknas inte */
     int in_settings = 0;
+    int in_info = 0; /* the Game / App Information screen is open */
     unsigned char hide_dupes = 0, all_games = 0; /* hur flikarna byggdes när inställningarna öppnades */
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
@@ -591,7 +598,7 @@ int main(int argc, char *argv[])
             dark = 0;
             idle = 0;
             if (g_boot_anim && ui.launch < 0 && !s_safe) {
-                sleep_and_wake(&ui, in_settings);
+                sleep_and_wake(&ui, in_settings || in_info);
                 old = ~0u; /* knappen som hoppade över startskärmen räknas inte */
                 last = sceKernelGetSystemTimeWide();
             } else {
@@ -653,8 +660,10 @@ int main(int argc, char *argv[])
             if (action == SA_CLOSE) {
                 in_settings = 0;
                 preview_pause(0);
-                if (settings_commit())
+                if (settings_commit()) {
                     ui_toast(&ui, L(S_SAVED));
+                    sound_play(SND_TOAST);
+                }
                 ui.confirm_circle = sys_confirm_is_circle();
                 if (g_hide_dupes != hide_dupes || g_all_games != all_games)
                     ui_relist(&ui, 0, 0); /* bygg om Spel och Spelbiblioteket */
@@ -685,6 +694,21 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        /* Game / App Information: the list stands still while it is open (no UMD refresh), pictures keep loading */
+        if (in_info) {
+            UiInput none = { 0, 0, 128, 128 };
+            int close = info_update(&in, dt);
+            ui_update(&ui, &none, dt);
+            if (close) {
+                info_close();
+                preview_pause(0);
+                in_info = 0;
+                ui_draw(&ui);
+            } else {
+                info_draw();
+            }
+            continue;
+        }
         if (ui.launch < 0)
             umd_refresh(&list, &ui);
         int action = ui_update(&ui, &in, dt);
@@ -698,7 +722,7 @@ int main(int argc, char *argv[])
             settings_open();
             /* efter inläsningen (typsnitt från flash0, ARK:s filer): tung läsning medan ljudet
              * spelade gav ett skrapande ljud i ~0,1 s (issue #2) */
-            sound_play(SND_OPEN);
+            sound_play(SND_SIDE_IN);
             in_settings = 1;
             continue;
         }
@@ -732,8 +756,16 @@ int main(int argc, char *argv[])
             old = in.held;
             continue;
         }
+        if (action == UI_INFO && ui_selected(&ui) >= 0) {
+            preview_pause(1);
+            info_open(&list.items[ui_selected(&ui)], ui_selected(&ui), sys_confirm_is_circle());
+            sound_play(SND_DETAIL_IN);
+            in_info = 1;
+            continue;
+        }
         if (action == UI_LAUNCH && ui_selected(&ui) >= 0) {
             Entry chosen = list.items[ui_selected(&ui)];
+            lastplayed_note_launch(&chosen); /* shown as "Last played" in Information */
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             start_confirmed();    /* ett spel som hänger sig räknas inte mot psp5 */
@@ -743,6 +775,7 @@ int main(int argc, char *argv[])
             sceIoRemove(INGAME_MARK);
             app_start(&list, &ui, 0);
             ui_toast(&ui, L(S_LAUNCH_FAILED));
+            sound_play(SND_ERROR);
             continue;
         }
         ui_draw(&ui);
@@ -751,6 +784,8 @@ int main(int argc, char *argv[])
     /* HOME → Avsluta: till XMB (även när psp5 är ARK:s launcher) */
     if (in_settings)
         settings_commit();
+    if (in_info)
+        info_close();
     app_stop(&list, &ui);
     sceIoRemove(START_MARK);
     sys_exit_xmb();

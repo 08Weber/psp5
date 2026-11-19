@@ -42,7 +42,7 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_SUBPAGE, IT_DATETIME } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_SUBPAGE, IT_DATETIME, IT_STORAGE_BAR } ItemType;
 
 typedef struct {
     const char *label;
@@ -53,6 +53,7 @@ typedef struct {
     int action;                  /* ACTION: SA_*, THEME: temats index, SUBPAGE: SUB_* */
     int confirm;                 /* ACTION: kräver ✕ två gånger */
     char info[48];               /* INFO-värde / undertext */
+    float bar_fill;              /* IT_STORAGE_BAR: 0..1 */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
     int immediate;               /* systeminställning som gäller direkt (inget att spara) */
@@ -67,10 +68,10 @@ typedef struct {
 } Category;
 
 enum { CAT_PSP5, CAT_THEME, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
-enum { SUB_NONE, SUB_DATETIME, SUB_INFO };
+enum { SUB_NONE, SUB_DATETIME, SUB_INFO, SUB_STORAGE, SUB_COUNT };
 
 static Category s_cats[CAT_COUNT];
-static Category s_sub[2]; /* SUB_DATETIME, SUB_INFO */
+static Category s_sub[SUB_COUNT - 1]; /* SUB_DATETIME, SUB_INFO, SUB_STORAGE */
 static unsigned char s_plugin_on[MAX_PLUGINS];
 /* Radbrytningen mäter texten många gånger – gör den bara när texten byts, inte varje bildruta */
 static const char *s_wrapped; /* texten som s_desc håller, NULL = inget */
@@ -78,7 +79,7 @@ static int s_wrapped_n;
 
 static struct {
     int cat, item[CAT_COUNT];
-    int subpage, sub_item[2];
+    int subpage, sub_item[SUB_COUNT - 1];
     int focus;          /* 0 = kategorier, 1 = alternativ */
     float scroll, sub_scroll, open, time;
     int confirm_item;   /* -1 = ingen */
@@ -335,22 +336,27 @@ static void fill_about(Category *c)
     if (a.nickname[0])
         info(c, L(S_ABOUT_NICKNAME), a.nickname);
     info(c, L(S_ABOUT_MODEL), model_name());
-    snprintf(v, sizeof(v), "%u.%u%u", a.devkit >> 24, (a.devkit >> 16) & 0xFF, (a.devkit >> 8) & 0xFF);
-    info(c, L(S_ABOUT_SYSTEM), v);
+    if (a.devkit > 0) {
+        snprintf(v, sizeof(v), "%u.%u%u", a.devkit >> 24, (a.devkit >> 16) & 0xFF, (a.devkit >> 8) & 0xFF);
+        info(c, L(S_ABOUT_SYSTEM), v);
+    } else {
+        info(c, L(S_ABOUT_SYSTEM), "-");
+    }
     if (sys_ark_version()) {
         static char cfw[24];
         snprintf(cfw, sizeof(cfw), "CFW (ARK-%d)", sys_ark_version());
         info(c, cfw, sys_ark_full_version()[0] ? sys_ark_full_version() : "-");
     }
 #ifdef PSP5_ARK4
-    info(c, "PSP5 REMAKE", "1.0.1 (ARK-4)");
+    info(c, "PSP5 REMAKE", "1.0.2 (ARK-4)");
 #else
-    info(c, "PSP5 REMAKE", "1.0.1 (ARK-5)");
+    info(c, "PSP5 REMAKE", "1.0.2 (ARK-5)");
 #endif
     if (a.has_mac) {
         snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
         info(c, L(S_ABOUT_MAC), v);
     }
+    info(c, L(S_ABOUT_IP), a.last_ip[0] ? a.last_ip : L(S_ABOUT_NO_IP));
     fmt_bytes(v, sizeof(v), a.ram_free);
     info(c, L(S_ABOUT_RAM_FREE), v);
     if (a.battery) {
@@ -370,6 +376,56 @@ static void fill_about(Category *c)
             snprintf(v, sizeof(v), "%d / %d mAh", a.mah_left, a.mah_full);
             info(c, L(S_ABOUT_CAPACITY), v);
         }
+    }
+}
+
+static void fill_storage_dev(Category *c, const char *name, const SysStorageDev *d, StrId missing_id)
+{
+    if (!d->present) {
+        info(c, name, L(missing_id));
+        return;
+    }
+    Item *bar = add(c, name, IT_STORAGE_BAR);
+    u64 pct = d->total_bytes ? (d->used_bytes * 100ULL) / d->total_bytes : 0;
+    if (pct > 100)
+        pct = 100;
+    snprintf(bar->info, sizeof(bar->info), "%u %%", (unsigned)pct);
+    bar->bar_fill = d->total_bytes ? clampf((float)((double)d->used_bytes / (double)d->total_bytes), 0.0f, 1.0f) : 0.0f;
+    char v[48];
+    fmt_bytes(v, sizeof(v), d->total_bytes);
+    info(c, L(S_STORAGE_TOTAL), v);
+    fmt_bytes(v, sizeof(v), d->used_bytes);
+    info(c, L(S_STORAGE_USED), v);
+    fmt_bytes(v, sizeof(v), d->free_bytes);
+    info(c, L(S_STORAGE_FREE), v);
+}
+
+static void fill_storage(Category *c)
+{
+    SysStorage st;
+    c->count = 0;
+    sys_storage(&st);
+    if (st.has_internal)
+        fill_storage_dev(c, L(S_F_INTERNAL), &st.internal, S_STORAGE_UNAVAILABLE);
+    if (st.has_ms)
+        fill_storage_dev(c, L(S_F_MS), &st.ms, S_STORAGE_NOT_INSERTED);
+}
+
+static void storage_preview(char *out, int size)
+{
+    SysStorage st;
+    sys_storage(&st);
+    const SysStorageDev *d = (st.has_internal && st.internal.present) ? &st.internal
+                           : (st.has_ms && st.ms.present)            ? &st.ms
+                                                                     : NULL;
+    if (d) {
+        char num[24];
+        fmt_bytes(num, sizeof(num), d->free_bytes);
+        snprintf(out, size, L(S_F_FREE), num);
+    } else if (st.has_internal) {
+        snprintf(out, size, "%s", L(S_STORAGE_UNAVAILABLE));
+    } else {
+        snprintf(out, size, "%s", L(S_STORAGE_NOT_INSERTED));
     }
 }
 
@@ -494,6 +550,11 @@ static void build(int rebuild)
     action(c, L(S_USB_MODE), SA_USB, 0);
     subpage(c, L(S_DATETIME), SUB_DATETIME, NULL);
     subpage(c, L(S_CAT_INFO), SUB_INFO, model_name());
+    {
+        char prev[48];
+        storage_preview(prev, sizeof(prev));
+        subpage(c, L(S_STORAGE), SUB_STORAGE, prev);
+    }
     if (!psp1000)
         toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
@@ -565,6 +626,10 @@ static void build(int rebuild)
     c = &s_sub[SUB_INFO - 1];
     c->name = L(S_CAT_INFO);
     fill_about(c);
+
+    c = &s_sub[SUB_STORAGE - 1];
+    c->name = L(S_STORAGE);
+    fill_storage(c);
 }
 
 void settings_open(void)
@@ -661,6 +726,8 @@ static int *active_sel(void)
 /* Övre kanten för rad i i den högra listan (innan scroll). */
 static float row_y(const Category *c, int i);
 
+static float s_info_refresh;
+
 int settings_update(const UiInput *in, float dt)
 {
     S.open = clampf(S.open + dt * 5.0f, 0, 1);
@@ -671,6 +738,16 @@ int settings_update(const UiInput *in, float dt)
         S.confirm_item = -1;
     if (S.save_timer > 0 && (S.save_timer -= dt) <= 0)
         flush_dirty();
+    if ((S.subpage == SUB_INFO || S.subpage == SUB_STORAGE) && (s_info_refresh += dt) >= 2.0f) {
+        s_info_refresh = 0;
+        Category *sc = &s_sub[S.subpage - 1];
+        if (S.subpage == SUB_INFO)
+            fill_about(sc);
+        else
+            fill_storage(sc);
+        if (S.sub_item[S.subpage - 1] >= sc->count)
+            S.sub_item[S.subpage - 1] = sc->count > 0 ? sc->count - 1 : 0;
+    }
 
     Category *c = active_cat();
     int *sel = active_sel();
@@ -692,7 +769,7 @@ int settings_update(const UiInput *in, float dt)
             sound_play(SND_SELECT);
         }
         if (p & (back_btn | PSP_CTRL_TRIANGLE)) {
-            sound_play(SND_BACK);
+            sound_play(SND_SIDE_OUT);
             return SA_CLOSE;
         }
     } else {
@@ -717,7 +794,7 @@ int settings_update(const UiInput *in, float dt)
             else
                 *it->value = nv;
             mark_dirty(it);
-            sound_play(SND_TOGGLE);
+            sound_play(change > 0 ? SND_SLIDER_UP : SND_SLIDER_DN);
             if (it->value == &g_lang_setting) {
                 lang_apply();
                 if (lang_needs_cjk())
@@ -729,19 +806,24 @@ int settings_update(const UiInput *in, float dt)
                 g_theme = it->action;
                 mark_dirty(it);
             }
-            sound_play(SND_TOGGLE);
+            sound_play(SND_SELECT);
         } else if ((p & ok_btn) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
-            sound_play(SND_TOGGLE);
+            sound_play(*it->value ? SND_TOGGLE : SND_TOGGLE_OFF);
         } else if ((p & ok_btn) && it->type == IT_SUBPAGE) {
-            if (it->action == SUB_INFO)
+            if (it->action == SUB_INFO) {
+                s_info_refresh = 0;
                 fill_about(&s_sub[SUB_INFO - 1]);
+            } else if (it->action == SUB_STORAGE) {
+                s_info_refresh = 0;
+                fill_storage(&s_sub[SUB_STORAGE - 1]);
+            }
             S.subpage = it->action;
             S.sub_item[S.subpage - 1] = 0;
             S.sub_scroll = 0;
             S.confirm_item = -1;
-            sound_play(SND_SELECT);
+            sound_play(SND_DETAIL_IN);
         } else if ((p & ok_btn) && it->type == IT_ACTION) {
             if (it->action == SA_USBNET) {
                 int r = sys_usbnet_probe(1200);
@@ -754,27 +836,32 @@ int settings_update(const UiInput *in, float dt)
                 sound_play(ok ? SND_SELECT : SND_ERROR);
                 return SA_NONE;
             }
-            sound_play(SND_SELECT);
             if (it->confirm && S.confirm_item != *sel) {
                 S.confirm_item = *sel;
                 S.confirm_time = CONFIRM_TIME;
+                sound_play(SND_MSG_TOAST);
             } else {
                 S.confirm_item = -1;
+                sound_play(SND_SELECT);
                 sound_wait(400); /* låt ljudet höras innan något stängs */
                 return it->action;
             }
         } else if ((p & back_btn) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
+            int was_sub = S.subpage != SUB_NONE;
             if (S.subpage) {
+                int prev_sub = S.subpage;
                 S.subpage = SUB_NONE;
                 c = active_cat();
                 sel = active_sel();
+                if (prev_sub == SUB_STORAGE && *sel >= 0 && *sel < c->count && c->items[*sel].action == SUB_STORAGE)
+                    storage_preview(c->items[*sel].info, sizeof(c->items[*sel].info));
             } else {
                 S.focus = 0;
             }
             S.confirm_item = -1;
-            sound_play(SND_BACK);
+            sound_play(was_sub ? SND_DETAIL_OUT : SND_BACK);
         } else if (p & PSP_CTRL_TRIANGLE) {
-            sound_play(SND_BACK);
+            sound_play(SND_SIDE_OUT);
             return SA_CLOSE;
         }
     }
@@ -966,6 +1053,29 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
         else if (it->info[0])
             snprintf(value, sizeof(value), "%s", it->info);
         break;
+    case IT_STORAGE_BAR: {
+        float bar_x = RIGHT_X + 10.0f;
+        float bar_w = RIGHT_W - 20.0f;
+        float bar_y = y + 16.5f;
+        float bar_h = 4.5f;
+        u32 lcol = selected ? THEME_INK(shown, sel_ink, TEXT_MAIN)
+                            : THEME_INK(shown, text, RGBA(226, 232, 240, 240));
+        u32 vcol = selected ? THEME_INK(shown, sel_ink, RGBA(240, 244, 252, 255))
+                            : THEME_INK(shown, text_dim, RGBA(168, 180, 198, 235));
+        float vs = text_fit(0.54f, 0.44f, 0, RIGHT_W * 0.35f, it->info);
+        float vw = it->info[0] ? text_width(vs, 0, it->info) + 8.0f : 0.0f;
+        float ls = text_fit(0.56f, 0.44f, 1, bar_w - vw, it->label);
+        text_draw(bar_x, y + 12.0f, ls, 1, fade(lcol, a), ALIGN_LEFT, it->label);
+        if (it->info[0])
+            text_draw(right, y + 12.0f, vs, 0, fade(vcol, a), ALIGN_RIGHT, it->info);
+        u32 track = THEME_INK(shown, panel_deep, RGBA(255, 255, 255, 42));
+        gfx_round_rect(bar_x, bar_y, bar_w, bar_h, bar_h * 0.5f, fade(track, a));
+        if (it->bar_fill > 0.0f) {
+            float fw = bar_w * clampf(it->bar_fill, 0.02f, 1.0f);
+            gfx_round_rect(bar_x, bar_y, fw, bar_h, bar_h * 0.5f, fade(on_col, a));
+        }
+        return;
+    }
     case IT_THEME: {
         /* liten förhandsvisning, och en bock för temat som används */
         theme_swatch(theme_get(it->action), right - 40.0f, y + 4.5f, 40.0f, 16.0f, a);

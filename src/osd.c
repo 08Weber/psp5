@@ -102,7 +102,7 @@ void osd_capture(const u32 *vram, int stride)
     if (img_save_png(path, vram, SCREEN_W, SCREEN_H, stride)) {
         s_shot_shown = 2.0f;
         s_shot_done = 1;
-        sound_play(SND_SELECT);
+        sound_play(SND_TOAST);
     } else {
         sound_play(SND_ERROR);
     }
@@ -117,8 +117,10 @@ void osd_update(float dt)
     }
     if (vol >= 0 && vol <= MAX_VOLUME) {
         /* första avläsningen visas inte – bara ändringar */
-        if (s_volume >= 0 && (vol != s_volume || (mute >= 0 && mute != s_muted)))
+        if (s_volume >= 0 && (vol != s_volume || (mute >= 0 && mute != s_muted))) {
             s_shown = SHOW_TIME;
+            sound_play(SND_VOLUME);
+        }
         s_volume = vol;
         s_muted = mute > 0;
     }

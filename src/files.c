@@ -777,7 +777,7 @@ static void run_act(int act)
             free(paths[i]);
         break;
     default:
-        sound_play(SND_BACK);
+        sound_play(SND_CLOSE);
         break;
     }
 }
@@ -945,7 +945,7 @@ static void text_update(const UiInput *in, float dt)
         s_text_viewing = 0;
         free(s_text_lines);
         s_text_lines = NULL;
-        sound_play(SND_BACK);
+        sound_play(SND_CLOSE);
     }
 }
 
@@ -1007,7 +1007,7 @@ static void view_update(const UiInput *in)
             int prev = s_sel;
             s_sel = i;
             if (view_load()) {
-                sound_play(SND_MOVE);
+                sound_play(SND_TILE);
             } else {
                 s_sel = prev;
                 view_load();
@@ -1028,12 +1028,12 @@ static void view_update(const UiInput *in)
         snprintf(g_wallpaper, sizeof(g_wallpaper), "%s", path);
         config_save(g_data_dir);
         toast(L(S_WALLPAPER_SET));
-        sound_play(SND_SELECT);
+        sound_play(SND_TOAST);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
         s_viewing = 0;
         tex_free(s_view);
         s_view = NULL;
-        sound_play(SND_BACK);
+        sound_play(SND_CLOSE);
     }
 }
 
@@ -1082,7 +1082,7 @@ static void finish_op(void)
         clear_clip();
     static const StrId msg[] = { S_F_DONE, S_F_FAILED, S_F_NO_SPACE, S_F_CANCELLED };
     toast(L(msg[r]));
-    sound_play(r == R_OK ? SND_SELECT : SND_ERROR);
+    sound_play(r == R_OK ? SND_TOAST : SND_ERROR);
     char keep[256] = "";
     if (s_count)
         snprintf(keep, sizeof(keep), "%s", s_items[s_sel].name);
@@ -1125,7 +1125,7 @@ int files_update(const UiInput *in, float dt)
             run_act(s_menu_act[s_menu_sel]);
         else if (in->pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
             s_menu = M_NONE;
-            sound_play(SND_BACK);
+            sound_play(SND_CLOSE);
         }
         return 0;
     }
@@ -1158,7 +1158,7 @@ int files_update(const UiInput *in, float dt)
         } else if (e && is_image(e)) {
             if (view_load()) {
                 s_viewing = 1;
-                sound_play(SND_SELECT);
+                sound_play(SND_OPEN);
             } else {
                 /* öppna inte alternativmenyn om en bild inte gick att läsa (issue #14) */
                 toast(L(S_F_FAILED));
@@ -1167,7 +1167,7 @@ int files_update(const UiInput *in, float dt)
         } else if (e && is_text(e)) {
             if (text_load()) {
                 s_text_viewing = 1;
-                sound_play(SND_SELECT);
+                sound_play(SND_OPEN);
             } else {
                 toast(L(S_F_FAILED));
                 sound_play(SND_ERROR);
@@ -1180,7 +1180,7 @@ int files_update(const UiInput *in, float dt)
         }
     } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE) {
         e->marked ^= 1;
-        sound_play(SND_TOGGLE);
+        sound_play(e->marked ? SND_TOGGLE : SND_TOGGLE_OFF);
         if (s_sel < s_count - 1)
             s_sel++;
     } else if ((in->pressed & PSP_CTRL_TRIANGLE) && s_path[0]) {

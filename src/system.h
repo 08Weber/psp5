@@ -64,7 +64,7 @@ int sys_set_volume(int level);
 int sys_brightness(void);
 int sys_set_brightness(int level);
 
-/* Systeminformation för Inställningar -> System -> Systeminformation. -1 / 0 / "" om okänt. */
+/* Konsolinformation för Inställningar -> System -> Console Information. -1 / 0 / "" om okänt. */
 typedef struct {
     char nickname[40];
     unsigned devkit;
@@ -73,8 +73,28 @@ typedef struct {
     int battery;
     int percent, charging, mv, celsius, mah_left, mah_full;
     unsigned ram_free;
+    char last_ip[16]; /* senast kända IPv4-adress ur <data>/lastip.txt, "" om ingen */
 } SysAbout;
 void sys_about(SysAbout *out);
+const char *sys_last_ip(void);
+void sys_last_ip_reload(void);
+
+/* Storage space for Settings -> System -> Storage (real values via sceIoDevctl, u64). */
+typedef struct {
+    int present;
+    u64 total_bytes;
+    u64 used_bytes;
+    u64 free_bytes;
+} SysStorageDev;
+
+typedef struct {
+    int has_internal;
+    SysStorageDev internal;
+    int has_ms;
+    SysStorageDev ms;
+} SysStorage;
+
+void sys_storage(SysStorage *out);
 
 /* [medhatk] Standby Screen keep-awake helper:
  * - sys_keep_awake() resets the PSP OS auto-sleep / backlight-off timers

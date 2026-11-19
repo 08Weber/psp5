@@ -228,6 +228,7 @@ on the PSP Go).
 
 ## Thanks
 
+- [psp5-authentic](https://github.com/xioonae/psp5-authentic) – reference and inspiration for several new features in PSP5 REMAKE.
 - The [ARK-5](https://github.com/PSP-Arkfive) and [ARK-4](https://github.com/PSP-Archive/ARK-4) teams – psp5
   starts games and stores settings the same way their arkMenu does, and uses ARK's libraries through
   psp-cfw-sdk.

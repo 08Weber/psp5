@@ -15,6 +15,7 @@
 /tools/covers-src/*
 !/tools/covers-src/.gitkeep
 /PS5_Sound/
+/Deck-UI_Sound/
 __pycache__/
 /release/
 PROGRESS-*.md

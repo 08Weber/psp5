@@ -482,6 +482,46 @@ static int battery_celsius(int raw)
     return raw >= 100 ? raw / 100 + (raw % 100 >= 50) : raw;
 }
 
+static char s_last_ip[16];
+static int s_last_ip_loaded;
+
+/* "a.b.c.d" som giltig IPv4-adress; 0 om ogiltig eller 0.0.0.0 (från psp5-authentic netlink.c). */
+static unsigned parse_ip(const char *s)
+{
+    unsigned a, b, c, d;
+    char tail;
+    if (sscanf(s, "%u.%u.%u.%u%c", &a, &b, &c, &d, &tail) != 4 ||
+        a > 255 || b > 255 || c > 255 || d > 255 || !(a | b | c | d))
+        return 0;
+    return (a << 24) | (b << 16) | (c << 8) | d;
+}
+
+void sys_last_ip_reload(void)
+{
+    s_last_ip_loaded = 0;
+    s_last_ip[0] = 0;
+}
+
+/* Läser senast kända IPv4-adress ur <data>/lastip.txt utan att starta eller ändra nätverket. */
+const char *sys_last_ip(void)
+{
+    if (!s_last_ip_loaded) {
+        char path[64], buf[17];
+        memset(buf, 0, sizeof(buf));
+        s_last_ip_loaded = 1;
+        s_last_ip[0] = 0;
+        snprintf(path, sizeof(path), "%s/lastip.txt", g_data_dir);
+        SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+        if (fd >= 0) {
+            int n = sceIoRead(fd, buf, sizeof(buf) - 1);
+            sceIoClose(fd);
+            if (n > 0 && n < (int)sizeof(buf) - 1 && (int)strlen(buf) == n && parse_ip(buf))
+                snprintf(s_last_ip, sizeof(s_last_ip), "%s", buf);
+        }
+    }
+    return s_last_ip;
+}
+
 void sys_about(SysAbout *a)
 {
     memset(a, 0, sizeof(*a));
@@ -490,10 +530,13 @@ void sys_about(SysAbout *a)
         a->nickname[0] = 0;
     a->nickname[sizeof(a->nickname) - 1] = 0;
     a->devkit = sceKernelDevkitVersion();
-    a->has_mac = sceWlanGetEtherAddr(a->mac) >= 0;
+    if (sceWlanGetEtherAddr(a->mac) >= 0 &&
+        (a->mac[0] | a->mac[1] | a->mac[2] | a->mac[3] | a->mac[4] | a->mac[5]) != 0)
+        a->has_mac = 1;
     a->battery = scePowerIsBatteryExist() > 0;
     if (a->battery) {
-        a->percent = scePowerGetBatteryLifePercent();
+        int pct = scePowerGetBatteryLifePercent();
+        a->percent = (pct >= 0 && pct <= 100) ? pct : -1;
         a->charging = scePowerIsBatteryCharging() > 0;
         a->mv = scePowerGetBatteryVolt();
         a->celsius = battery_celsius(scePowerGetBatteryTemp());
@@ -501,6 +544,51 @@ void sys_about(SysAbout *a)
         a->mah_full = scePowerGetBatteryFullCapacity();
     }
     a->ram_free = sceKernelTotalFreeMemSize();
+    snprintf(a->last_ip, sizeof(a->last_ip), "%s", sys_last_ip());
+}
+
+static int read_dev_space(const char *dev, SysStorageDev *out)
+{
+    memset(out, 0, sizeof(*out));
+    struct {
+        u32 max_clusters;
+        u32 free_clusters;
+        u32 max_sectors;
+        u32 sector_size;
+        u32 sectors_per_cluster;
+    } info;
+    memset(&info, 0, sizeof(info));
+    void *p = &info;
+    if (sceIoDevctl(dev, 0x02425818, &p, sizeof(p), NULL, 0) < 0)
+        return 0;
+    u64 cluster = (u64)info.sector_size * (u64)info.sectors_per_cluster;
+    u64 total = (u64)info.max_clusters * cluster;
+    u64 free_b = (u64)info.free_clusters * cluster;
+    if (cluster == 0 || total == 0)
+        return 0;
+    if (free_b > total)
+        free_b = total;
+    out->present = 1;
+    out->total_bytes = total;
+    out->free_bytes = free_b;
+    out->used_bytes = total - free_b;
+    return 1;
+}
+
+void sys_storage(SysStorage *out)
+{
+    memset(out, 0, sizeof(*out));
+    int go = sys_model() == 4;
+    int ms_is_ef = sys_ms_is_ef();
+    if (go) {
+        out->has_internal = 1;
+        if (!read_dev_space("ef0:", &out->internal) && ms_is_ef)
+            read_dev_space("ms0:", &out->internal);
+    }
+    if (!ms_is_ef) {
+        out->has_ms = 1;
+        read_dev_space("ms0:", &out->ms);
+    }
 }
 
 /* USB-logg (issue #29): hålls i minnet medan datorn äger minneskortet – en skrivning då kan

@@ -480,6 +480,48 @@ void text_ellipsis(char *out, int out_size, const char *s, float size, float max
     } while (n > 0 && text_width(size, 0, out) > max_w);
 }
 
+int text_wrap(const char *s, float size, float max_w, char lines[][96], int max_lines)
+{
+    int n = 0;
+    if (!s || max_lines <= 0)
+        return 0;
+    while (*s == ' ')
+        s++;
+    while (*s && n < max_lines) {
+        if (n == max_lines - 1 && text_width(size, 0, s) > max_w) {
+            text_ellipsis(lines[n++], 96, s, size, max_w);
+            break;
+        }
+        char buf[96];
+        int i = 0, last_space = -1;
+        while (s[i]) {
+            int l = (u8)s[i] < 0x80 ? 1 : (u8)s[i] < 0xE0 ? 2 : (u8)s[i] < 0xF0 ? 3 : 4;
+            for (int k = 1; k < l; k++)
+                if (!s[i + k]) {
+                    l = k;
+                    break;
+                }
+            if (i + l >= (int)sizeof(buf))
+                break;
+            memcpy(buf, s, i + l);
+            buf[i + l] = 0;
+            if (i > 0 && text_width(size, 0, buf) > max_w)
+                break;
+            if (s[i] == ' ')
+                last_space = i;
+            i += l;
+        }
+        int cut = i;
+        if (s[i] && last_space > 0)
+            cut = last_space;
+        snprintf(lines[n++], 96, "%.*s", cut, s);
+        s += cut;
+        while (*s == ' ')
+            s++;
+    }
+    return n;
+}
+
 void text_draw(float x, float y, float size, int bold, u32 color, int align, const char *s)
 {
     intraFont *f = pick(bold);
