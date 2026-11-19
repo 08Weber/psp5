@@ -320,13 +320,14 @@ void sound_term(void)
     for (int i = 0; i < SND_COUNT; i++) {
         free(s_samples[i].data);
         s_samples[i].data = NULL;
+        s_samples[i].len = 0;
     }
     s_built = 0;
 }
 
 void sound_play(SoundId id)
 {
-    if (!g_sound_on || s_thread < 0 || !s_built || id >= SND_COUNT)
+    if (!g_sound_on || s_thread < 0 || !s_built || id < 0 || id >= SND_COUNT || !s_samples[id].data || !s_samples[id].len)
         return;
     /* samma ljud igen (t.ex. snabb bläddring): starta om i samma röst */
     Voice *pick = NULL;
@@ -357,7 +358,6 @@ void sound_prepare_boot(void)
         s_boot_req = 1;
 }
 
-
 void sound_skip_boot(void)
 {
     s_skip_boot = 1;
@@ -370,7 +370,7 @@ void sound_fade_out(void)
 
 void sound_release(SoundId id)
 {
-    if (id >= SND_COUNT || !s_samples[id].data)
+    if (id < 0 || id >= SND_COUNT || !s_samples[id].data)
         return;
     for (int v = 0; v < VOICES; v++)
         if (s_voices[v].data == s_samples[id].data)

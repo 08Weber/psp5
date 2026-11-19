@@ -1,10 +1,24 @@
-# psp5 – made by 08Weber
-# Bygger alla versioner (ARK-5, ARK-4, PSP Go) och packar release-zipparna.
+# PSP5 REMAKE – fork by medhatk (based on psp5 by 08Weber)
+# Builds all variants (ARK-5, ARK-4, PSP Go) and uploads testable workflow artifacts on every build.
+# Releases are NEVER published automatically: publish only when publish_release=true via manual workflow_dispatch.
 name: build
 
 on:
   push:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.2)'
+        required: false
+        default: '1.0.2'
+      publish_release:
+        description: 'Publish public GitHub Release? (keep unchecked to build artifacts only)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -18,8 +32,20 @@ jobs:
           bash tools/build.sh
           bash tools/build.sh ark4
           bash tools/build.sh test
+      - name: Resolve build version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "version=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=1.0.2" >> "$GITHUB_OUTPUT"
+          fi
       - name: Zips
-        run: python3 tools/make_release.py
+        run: |
+          python3 tools/make_release.py "${{ steps.ver.outputs.version }}"
+          sed "s/__VERSION__/${{ steps.ver.outputs.version }}/g" .github/RELEASE_BODY.md > release/RELEASE_BODY.md
       - uses: actions/upload-artifact@v4
         with:
           name: release
@@ -29,3 +55,12 @@ jobs:
         with:
           name: test
           path: dist-test/PSP/GAME/PSP5/EBOOT.PBP
+      - name: GitHub Release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: PSP5 REMAKE v${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          body_path: release/RELEASE_BODY.md
+          files: release/*.zip

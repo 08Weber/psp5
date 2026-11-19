@@ -9,12 +9,17 @@
  * för valt spel. Av som standard (g_previews). Allt läses och avkodas i egna trådar. */
 
 /* Vilket spel som ska förhandsvisas (index i spellistan), eller NULL/-1 för inget.
- * Anropas varje bildruta från huvudtråden; startar trådarna första gången. */
+ * Anropas varje bildruta från huvudtråden; startar trådarna första gången.
+ * `preview_want_ex` tar `card_mode` (1 = spelkort med Cover/Fill och rundade hörn,
+ * 0 = fristående video utan beskärning eller hörnmaskning). */
 void preview_want(const Entry *e, int list_index);
+void preview_want_ex(const Entry *e, int list_index, int card_mode);
 /* 1 = inget spelas just nu (t.ex. medan inställningarna är öppna) */
 void preview_pause(int paused);
 /* Senaste videobilden för spelet, eller NULL. Ägs av preview.c. */
 Texture *preview_frame(int list_index);
+/* Som preview_frame, men returnerar också aktivt delområde (sx, sy, sw, sh). */
+Texture *preview_frame_sub(int list_index, int *sx, int *sy, int *sw, int *sh);
 /* Stoppar allt och frigör moduler och minne – inför spelstart, USB-läge m.m. */
 void preview_stop(void);
 /* Felsökning: en rad till <data>/preview.log (stängs direkt, finns kvar efter en frysning).

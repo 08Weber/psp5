@@ -1,0 +1,107 @@
+name: Bug Report
+description: Report a bug, crash, UI glitch, or unexpected behavior in PSP5 REMAKE.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug in **PSP5 REMAKE**!
+
+        Before submitting:
+        - Check [existing issues](https://github.com/medhatk/PSP5-REMAKE/issues) to avoid duplicates and review the troubleshooting tips in [INSTALL.md](https://github.com/medhatk/PSP5-REMAKE/blob/main/INSTALL.md#help).
+        - Enter a short, descriptive **bug title** in the **Add a title** field above.
+        - **Privacy & Copyright Notice:** Do **not** upload copyrighted Sony system files (such as `flash0` dumps, firmware files, BIOS, or game ISOs/ROMs), private keys, or personal data.
+
+  - type: dropdown
+    id: psp-model
+    attributes:
+      label: PSP Model
+      description: Select the PSP hardware model (or emulator) where the bug occurred.
+      options:
+        - PSP-1000
+        - PSP-2000
+        - PSP-3000
+        - PSP Go
+        - PSP Street (E1000)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: psp5-remake-version
+    attributes:
+      label: PSP5 REMAKE Version
+      description: Check under **Settings → PSP5 REMAKE → Version** (or specify your build/commit).
+      placeholder: "e.g. 1.0.0 (ARK-5), 1.0.0 (ARK-4), or commit hash"
+    validations:
+      required: true
+
+  - type: input
+    id: ark-firmware-environment
+    attributes:
+      label: ARK Version / Firmware Environment
+      description: Specify your ARK version, official Sony firmware base (e.g. 6.60 or 6.61), and whether PSP5 REMAKE runs as a normal app or ARK Custom Launcher.
+      placeholder: "e.g. ARK-5 v5.2.0 on 6.61 (Custom Launcher), or ARK-4 r185 on 6.60 (EBOOT)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Issue
+      description: Clearly describe what went wrong and which part of PSP5 REMAKE is affected.
+      placeholder: "Describe the bug clearly..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: List the exact steps needed to reproduce this issue.
+      placeholder: |
+        1. Launch PSP5 REMAKE from...
+        2. Navigate to '...'
+        3. Press '...'
+        4. Observe the issue
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: Describe what you expected PSP5 REMAKE to do.
+      placeholder: "What should happen instead?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: Describe what actually happened (e.g., freeze, crash back to XMB, UI artifact, audio glitch).
+      placeholder: "What actually happened?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots-or-video
+    attributes:
+      label: Screenshots or Video (Optional)
+      description: "Drag and drop screenshots (you can capture one in PSP5 REMAKE with ♪ or L + R + START) or share a link to a short video. Do not upload copyrighted Sony files or personal data."
+      placeholder: "Attach screenshots or paste video links here..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context (Optional)
+      description: "Add any extra context such as storage location (`ms0:` vs `ef0:`), active plugins, theme/wallpaper settings, or safe-start behavior. Do not share private keys or personal data."
+      placeholder: "Any extra details that may help diagnose the issue..."
+    validations:
+      required: false

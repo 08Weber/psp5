@@ -1,0 +1,52 @@
+name: Feature Request
+description: Suggest a new feature, UI improvement, or enhancement for PSP5 REMAKE.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement to **PSP5 REMAKE**!
+
+        Before submitting:
+        - Check [existing issues](https://github.com/medhatk/PSP5-REMAKE/issues) to see if a similar idea has already been requested.
+        - Enter a concise **feature title** in the **Add a title** field above.
+        - **Privacy & Copyright Notice:** Do **not** upload copyrighted Sony assets or system files, private keys, or personal data.
+
+  - type: textarea
+    id: problem-or-use-case
+    attributes:
+      label: Problem or Use Case
+      description: Explain the limitation, friction, or missing functionality you are encountering.
+      placeholder: "Describe the problem or use case you want to solve..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe how you would like this feature to work in PSP5 REMAKE (UI layout, controls, settings, or launcher behavior).
+      placeholder: "Describe your proposed feature or behavior..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-user-benefit
+    attributes:
+      label: Expected User Benefit
+      description: Explain how this feature would improve the experience for PSP5 REMAKE users.
+      placeholder: "Who does this help, and what value does it add?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context (Optional)
+      description: Add mockups, references, or hardware/ARK details if relevant. Do not upload copyrighted Sony assets, private keys, or personal data.
+      placeholder: "Add any additional context, references, or mockups..."
+    validations:
+      required: false

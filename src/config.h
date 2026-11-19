@@ -16,6 +16,9 @@
  *   screenoff=0      (skärmen släcks efter 0 = aldrig, 1/2/3/4 = 1/3/5/10 min utan knapptryck)
  *   autosleep=0      (viloläge efter 0 = aldrig, 1/2/3/4 = 5/10/15/30 min – inte medan musik spelar)
  *   control_center=1 (HOME öppnar psp5:s Control Center i stället för systemets/Custom Home)
+ *   dst=1            (Date and Time, Daylight Saving: 0 = -1h, 1 = keep, 2 = +1h; datetime.h)
+ *   datefmt=0        (0 = YYYY.MM.DD, 1 = MM.DD.YYYY, 2 = DD.MM.YYYY)
+ *   timefmt=0        (0 = 24-hour clock, 1 = 12-hour clock)
  *   wallpaper=       (egen bakgrundsbild, t.ex. ms0:/PICTURE/bild.jpg – tom = temats) */
 extern unsigned char g_shuffle;
 extern unsigned char g_screen_off;

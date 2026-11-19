@@ -9,6 +9,7 @@
 #include <pspmpeg.h>
 #include <pspatrac3.h>
 #include <malloc.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,12 +65,16 @@ static SceUID s_thread = -1, s_lock = -1;
 static volatile int s_quit, s_paused;
 static volatile int s_gen;          /* ökar när önskat spel byts */
 static int s_want = -1;             /* senast begärda index (huvudtråden) */
+static int s_want_card;             /* senast begärt kortläge (huvudtråden) */
 static Entry s_req;                 /* kopia av begärt spel, skyddad av s_lock */
 static int s_req_index = -1;
+static int s_req_card;
 static int s_mods[3];               /* moduler som preview.c själv laddade */
 static int s_mpeg_ok;
 
 /* aktuell förhandsvisning (styrtråden äger, spelartrådarna läser) */
+#define CARD_RADIUS 7.0f            /* matchar ICON_RADIUS i art.c */
+#define CORNER_MAX  32
 static volatile int s_stop;
 static SceUID s_audio = -1, s_video = -1;
 static u8 *s_snd, *s_vid;
@@ -77,6 +82,10 @@ static u32 s_snd_size, s_vid_size, s_vid_pos, s_vid_end;
 static Texture *s_tex[FRAMES];
 static volatile int s_shown = -1;   /* bilden som visas, -1 = ingen än */
 static volatile int s_frame_for = -1;
+static int s_card_mode;
+static int s_sub_x, s_sub_y, s_sub_w, s_sub_h;
+static u8 s_corner[CORNER_MAX * CORNER_MAX];
+static int s_corner_r;
 
 /* --- moduler --- */
 
@@ -231,9 +240,30 @@ static int play_video_once(int w, int h)
                          * Via den ocachade adressen: avkodaren skriver direkt i minnet, och
                          * cacheoperationer på delar av rader förstörde intilliggande minne. */
                         volatile u32 *px = (volatile u32 *)((u32)s_tex[next]->data | 0x40000000);
-                        for (int y = 0; y < h; y++)
-                            for (int x = 0; x < w; x++)
-                                px[y * BUF_W + x] |= 0xFF000000;
+                        if (s_card_mode) {
+                            int x0 = s_sub_x, y0 = s_sub_y, x1 = x0 + s_sub_w, y1 = y0 + s_sub_h;
+                            int cr = s_corner_r;
+                            for (int y = y0; y < y1; y++)
+                                for (int x = x0; x < x1; x++)
+                                    px[y * BUF_W + x] |= 0xFF000000;
+                            for (int j = 0; j < cr; j++) {
+                                for (int i = 0; i < cr; i++) {
+                                    u32 a = (u32)s_corner[j * cr + i] << 24;
+                                    if (a == 0xFF000000u)
+                                        continue;
+                                    int ty = y0 + j, by = y1 - 1 - j;
+                                    int lx = x0 + i, rx = x1 - 1 - i;
+                                    px[ty * BUF_W + lx] = (px[ty * BUF_W + lx] & 0x00FFFFFFu) | a;
+                                    px[ty * BUF_W + rx] = (px[ty * BUF_W + rx] & 0x00FFFFFFu) | a;
+                                    px[by * BUF_W + lx] = (px[by * BUF_W + lx] & 0x00FFFFFFu) | a;
+                                    px[by * BUF_W + rx] = (px[by * BUF_W + rx] & 0x00FFFFFFu) | a;
+                                }
+                            }
+                        } else {
+                            for (int y = 0; y < h; y++)
+                                for (int x = 0; x < w; x++)
+                                    px[y * BUF_W + x] |= 0xFF000000;
+                        }
                         s_shown = next;
                         next = (next + 1) % FRAMES;
                     }
@@ -280,13 +310,72 @@ static Texture *frame_create(int w, int h)
     return t;
 }
 
+static void compute_card_rect(int w, int h, int *sx, int *sy, int *sw, int *sh)
+{
+    int cw = w, ch = h;
+    if (w * ICON_H > h * ICON_W) {
+        cw = (h * ICON_W + ICON_H / 2) / ICON_H;
+        if (cw < 2)
+            cw = 2;
+    } else if (w * ICON_H < h * ICON_W) {
+        ch = (w * ICON_H + ICON_W / 2) / ICON_W;
+        if (ch < 2)
+            ch = 2;
+    }
+    *sx = (w - cw) / 2;
+    *sy = (h - ch) / 2;
+    *sw = cw;
+    *sh = ch;
+}
+
+static void build_corner_mask(int sw, int sh)
+{
+    float radius = CARD_RADIUS * ((float)sw / (float)ICON_W);
+    int cr = (int)ceilf(radius + 0.5f);
+    if (cr > CORNER_MAX)
+        cr = CORNER_MAX;
+    if (cr > sw / 2)
+        cr = sw / 2;
+    if (cr > sh / 2)
+        cr = sh / 2;
+    if (cr < 0)
+        cr = 0;
+    s_corner_r = cr;
+    for (int j = 0; j < cr; j++) {
+        for (int i = 0; i < cr; i++) {
+            float dx = radius - (i + 0.5f), dy = radius - (j + 0.5f);
+            float cov;
+            if (dx <= 0.0f || dy <= 0.0f) {
+                cov = 1.0f;
+            } else {
+                cov = radius - sqrtf(dx * dx + dy * dy) + 0.5f;
+                if (cov < 0.0f)
+                    cov = 0.0f;
+                else if (cov > 1.0f)
+                    cov = 1.0f;
+            }
+            s_corner[j * cr + i] = (u8)(cov * 255.0f + 0.5f);
+        }
+    }
+}
+
 static int video_thread(SceSize args, void *argp)
 {
     /* storleken står i PSMF-huvudet (i 16-tal); ICON1.PMF är normalt 144×80 */
     int w = s_vid[142] * 16, h = s_vid[143] * 16;
-    preview_trace("video: start %u byte, %dx%d", s_vid_size, w, h);
+    preview_trace("video: start %u byte, %dx%d (kort %d)", s_vid_size, w, h, s_card_mode);
     if (w <= 0 || w > BUF_W || h <= 0 || h > MAX_VID_H)
         return 0;
+    if (s_card_mode) {
+        compute_card_rect(w, h, &s_sub_x, &s_sub_y, &s_sub_w, &s_sub_h);
+        build_corner_mask(s_sub_w, s_sub_h);
+    } else {
+        s_sub_x = 0;
+        s_sub_y = 0;
+        s_sub_w = w;
+        s_sub_h = h;
+        s_corner_r = 0;
+    }
     for (int i = 0; i < FRAMES; i++)
         if (!(s_tex[i] = frame_create(w, h)))
             return 0;
@@ -311,6 +400,9 @@ static void stop_players(void)
     }
     s_frame_for = -1;
     s_shown = -1;
+    s_card_mode = 0;
+    s_sub_x = s_sub_y = s_sub_w = s_sub_h = 0;
+    s_corner_r = 0;
     if (s_tex[0])
         sceKernelDelayThread(50 * 1000); /* GE kan fortfarande läsa bilden som ritades sist */
     for (int i = 0; i < FRAMES; i++) {
@@ -337,7 +429,7 @@ static u8 *read_media(const Entry *e, u32 offset, u32 size, const char *umd_name
     return buf;
 }
 
-static void start_players(const Entry *e, int index)
+static void start_players(const Entry *e, int index, int card_mode)
 {
     if (s_mpeg_ok)
         s_vid = read_media(e, e->vid_offset, e->vid_size, "ICON1.PMF");
@@ -348,6 +440,7 @@ static void start_players(const Entry *e, int index)
     }
     s_snd = read_media(e, e->snd_offset, e->snd_size, "SND0.AT3");
     s_snd_size = s_snd ? e->snd_size : 0;
+    s_card_mode = card_mode;
     s_frame_for = index;
     if (s_vid) {
         s_video = sceKernelCreateThread("psp5_pvideo", video_thread, 0x28, STACK, PSP_THREAD_ATTR_USER, NULL);
@@ -387,6 +480,7 @@ static int control_thread(SceSize args, void *argp)
             sceKernelWaitSema(s_lock, 1, NULL);
             gen = s_gen;
             int index = s_req_index;
+            int card = s_req_card;
             if (index >= 0)
                 e = s_req;
             sceKernelSignalSema(s_lock, 1);
@@ -395,7 +489,7 @@ static int control_thread(SceSize args, void *argp)
             preview_trace("stoppat");
             if (index >= 0) {
                 preview_trace("startar \"%s\" (video %u, ljud %u byte)", e.title, e.vid_size, e.snd_size);
-                start_players(&e, index);
+                start_players(&e, index, card);
                 preview_trace("startat: video %d, ljud %d", s_video >= 0, s_audio >= 0);
             }
         }
@@ -405,15 +499,15 @@ static int control_thread(SceSize args, void *argp)
     return 0;
 }
 
-void preview_want(const Entry *e, int list_index)
+void preview_want_ex(const Entry *e, int list_index, int card_mode)
 {
     if (s_paused || !e)
         list_index = -1;
-    if (list_index == s_want)
+    if (list_index == s_want && (list_index < 0 || card_mode == s_want_card))
         return;
     if (list_index >= 0 && !e->vid_size && !e->snd_size)
         list_index = -1; /* spelet har ingen förhandsvisning */
-    if (list_index == s_want)
+    if (list_index == s_want && (list_index < 0 || card_mode == s_want_card))
         return;
     if (s_thread < 0) {
         if (list_index < 0)
@@ -434,19 +528,26 @@ void preview_want(const Entry *e, int list_index)
         }
     }
     s_want = list_index;
+    s_want_card = card_mode;
     sceKernelWaitSema(s_lock, 1, NULL);
     if (list_index >= 0)
         s_req = *e;
     s_req_index = list_index;
+    s_req_card = card_mode;
     s_gen++;
     sceKernelSignalSema(s_lock, 1);
+}
+
+void preview_want(const Entry *e, int list_index)
+{
+    preview_want_ex(e, list_index, 0);
 }
 
 void preview_pause(int paused)
 {
     s_paused = paused;
     if (paused)
-        preview_want(NULL, -1);
+        preview_want_ex(NULL, -1, 0);
 }
 
 Texture *preview_frame(int list_index)
@@ -455,6 +556,21 @@ Texture *preview_frame(int list_index)
     if (list_index < 0 || list_index != s_frame_for || shown < 0)
         return NULL;
     return s_tex[shown];
+}
+
+Texture *preview_frame_sub(int list_index, int *sx, int *sy, int *sw, int *sh)
+{
+    int shown = s_shown;
+    if (list_index < 0 || list_index != s_frame_for || shown < 0)
+        return NULL;
+    Texture *t = s_tex[shown];
+    if (!t)
+        return NULL;
+    if (sx) *sx = s_sub_x;
+    if (sy) *sy = s_sub_y;
+    if (sw) *sw = s_sub_w;
+    if (sh) *sh = s_sub_h;
+    return t;
 }
 
 void preview_stop(void)
@@ -471,4 +587,5 @@ void preview_stop(void)
         s_lock = -1;
     }
     s_want = s_req_index = -1;
+    s_want_card = s_req_card = 0;
 }

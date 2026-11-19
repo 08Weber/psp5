@@ -1,6 +1,7 @@
-# psp5
+# PSP5 REMAKE
 
-**Made by 08Weber**
+**Made by 08Weber**  
+**PSP5 REMAKE Fork & Enhancements by medhatk**
 
 I love the PSP, but going back to the XMB after using a PS5 always feels a bit dated. So I built
 psp5: a launcher for the PSP that tries to recreate the look and feel of the **PS5 user interface** –
@@ -13,14 +14,16 @@ like any other homebrew, or let it take over as ARK's own launcher so your PSP b
 Everything you see is drawn by psp5 itself. No logos, icons, sounds or other assets from Sony are used –
 it's my own take on that style.
 
-| Settings | Performance |
-|---|---|
-| ![Settings](docs/screenshots/settings.png) | ![Performance settings](docs/screenshots/settings-performance.png) |
-| ![System settings](docs/screenshots/settings-system.png) | ![Power and USB](docs/screenshots/settings-power.png) |
-| ![Startup screen](docs/screenshots/boot.png) | ![Volume](docs/screenshots/volume.png) |
-| ![Music](docs/screenshots/music.png) | ![Startup screen – welcome back](docs/screenshots/boot-dust.png) |
-| ![Themes](docs/screenshots/theme.png) | ![PS3 theme](docs/screenshots/theme-ps3.png) |
-| ![PS4 theme](docs/screenshots/theme-ps4.png) | ![PS1 theme](docs/screenshots/theme-ps1.png) |
+| | | |
+|---|---|---|
+| ![Games](docs/screenshots/games.png)<br>*Games* | ![Apps](docs/screenshots/apps.png)<br>*Apps (medhatk)* | ![Library](docs/screenshots/library.png)<br>*Library* |
+| ![Categories](docs/screenshots/categories.png)<br>*Categories* | ![Music — Now playing](docs/screenshots/music.png)<br>*Music — Now playing* | ![Music — Albums](docs/screenshots/music-albums.png)<br>*Music — Albums* |
+| ![Control Center](docs/screenshots/control-center.png)<br>*Control Center* | ![Standby Screen](docs/screenshots/standby.png)<br>*Standby Screen (medhatk)* | ![Standby Power menu](docs/screenshots/standby-power.png)<br>*Standby Power menu (medhatk)* |
+| ![Volume bar](docs/screenshots/volume.png)<br>*Volume bar* | ![Startup — PSP5™ logo](docs/screenshots/boot.png)<br>*Startup — PSP5™ logo (medhatk)* | ![Startup — Health notice](docs/screenshots/boot-warning.png)<br>*Startup — Health notice* |
+| ![Startup — Welcome Back](docs/screenshots/boot-dust.png)<br>*Startup — Welcome Back (medhatk)* | ![Theme settings](docs/screenshots/theme.png)<br>*Theme settings* | ![Settings](docs/screenshots/settings.png)<br>*Settings* |
+| ![CFW Performance settings](docs/screenshots/settings-performance.png)<br>*CFW Performance settings* | ![System settings](docs/screenshots/settings-system.png)<br>*System settings* | ![Plugins](docs/screenshots/settings-plugins.png)<br>*Plugins* |
+| ![Power and USB](docs/screenshots/settings-power.png)<br>*Power and USB* | ![PS3 theme](docs/screenshots/theme-ps3.png)<br>*PS3 theme* | ![PS4 theme](docs/screenshots/theme-ps4.png)<br>*PS4 theme* |
+| ![PS1 theme](docs/screenshots/theme-ps1.png)<br>*PS1 theme* | | |
 
 ## What it does
 
@@ -37,7 +40,7 @@ right – L and R step through them.
 a thin light frame around it, and its artwork fades in behind everything. A UMD in the drive shows up first, and it
 appears or disappears as soon as you put a disc in or take it out. Press □ on a game to *Pin to front* so it always
 stays in the row, and *Move* to put your pinned games in your own order. Want every game in the row?
-Turn on *Settings → psp5 → All games on Games screen* (then *Move* works on every game). The last tile opens the **Game Library**: everything you have – PSP games (ISO, CSO, ZSO and
+Turn on *Settings → PSP5 REMAKE → All games on Games screen* (then *Move* works on every game). The last tile opens the **Game Library**: everything you have – PSP games (ISO, CSO, ZSO and
 DAX), PSN and PS1 titles and homebrew – in a grid that's easy to scan through. Press □ there to pin a game to the
 Games row or to sort by name or by what you added most recently. △ opens Settings from Games, Media and the Library.
 
@@ -60,9 +63,11 @@ Pressing ✕ (or START) starts the game the same way ARK's own menu does, so upd
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
 so the game gets the whole PSP.
 
-**Settings** is laid out like the PS5's settings pages. From there you can change ARK's CFW options (CPU speed,
-extra memory, caches, USB charging and so on), turn plugins on and off, connect over USB, restart, shut down,
-jump to the XMB or open ARK's recovery menu.
+**Settings** is laid out like the PS5's settings pages. From there you can adjust **System** settings (screen
+brightness, sound volume, Cross/Circle confirm button assignment, USB mode, Date & Time display format and
+Daylight Saving offset, and a full System Information page with PSP model, nickname, ARK version, MAC address,
+free RAM, and battery health/temperature/voltage), change ARK's CFW options (CPU speed, extra memory, caches,
+USB charging and so on), turn plugins on and off, restart, shut down, jump to the XMB or open ARK's recovery menu.
 
 A few other things I cared about:
 
@@ -73,23 +78,25 @@ A few other things I cared about:
   [`docs/sounds/`](docs/sounds), or turn them off in settings.
 - **It speaks your language.** psp5 follows the PSP's system language: English, German, French, Spanish,
   Italian, Dutch, Portuguese, Russian and Japanese. Swedish is there too – the PSP itself doesn't offer
-  Swedish, so you pick it under *Settings → psp5 → Language*.
+  Swedish, so you pick it under *Settings → PSP5 REMAKE → Language*.
 - **It has themes.** *Settings → Theme* has the colours of the PS5 console covers (Midnight Black, Cosmic Red,
   Nova Pink, Starlight Blue, Galactic Purple, Volcanic Red, Cobalt Blue, Sterling Silver and the Chroma
-  colours), and – like the PS5's own *Appearance* setting – the look of the PS1, PS2, PS3 and PS4: the grey
-  console with its button symbols, the dark towers and glowing orbs, the XMB wave and the blue PS4 waves.
+  colours), the **PlayStation 30th Anniversary** classic grey theme with its dedicated backdrop and classic
+  four-colour PlayStation button symbols, and – like the PS5's own *Appearance* setting – the look of the PS1,
+  PS2, PS3 and PS4: the grey console with its button symbols, the dark towers and glowing orbs, the XMB wave and
+  the blue PS4 waves.
   Highlight a theme to preview it and press ✕ to use it. You can also turn the game art in the background off,
   so the theme is always visible – or pick a **wallpaper** of your own: any JPEG or PNG in `PICTURE` (the
   XMB's Photo folder) under *Settings → Theme → Wallpaper*.
-- **It can preview games like the XMB.** Turn on *Settings → psp5 → Game previews*, and when you rest on a
+- **It can preview games like the XMB.** Turn on *Settings → PSP5 REMAKE → Game previews*, and when you rest on a
   game its short video (ICON1.PMF) plays inside the tile and its music (SND0.AT3) plays in the background –
   for games that have them. It's off by default.
 - **It keeps the list tidy.** The same game twice (same game ID and title, for example as both ISO and CSO)
-  shows up once; turn *Hide duplicates* off in the psp5 settings to see every copy. Square PSP minis icons
+  shows up once; turn *Hide duplicates* off in the PSP5 REMAKE settings to see every copy. Square PSP minis icons
   are centred instead of stretched.
 - **It shows the volume.** Press the volume buttons anywhere in psp5 and a PS5-style bar slides in at the top,
   with the level and a crossed-out speaker when the sound is off. While the PSP charges, the battery icon fills up
-  in a loop next to a little lightning bolt. *Settings → psp5 → Battery* can also show the percentage or the
+  in a loop next to a little lightning bolt. *Settings → PSP5 REMAKE → Battery* can also show the percentage or the
   time left next to it.
 - **It has a file manager**, like ARK's own launcher: *Settings → Power and USB → File manager*. Browse the
   Memory Stick (and the internal storage on a PSP Go), mark files with □, and copy, move, rename or delete them
@@ -101,14 +108,50 @@ A few other things I cared about:
   single game (one folder per game) is not a category unless its name starts with `g_` or `s_` (the prefix
   isn't shown). In a category the Games row shows all of its games; "All" counts every game, and SELECT again
   closes the picker.
-- **It has a Control Center.** HOME opens a PS5-style panel with sleep, USB, the file manager, settings, the XMB,
-  restart and power off. *Settings → Power and USB* can also turn the screen off and put the PSP to sleep after a
-  while without a button press (not while music is playing).
+- **It has a Control Center.** HOME opens a PS5-style panel with music playback, screenshot, sleep, **Standby Screen**,
+  USB, the file manager, settings, the XMB, restart and power off. *Settings → Power and USB* can also turn the
+  screen off and put the PSP to sleep after a while without a button press (not while music is playing).
+- **It has a Standby Screen.** Pick **Standby Screen** in the Control Center for a theme-styled always-on clock
+  with date, battery status and music controls (✕ play/pause, ←/→ previous/next track, △ for Sleep or Shut down).
+  Your current screen brightness is preserved, auto-sleep and screen-off are paused while it stays open, and
+  pressing **HOME** unlocks back to the menu.
 - **It shows the game's logo** (PIC0) under the selected game, and the background art (PIC1) in full resolution.
 - **It remembers where you were** – after a game, psp5 opens on the same tab, category and game.
 - **It can show your pictures.** Press ✕ on a JPEG or PNG in the file manager to view it (← → for the next one)
   and ✕ again to use it as the wallpaper.
 - **It never touches flash0**, and you can always get back to the normal XMB.
+
+## PSP5 REMAKE — Modifications & New Features by medhatk
+
+On top of 08Weber's original psp5 foundation above, the **PSP5 REMAKE** fork includes the following additions and UI updates by **medhatk**:
+
+- **Custom PSP5™ Boot Logo & Welcome Back Screen** (`src/boot.c`, `tools/make_logo.ps1`, `tools/make_welcome.ps1`):
+  Pre-rendered **PSP5™** emblem & boot logo (`res/BOOT_SOURCE.png` → `src/logo.h`) and custom **Welcome Back** startup backdrop (`res/WELCOME.JPG` → `src/welcome.h`).
+- **Unified PS5 Top Navigation Bar & Custom Outline Icons** (`src/ui.c`, `src/settings.c`, `tools/make_icons.ps1`):
+  Reworked the top navigation bar across every screen into a shared pill bar with custom outline icons (`src/icons.h`) cycling via `L` / `R` across **Games**, **Apps**, **Library**, **Music**, and **Settings** (plus the live Now Playing status pill and battery/clock readout).
+- **Dedicated Apps Tab & Redesigned Games / Library / Settings Views** (`src/ui.c`, `src/settings.c`):
+  - Separated homebrew apps into their own **Apps** tab alongside **Games**.
+  - Updated the **Games** and **Apps** rows with hero artwork card framing layered over a calm animated wave backdrop (`ui_draw_calm_backdrop` with a subtle PlayStation watermark) and a unified footer bar showing format badges (`PSP`, `APP`, `PSN`, `PS1`, `UMD`), Disc ID, and button hints.
+  - Added header count and quick-action pills (`[SELECT] Categories`, `[□] Sort`) to the **Library** view, plus outline sidebar icons and bottom info callout boxes in **Settings**.
+- **Game Icon Fitting & PMF Card Previews** (`src/art.c`, `src/preview.c`, `src/gfx.c`, `src/ui.c`):
+  - Automatically trims transparent or symmetric black letterbox/pillarbox borders on game icons, cover-fits wide icons cleanly to the `144×80` card ratio, and centers narrow/square icons over a blurred color-filled backdrop.
+  - Crops and rounded-corner-masks animated `ICON1.PMF` video previews (`preview_frame_sub`, `gfx_tex_sub`) to fit seamlessly inside the rounded 16:9 game card.
+- **Procedural UI Sound Engine** (`src/sound.c`, `src/sound.h`):
+  Restored the lightweight procedural synthesized UI sound engine (sine tones, filtered noise, and envelopes generated at startup with zero external audio assets or embedded FLAC blobs).
+- **PlayStation 30th Anniversary Theme & Classic Button Symbols** (`src/theme.c`, `src/theme.h`, `src/anniv_bg.h`, `src/icons.h`, `src/ui.c`, `tools/make_anniv_bg.ps1`, `tools/make_icons.ps1`):
+  - Added the **30th Anniversary** theme featuring an embedded classic grey PlayStation 30th Anniversary backdrop (`res/ANNIV30_BG.JPG` → `src/anniv_bg.h`), light grey surfaces, and dark ink accents across cards, dialogs, Settings, File Manager, and Control Center.
+  - Added authentic four-colour PlayStation action button symbols (`✕`, `○`, `□`, `△` via `ps_sym_color`), PlayStation emblem texture, and custom `L` / `R` shoulder-button icons across footer hints and menus.
+- **Expanded System Settings, Date & Time, and System Information** (`src/system.c`, `src/system.h`, `src/settings.c`, `src/datetime.c`, `src/datetime.h`, `src/config.c`, `src/lang.c`):
+  - Added direct **Brightness** and **Volume** controls inside *Settings → System* via the kernel's Impose service (`sceImposeGetParam` / `sceImposeSetParam`).
+  - Added **Button assign** (`Cross` / `Circle` confirm button swap) with live UI hint updates and PSP registry persistence (`/CONFIG/SYSTEM/XMB/button_assign`), plus direct **USB mode** access in *Settings → System*.
+  - Added an in-card **Date and time** sub-page (`src/datetime.c`) to configure Daylight Saving (`-1 hr`, `As is`, `+1 hr`), Date format (`YYYY-MM-DD`, `DD/MM/YYYY`, `MM/DD/YYYY`), and Time format (`24-hour` / `12-hour`), persisted in `psp5.cfg` and reflected live in the top status bar clock without modifying the PSP's hardware RTC.
+  - Added an in-card **System information** sub-page displaying PSP nickname, model, full ARK CFW version, Wi-Fi MAC address, free RAM, and live battery percentage, charging status, voltage, temperature (`°C`), and remaining capacity (`mAh`).
+- **Control Center & Standby Screen Enhancements** (`src/ui.c`, `src/main.c`, `src/system.c`, `src/osd.c`, `tools/tests/standby.txt`):
+  - Added a **Now playing** mini-card directly inside the Control Center dock alongside the quick actions.
+  - Updated the **Standby Screen** to match the active theme or the user's selected custom wallpaper, and placed a compact square **Now playing** music card (cover art, track title/artist, progress bar, and controls) below the large clock.
+  - Normalized Standby Screen rendering and display handling to preserve the user's current screen brightness and render continuously at normal vblank cadence, eliminating intermittent black-screen transitions.
+- **PSP5 REMAKE Branding** (`Makefile`, `src/main.c`, `src/settings.c`, `src/lang.c`, `INSTALL.md`, `tools/make_release.py`):
+  Renamed the EBOOT display title (`PSP_EBOOT_TITLE`), module identifier (`PSP5_REMAKE`), Settings category, localized launcher strings, release packaging names, and documentation/fork title to **PSP5 REMAKE**.
 
 ## Installing
 
@@ -130,7 +173,7 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 | any button | skip the startup screen |
 | ○ | back |
 | SELECT | categories (folders in ISO and PSP/GAME) |
-| HOME | Control Center: sleep, USB, files, screenshot, settings, XMB, restart, power off |
+| HOME | Control Center: music, screenshot, sleep, Standby Screen, USB, files, settings, XMB, restart, power off |
 | ♪ or L + R + START | take a screenshot (PNG in `PICTURE/PSP5`) |
 
 If something ever goes wrong, hold **SELECT** while the PSP boots – ARK then skips its settings and you land
@@ -157,6 +200,17 @@ there. ARK-4, the PSP-1000/3000, the music player and the new startup screen are
 able to try them on every combination, so let me know if something behaves oddly. PSP Go support is the
 newest and untested on real hardware: started from the internal storage (`ef0:`), psp5 keeps its files there,
 and it finds games and music on both the internal storage and a Memory Stick Micro. The PS Vita isn't supported.
+
+## Feedback and issues
+
+If you run into problems or want to share feedback for PSP5 REMAKE, visit the
+[GitHub Issues](https://github.com/medhatk/PSP5-REMAKE/issues) page:
+
+- **Report a bug:** Use the **Bug Report** template and include your PSP model, PSP5 REMAKE version, ARK/firmware environment, and steps to reproduce.
+- **Request a feature:** Use the **Feature Request** template to describe the problem or use case, your proposed solution, and the expected benefit.
+- **Submit compatibility feedback:** Use the **Compatibility Report** template to report how a plugin, homebrew app, or hardware/ARK setup works with PSP5 REMAKE.
+
+Please do not upload copyrighted Sony system files, private keys, or personal data in issue reports.
 
 ## Building it yourself
 

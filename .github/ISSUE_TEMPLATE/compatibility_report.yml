@@ -1,0 +1,100 @@
+name: Compatibility Report
+description: Report compatibility with a PSP plugin, homebrew app, or CFW setup.
+title: "[Compatibility]: "
+labels:
+  - compatibility
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping document compatibility for **PSP5 REMAKE**!
+
+        Instructions:
+        - Enter a clear title above (for example: `[Compatibility]: <Plugin or Homebrew Name> - <Status>`).
+        - Fill out the hardware, firmware, and plugin/homebrew details below as accurately as possible.
+        - **Privacy & Copyright Notice:** Do **not** upload copyrighted Sony system files, game ISOs/ROMs, private keys, or personal data.
+
+  - type: dropdown
+    id: psp-model
+    attributes:
+      label: PSP Model
+      description: Select the PSP hardware model (or emulator) used for testing.
+      options:
+        - PSP-1000
+        - PSP-2000
+        - PSP-3000
+        - PSP Go
+        - PSP Street (E1000)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: psp5-remake-version
+    attributes:
+      label: PSP5 REMAKE Version
+      description: Check under **Settings → PSP5 REMAKE → Version** (or specify your build/commit).
+      placeholder: "e.g. 1.0.0 (ARK-5) or 1.0.0 (ARK-4)"
+    validations:
+      required: true
+
+  - type: input
+    id: ark-version-firmware
+    attributes:
+      label: ARK Version / Firmware
+      description: Specify your ARK version, official Sony firmware base (e.g. 6.60 or 6.61), and launch mode (EBOOT vs Custom Launcher).
+      placeholder: "e.g. ARK-5 v5.2.0 on 6.61 (Custom Launcher)"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-or-homebrew-name
+    attributes:
+      label: Plugin or Homebrew Name
+      description: Name of the PSP plugin, homebrew app, or launcher component tested with PSP5 REMAKE.
+      placeholder: "e.g. cwcheat, Categories Lite, TempGBA, Brightness Control"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin Version (If Applicable)
+      description: Version or release identifier of the plugin or homebrew app (leave blank if unknown or not applicable).
+      placeholder: "e.g. v1.6, r2024, or N/A"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: compatibility-status
+    attributes:
+      label: Compatibility Status
+      description: Select the observed compatibility result when used with PSP5 REMAKE.
+      options:
+        - Working
+        - Partially Working
+        - Not Working
+    validations:
+      required: true
+
+  - type: textarea
+    id: description-and-steps
+    attributes:
+      label: Description and Reproduction Steps
+      description: "Describe what works, what fails, any plugin scope (`VSH`, `GAME`, `POPS`, `ALL`), and the steps needed to reproduce the result."
+      placeholder: |
+        1. Installed/enabled plugin or launched homebrew from...
+        2. Observed behavior...
+        3. Any workarounds or settings changes...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs-or-screenshots
+    attributes:
+      label: Logs or Screenshots (Optional)
+      description: "Attach screenshots or paste relevant non-sensitive log snippets (for example from `usb.log`). Remove any personal information and do not upload copyrighted Sony files or private keys."
+      placeholder: "Attach screenshots or paste non-sensitive logs here..."
+    validations:
+      required: false

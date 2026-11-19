@@ -24,6 +24,7 @@
 #include "theme.h"
 #include "osd.h"
 #include "testrun.h"
+#include "datetime.h"
 #include "settings.h" /* SA_* för Control Center */
 #include "boot.h"      /* psp5-loggan */
 #include "icons.h"     /* sök- och inställningsikonerna */
@@ -44,20 +45,29 @@
 #define LABEL_Y    (ROW_Y + SMALL_H + 26) /* titeln under de små korten */
 
 /* biblioteket: rutnät med 5 kolumner */
+#define LIB_MARGIN 16.0f
 #define GRID_COLS  5
-#define GRID_GAP   10.0f
-#define GRID_Y     64.0f   /* första radens överkant */
-#define CELL_W     ((SCREEN_W - 2 * MARGIN - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS)
+#define GRID_GAP   7.0f
+#define GRID_Y     72.0f   /* första radens överkant */
+#define CELL_W     ((SCREEN_W - 2 * LIB_MARGIN - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS)
 #define CELL_H     (CELL_W * 80.0f / 144.0f) /* ikonernas format */
-#define ROW_STEP   (CELL_H + 11.0f)
+#define ROW_STEP   (CELL_H + 10.0f)
 #define GRID_ROWS  3       /* hela rader som syns */
-#define GRID_BOTTOM 234.0f /* rutnätet klipps här, ovanför titel och knapptips */
+#define FOOTER_Y   242.0f  /* dockad fotlist längst ner (delas av alla skärmar) */
+#define GRID_BOTTOM FOOTER_Y /* rutnätet klipps här, ovanför fotlisten */
 
 /* musik: låtlista till vänster, "spelas nu" till höger */
-#define MLIST_Y    50.0f
-#define MROW_H     26.0f
-#define MROWS      7
-#define PANEL_X    306.0f
+#define MLIST_Y       50.0f
+#define MROW_H        26.0f
+#define MROWS         7
+#define PANEL_X       306.0f
+#define MUSIC_LIST_X  12.0f
+#define MUSIC_LIST_Y  36.0f
+#define MUSIC_ROW_H   28.0f
+#define MUSIC_ROWS    7
+#define MUSIC_LIST_W  232.0f
+#define MUSIC_PANEL_X 256.0f
+#define MUSIC_PANEL_H 204.0f
 
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
@@ -404,6 +414,31 @@ static int is_dupe(const EntryList *l, int i)
     return 0;
 }
 
+static int is_app_entry(const Entry *e)
+{
+    if (e->type == ENTRY_UMD)
+        return 0;
+    if (!strncasecmp(e->category, "s_", 2))
+        return 1;
+    if (!strncasecmp(e->category, "g_", 2))
+        return 0;
+    return e->type == ENTRY_HOMEBREW;
+}
+
+static void finalize_row_view(Ui *ui, int tab)
+{
+    LoaderView *v = &ui->views[tab];
+    if (!v->idx)
+        return;
+    qsort(v->idx, v->count, sizeof(int), cmp_row);
+    int keep = 0; /* skivan och fästa kort står alltid kvar */
+    while (keep < v->count && (ui->list->items[v->idx[keep]].type == ENTRY_UMD || meta(v->idx[keep])->pinned))
+        keep++;
+    /* i en vald kategori syns alla dess kort – gränsen gäller bara "Alla" (issue #39) */
+    if (!g_all_games && !ui->cat[tab] && v->count > keep + RECENT_GAMES)
+        v->count = keep + RECENT_GAMES;
+}
+
 static void build_views(Ui *ui)
 {
     collect_cats(ui->list);
@@ -411,11 +446,13 @@ static void build_views(Ui *ui)
     for (int i = 0; i < ui->list->count; i++) {
         if (is_dupe(ui->list, i))
             continue;
-        int c = cat_of(&ui->list->items[i]);
-        s_cat_n[TAB_GAMES][c]++;
+        const Entry *e = &ui->list->items[i];
+        int c = cat_of(e);
+        int primary = is_app_entry(e) ? TAB_APPS : TAB_GAMES;
+        s_cat_n[primary][c]++;
         s_cat_n[TAB_LIBRARY][c]++;
-        if (c) { /* "Alla" räknar även spelen i kategorierna (issue #39) */
-            s_cat_n[TAB_GAMES][0]++;
+        if (c) { /* "Alla" räknar även korten i kategorierna (issue #39) */
+            s_cat_n[primary][0]++;
             s_cat_n[TAB_LIBRARY][0]++;
         }
     }
@@ -430,25 +467,18 @@ static void build_views(Ui *ui)
             continue;
         const Entry *e = &ui->list->items[i];
         int c = cat_of(e);
-        LoaderView *v = &ui->views[TAB_GAMES];
-        /* UMD-skivan syns i alla kategorier; alla spel och appar ligger i Games-raden som på PS5 */
-        if (v->idx && (!ui->cat[TAB_GAMES] || c == ui->cat[TAB_GAMES] || e->type == ENTRY_UMD))
-            v->idx[v->count++] = i;
+        int primary = is_app_entry(e) ? TAB_APPS : TAB_GAMES;
+        LoaderView *pv = &ui->views[primary];
+        /* UMD-skivan syns i alla spelkategorier; appar filtreras till TAB_APPS och alla ligger i Bibliotek */
+        if (pv->idx && (!ui->cat[primary] || c == ui->cat[primary] || e->type == ENTRY_UMD))
+            pv->idx[pv->count++] = i;
         LoaderView *lib = &ui->views[TAB_LIBRARY];
         if (lib->idx && (!ui->cat[TAB_LIBRARY] || c == ui->cat[TAB_LIBRARY] || e->type == ENTRY_UMD))
             lib->idx[lib->count++] = i;
     }
     s_sort_list = ui->list;
-    LoaderView *g = &ui->views[TAB_GAMES];
-    if (g->idx) {
-        qsort(g->idx, g->count, sizeof(int), cmp_row);
-        int keep = 0; /* skivan och fästa spel står alltid kvar */
-        while (keep < g->count && (ui->list->items[g->idx[keep]].type == ENTRY_UMD || meta(g->idx[keep])->pinned))
-            keep++;
-        /* i en vald kategori syns alla dess spel – gränsen gäller bara "Alla" (issue #39) */
-        if (!g_all_games && !ui->cat[TAB_GAMES] && g->count > keep + RECENT_GAMES)
-            g->count = keep + RECENT_GAMES;
-    }
+    finalize_row_view(ui, TAB_GAMES);
+    finalize_row_view(ui, TAB_APPS);
     sort_library(ui);
 }
 
@@ -467,6 +497,13 @@ static void toggle_sort(Ui *ui)
     sound_play(SND_TOGGLE);
 }
 
+static float row_entry_offset(int tab, int intro)
+{
+    if (tab == TAB_GAMES || tab == TAB_APPS)
+        return intro ? -0.75f : -0.45f;
+    return intro ? 1.5f : 0.7f;
+}
+
 static void switch_tab(Ui *ui, int tab)
 {
     if (tab == ui->tab || tab < 0 || tab >= TAB_COUNT)
@@ -476,7 +513,7 @@ static void switch_tab(Ui *ui, int tab)
     ui->tab = tab;
     ui->tab_anim = 0;
     sound_play(SND_SWIPE);
-    ui->pos = ui->sel[tab] + 0.7f; /* raden glider in från höger */
+    ui->pos = ui->sel[tab] + row_entry_offset(tab, 0); /* raden glider in mjukt */
     ui->still = 0;
     ui->label_for = -999;
     ui->seek_dir = ui->seeking = 0; /* en hållen pil gäller bara i musikfliken */
@@ -521,7 +558,7 @@ static void utf8_pop(char *s)
 
 static int label_key(const Ui *ui)
 {
-    if (ui->tab == TAB_GAMES && view(ui)->count && ui->sel[TAB_GAMES] == view(ui)->count)
+    if ((ui->tab == TAB_GAMES || ui->tab == TAB_APPS) && view(ui)->count && ui->sel[ui->tab] == view(ui)->count)
         return -3; /* Spelbibliotekskortet längst till höger */
     if (ui->tab == TAB_MEDIA)
         return -10 - ui->sel[TAB_MEDIA];
@@ -645,8 +682,9 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     char keys[TAB_MUSIC][80] = { "" };
     int had_last = last_load(ui, keys);
     build_views(ui);
-    if (!had_last || ui->tab == TAB_APPS)
-        ui->tab = TAB_GAMES;
+    if (!had_last || (ui->tab != TAB_GAMES && ui->tab != TAB_APPS && ui->tab != TAB_LIBRARY && ui->tab != TAB_MUSIC))
+        ui->tab = (had_last && (ui->tab == TAB_MEDIA || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO))
+                      ? TAB_MUSIC : TAB_GAMES;
     char key[80];
     for (int t = 0; t < TAB_MUSIC; t++)
         for (int p = 0; keys[t][0] && p < ui->views[t].count; p++) {
@@ -656,7 +694,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
                 break;
             }
         }
-    ui->pos = (ui->tab >= TAB_MUSIC ? 0 : ui->sel[ui->tab]) + 1.5f; /* korten glider in vid start */
+    ui->pos = (ui->tab >= TAB_MUSIC ? 0 : ui->sel[ui->tab]) + row_entry_offset(ui->tab, 1); /* korten glider in vid start */
     ui->grid_target = ui->sel[TAB_LIBRARY] / GRID_COLS;
     ui->grid_scroll = ui->grid_target;
     loader_set_view(&ui->views[ui->tab >= TAB_MUSIC ? TAB_GAMES : ui->tab]);
@@ -728,7 +766,7 @@ static int menu_items(const Ui *ui, int out[3])
 {
     int n = 0;
     out[n++] = MI_PIN;
-    if (ui->tab == TAB_GAMES && s_meta && (g_all_games || meta(ui_selected(ui))->pinned))
+    if ((ui->tab == TAB_GAMES || ui->tab == TAB_APPS) && s_meta && (g_all_games || meta(ui_selected(ui))->pinned))
         out[n++] = MI_MOVE;
     if (ui->tab == TAB_LIBRARY)
         out[n++] = MI_SORT;
@@ -885,7 +923,7 @@ void ui_replay_intro(Ui *ui)
 {
     ui->intro = 0;
     if (ui->tab < TAB_MUSIC)
-        ui->pos = ui->sel[ui->tab] + 1.5f;
+        ui->pos = ui->sel[ui->tab] + row_entry_offset(ui->tab, 1);
 }
 
 void ui_toast(Ui *ui, const char *msg)
@@ -1070,7 +1108,7 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
             ui->music_view = 1;
             ui->album_sel = ui->music_album;
         } else {
-            switch_tab(ui, TAB_MEDIA);
+            switch_tab(ui, TAB_GAMES);
         }
         sound_play(SND_BACK);
         return;
@@ -1753,6 +1791,8 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
                 ui->search_sel = 0;
                 ui->search_target = 0;
                 sound_play(SND_BACK);
+            } else {
+                sound_play(SND_ERROR);
             }
         } else if (in->pressed & confirm) {
             if (ui->search_focus == 0) {
@@ -1762,11 +1802,15 @@ static void update_search(Ui *ui, const UiInput *in, float dt)
                     if (len > 0) {
                         ui->search_query[len - 1] = 0;
                         sound_play(SND_BACK);
+                    } else {
+                        sound_play(SND_ERROR);
                     }
                 } else if (len + 1 < (int)sizeof(ui->search_query)) {
                     ui->search_query[len] = ch;
                     ui->search_query[len + 1] = 0;
                     sound_play(SND_SELECT);
+                } else {
+                    sound_play(SND_ERROR);
                 }
                 ui->search_sel = 0;
                 ui->search_target = 0;
@@ -1869,7 +1913,7 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
         if (s_pick[ui->cat_sel] != ui->cat[ui->tab]) {
             ui->cat[ui->tab] = s_pick[ui->cat_sel];
             ui_relist(ui, 0, 0); /* markeringen står kvar om kortet finns i kategorin */
-            ui->pos = ui->sel[ui->tab] + 0.7f;
+            ui->pos = ui->sel[ui->tab] + row_entry_offset(ui->tab, 0);
             ui->tab_anim = 0;
         }
         sound_play(SND_SELECT);
@@ -1881,7 +1925,8 @@ static void update_categories(Ui *ui, const UiInput *in, float dt)
 
 /* --- Control Center (HOME eller SELECT) --- */
 
-enum { CC_MUSIC, CC_SCREENSHOT, CC_SLEEP, CC_USB, CC_FILES, CC_SETTINGS, CC_XMB, CC_RESTART, CC_OFF, CC_COUNT };
+/* [medhatk] Added CC_STANDBY to Control Center bar between Sleep and USB */
+enum { CC_MUSIC, CC_SCREENSHOT, CC_SLEEP, CC_STANDBY, CC_USB, CC_FILES, CC_SETTINGS, CC_XMB, CC_RESTART, CC_OFF, CC_COUNT };
 
 static const char *cc_label(int item)
 {
@@ -1889,6 +1934,7 @@ static const char *cc_label(int item)
     case CC_MUSIC:      return L(music_state() == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
     case CC_SCREENSHOT: return L(S_SCREENSHOT);
     case CC_SLEEP:      return L(S_SLEEP);
+    case CC_STANDBY:    return L(S_STANDBY); /* [medhatk] "Standby Screen" label */
     case CC_USB:        return L(S_USB_MODE);
     case CC_FILES:      return L(S_FILES);
     case CC_SETTINGS:   return L(S_SETTINGS);
@@ -1948,7 +1994,8 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
     }
     if (!(in->pressed & ok))
         return UI_NONE;
-    static const int actions[CC_COUNT] = { 0, 0, SA_SUSPEND, SA_USB, SA_FILES, 0, SA_XMB, SA_RESTART, SA_SHUTDOWN };
+    /* [medhatk] Slot 3 (CC_STANDBY) maps to 0 here because it transitions to UI_STANDBY rather than SA_* */
+    static const int actions[CC_COUNT] = { 0, 0, SA_SUSPEND, 0, SA_USB, SA_FILES, 0, SA_XMB, SA_RESTART, SA_SHUTDOWN };
     switch (ui->cc_sel) {
     case CC_MUSIC:
         if (music_current() >= 0 && music_state() != MUSIC_STOPPED)
@@ -1963,6 +2010,12 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
         ui->cc_anim = 0;
         osd_request_screenshot();
         return UI_NONE;
+    case CC_STANDBY:
+        /* [medhatk] Close Control Center and hand off to main.c standby_mode() loop */
+        ui->cc_open = 0;
+        ui->cc_anim = 0;
+        sound_play(SND_BACK);
+        return UI_STANDBY;
     case CC_SETTINGS:
         ui->cc_open = 0;
         return UI_SETTINGS;
@@ -1994,6 +2047,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
     if (ui->launch >= 0) {
         preview_want(NULL, -1); /* spelets musik ska inte spela över startljudet */
+        if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS)
+            ui->pos = approach(ui->pos, ui->sel[ui->tab], 12.0f, dt);
         ui->launch += dt / LAUNCH_LEN;
         return ui->launch >= 1 ? UI_LAUNCH : UI_NONE;
     }
@@ -2046,7 +2101,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if (cat_was_open)
         in = &none;
     if ((in->pressed & PSP_CTRL_SELECT) && ui->intro >= 1) {
-        if (ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY)
+        if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY)
             open_categories(ui);
         else
             ui_open_cc(ui);
@@ -2061,18 +2116,21 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         in = &none;
     }
 
-    /* L och R bläddrar direkt genom toppradens 4 val: Games (0) → Media (1) → Search (2) → Settings (3) */
+    /* L och R bläddrar direkt genom toppradens 5 val:
+     * Games (0) <-> Apps (1) <-> Library (2) <-> Music (3) <-> Settings (4) */
     if ((in->pressed & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) && in != &none && ui->intro >= 1) {
         int sec = 0;
-        if (ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO)
+        if (ui->tab == TAB_APPS)
             sec = 1;
-        else if (ui->tab == TAB_SEARCH)
+        else if (ui->tab == TAB_LIBRARY)
             sec = 2;
+        else if (ui->tab == TAB_MUSIC || ui->tab == TAB_MEDIA || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO)
+            sec = 3;
         int step = (in->pressed & PSP_CTRL_RTRIGGER) ? 1 : -1;
-        int next_sec = (sec + step + 4) % 4;
-        if (next_sec == 3)
+        int next_sec = (sec + step + 5) % 5;
+        if (next_sec == 4)
             return UI_SETTINGS;
-        static const int sec_tabs[3] = { TAB_GAMES, TAB_MEDIA, TAB_SEARCH };
+        static const int sec_tabs[4] = { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC };
         switch_tab(ui, sec_tabs[next_sec]);
     }
 
@@ -2113,7 +2171,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     }
 
     int count = ui->tab < TAB_MUSIC ? view(ui)->count : 0;
-    int row_count = ui->tab == TAB_GAMES && count ? count + 1 : count; /* +1 för Spelbibliotekskortet längst till höger */
+    int is_row_tab = ui->tab == TAB_GAMES || ui->tab == TAB_APPS;
+    int row_count = is_row_tab && count ? count + 1 : count; /* +1 för Spelbibliotekskortet längst till höger */
     int *sel = &ui->sel[ui->tab];
     int grid = ui->tab == TAB_LIBRARY;
     if (grid && !overlay && (in->pressed & back_btn) && ui->intro >= 1) {
@@ -2121,10 +2180,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         sound_play(SND_BACK);
     }
     /* △ öppnar inställningarna, som före 2.1.0 (issue #34) – musikfliken har △ för album */
-    if ((ui->tab == TAB_GAMES || ui->tab == TAB_MEDIA || grid) && (in->pressed & PSP_CTRL_TRIANGLE) &&
+    if ((is_row_tab || ui->tab == TAB_MEDIA || grid) && (in->pressed & PSP_CTRL_TRIANGLE) &&
         ui->intro >= 1 && ui->launch < 0)
         return UI_SETTINGS;
-    if ((ui->tab == TAB_GAMES || grid) && (in->pressed & PSP_CTRL_SQUARE) && ui_selected(ui) >= 0 &&
+    if ((is_row_tab || grid) && (in->pressed & PSP_CTRL_SQUARE) && ui_selected(ui) >= 0 &&
         ui->intro >= 1 && ui->launch < 0 && ui->list->items[ui_selected(ui)].type != ENTRY_UMD) {
         ui->menu_open = 1;
         ui->menu_sel = 0;
@@ -2157,7 +2216,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
     /* START eller ✕ startar valt spel – eller öppnar Spelbiblioteket om sista kortet är valt */
     if (ui->tab < TAB_MUSIC && (in->pressed & confirm) && row_count && ui->intro >= 1) {
-        if (ui->tab == TAB_GAMES && *sel == count) {
+        if (is_row_tab && *sel == count) {
             switch_tab(ui, TAB_LIBRARY);
         } else if (ui_selected(ui) >= 0) {
             if (ui->can_launch) {
@@ -2184,7 +2243,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->grid_scroll = approach(ui->grid_scroll, ui->grid_target, 14.0f, dt);
     }
 
-    ui->pos = approach(ui->pos, *sel, 13.0f, dt);
+    ui->pos = approach(ui->pos, *sel, is_row_tab ? 11.5f : 13.0f, dt);
     if (fabsf(ui->pos - *sel) < 0.001f)
         ui->pos = *sel;
     if (ui->tab < TAB_MUSIC && *sel < count)
@@ -2196,17 +2255,20 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
     /* spelets video och musik, som i XMB – eller vald video i Videospelaren (TAB_VIDEO) */
     int pv = -1;
+    int pv_card = 0;
     const Entry *pv_entry = NULL;
     if (ui->tab == TAB_VIDEO && s_nvids > 0 && ui->vid_still >= 0.14f && !ui->cc_open) {
         pv = VID_PREVIEW + ui->vid_sel;
         pv_entry = &s_vids[ui->vid_sel].entry;
-    } else if (g_previews && ui->tab == TAB_GAMES && !overlay && ui->cat_anim <= 0 &&
+    } else if (g_previews && is_row_tab && !overlay && ui->cat_anim <= 0 &&
                ui->cc_anim <= 0 && ui->intro >= 1 && ui->still >= PREVIEW_DELAY) {
         pv = ui_selected(ui);
-        if (pv >= 0)
+        if (pv >= 0) {
             pv_entry = &ui->list->items[pv];
+            pv_card = 1;
+        }
     }
-    preview_want(pv_entry, pv);
+    preview_want_ex(pv_entry, pv, pv_card);
     if (pv >= 0 && preview_frame(pv))
         ui->preview_anim = clampf(ui->preview_anim + dt * 4, 0, 1);
     else
@@ -2230,6 +2292,37 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 /* --- ritning --- */
 
 /* Temats yta med ett mjukt ljus uppifrån – syns när spelet saknar bild (eller bilderna är avstängda). */
+static u32 mix_rgba(u32 a, u32 b, float t)
+{
+    t = clampf(t, 0.0f, 1.0f);
+    u32 out = 0;
+    for (int s = 0; s < 32; s += 8)
+        out |= (u32)(lerpf((a >> s) & 0xFF, (b >> s) & 0xFF, t) + 0.5f) << s;
+    return out;
+}
+
+static float ui_art_alpha(const Ui *ui)
+{
+    if (g_wallpaper[0])
+        return 1.0f;
+    if (!ui)
+        return 0.0f;
+    if (ui->bg_cur)
+        return ui->bg_old ? 1.0f : clampf(ui->bg_fade, 0.0f, 1.0f);
+    if (ui->bg_old)
+        return clampf(1.0f - ui->bg_fade, 0.0f, 1.0f);
+    return 0.0f;
+}
+
+/* För ljusa teman: ger `light_ink` över temabakgrunden och tonar mot `over_art`
+ * när en spelbild eller egen bakgrundsbild ligger bakom. */
+static u32 ink_over_art(const Theme *t, u32 light_ink, u32 over_art, float art_a)
+{
+    if (!t || !t->ink)
+        return over_art;
+    return art_a > 0.001f ? mix_rgba(light_ink, over_art, art_a) : light_ink;
+}
+
 static void draw_spotlight(const float tone[3], float time)
 {
     if (strcmp(s_wall_for, g_wallpaper)) { /* bytt i inställningarna – laddas sällan, från cachen */
@@ -2243,33 +2336,175 @@ static void draw_spotlight(const float tone[3], float time)
         theme_backdrop(theme_cur(), time, tone, 0, 1);
 }
 
+static void rot_pt(float cx, float cy, float cs, float sn, float lx, float ly, float *ox, float *oy)
+{
+    *ox = cx + lx * cs - ly * sn;
+    *oy = cy + lx * sn + ly * cs;
+}
+
+static void draw_stroke_loop(float cx, float cy, float cs, float sn, const float *pts, int n, float width, u32 color)
+{
+    float xy[68];
+    u32 cols[34];
+    if (n > 34)
+        n = 34;
+    for (int i = 0; i < n; i++) {
+        rot_pt(cx, cy, cs, sn, pts[i * 2], pts[i * 2 + 1], &xy[i * 2], &xy[i * 2 + 1]);
+        cols[i] = color;
+    }
+    gfx_stroke(xy, cols, n, width);
+}
+
+static void draw_circle_stroke(float cx, float cy, float r, float width, u32 color)
+{
+    float ring[58];
+    u32 cols[29];
+    for (int i = 0; i < 29; i++) {
+        float a = (float)i * (6.2831853f / 28.0f);
+        ring[i * 2] = cx + cosf(a) * r;
+        ring[i * 2 + 1] = cy + sinf(a) * r;
+        cols[i] = color;
+    }
+    gfx_stroke(ring, cols, 29, width);
+}
+
+/* Tilted 2x2 PlayStation geometric symbols in the lower-right backdrop matching Figma. */
+static void draw_ps_watermark(u32 color)
+{
+    const float ang = -0.244f; /* -14 deg */
+    const float cs = cosf(ang), sn = sinf(ang);
+    const float bx = 422.0f, by = 170.0f, off = 23.5f, sw = 3.2f;
+    float cx, cy;
+
+    /* Top-left: Square (starts/ends on straight top midpoint so stroke join is seamless). */
+    rot_pt(bx, by, cs, sn, -off, -off, &cx, &cy);
+    static const float sq[26] = {
+          0.0f, -13.5f,  10.0f, -13.5f,  12.6f, -12.6f,  13.5f, -10.0f,
+         13.5f,  10.0f,  12.6f,  12.6f,  10.0f,  13.5f, -10.0f,  13.5f,
+        -12.6f,  12.6f, -13.5f,  10.0f, -13.5f, -10.0f, -12.6f, -12.6f,
+          0.0f, -13.5f
+    };
+    draw_stroke_loop(cx, cy, cs, sn, sq, 13, sw, color);
+
+    /* Top-right: Triangle (starts/ends on straight base midpoint). */
+    rot_pt(bx, by, cs, sn, off, -off, &cx, &cy);
+    static const float tri[18] = {
+          0.0f,  12.0f, -12.5f,  12.0f, -14.2f,  10.4f, -13.5f,   8.0f,
+         -1.3f, -13.2f,   1.3f, -13.2f,  13.5f,   8.0f,  14.2f,  10.4f,
+          0.0f,  12.0f
+    };
+    draw_stroke_loop(cx, cy, cs, sn, tri, 9, sw, color);
+
+    /* Bottom-left: Cross. */
+    rot_pt(bx, by, cs, sn, -off, off, &cx, &cy);
+    static const float x1[4] = { -11.5f, -11.5f,  11.5f, 11.5f };
+    static const float x2[4] = {  11.5f, -11.5f, -11.5f, 11.5f };
+    draw_stroke_loop(cx, cy, cs, sn, x1, 2, sw, color);
+    draw_stroke_loop(cx, cy, cs, sn, x2, 2, sw, color);
+
+    /* Bottom-right: Circle. */
+    rot_pt(bx, by, cs, sn, off, off, &cx, &cy);
+    draw_circle_stroke(cx, cy, 14.5f, sw, color);
+}
+
+void ui_draw_calm_backdrop(const Theme *t, float time, const float accent[3], int allow_wallpaper)
+{
+    const Theme *cur = t ? t : theme_cur();
+    int is_default = (cur == theme_get(0));
+
+    if (allow_wallpaper && g_wallpaper[0]) {
+        draw_spotlight(accent, time);
+        gfx_gradient_v(0, 0, SCREEN_W, 120, RGBA(0, 0, 0, 145), RGBA(0, 0, 0, 0));
+        gfx_gradient_v(0, 160, SCREEN_W, SCREEN_H - 160, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 155));
+    } else if (is_default) {
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(9, 13, 19, 255));
+    } else {
+        theme_backdrop(cur, time, accent, 0, 1);
+        if (cur->deco == DECO_ANNIV)
+            return; /* inbyggd 30th Anniversary-bakgrund innehåller redan symboler och märke */
+        if (!cur->ink)
+            gfx_gradient_v(0, 175, SCREEN_W, SCREEN_H - 175, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 95));
+    }
+
+    /* Figma ambient flowing waves (broad swells + crisp glowing wave ridges). */
+    float xy[48];
+    u32 colors[24];
+    for (int row = 0; row < 2; row++) {
+        for (int p = 0; p < 24; p++) {
+            float px = p * (SCREEN_W / 23.0f);
+            float tt = px / SCREEN_W;
+            float swell = sinf(tt * 4.2f + time * 0.14f + row * 0.9f) * 14.0f;
+            float py = 204.0f + row * 15.0f + tt * 18.0f + swell;
+            xy[p * 2] = px;
+            xy[p * 2 + 1] = py;
+            colors[p] = is_default ? RGBA(18, 52, 98, 52 - row * 10)
+                      : cur->ink   ? COLOR_ALPHA(cur->ink->panel_deep, 42 - row * 10)
+                                   : COLOR_ALPHA(cur->accent, 36 - row * 8);
+        }
+        gfx_stroke(xy, colors, 24, 18.0f - row * 4.0f);
+    }
+    for (int line = 0; line < 2; line++) {
+        for (int p = 0; p < 24; p++) {
+            float px = p * (SCREEN_W / 23.0f);
+            float tt = px / SCREEN_W;
+            float py = 212.0f + line * 11.0f + sinf(tt * 4.6f + time * 0.18f + line * 1.4f) * (12.0f - line * 2.0f)
+                     + tt * 14.0f;
+            xy[p * 2] = px;
+            xy[p * 2 + 1] = py;
+            colors[p] = is_default ? RGBA(56, 128, 214, 52 - line * 14)
+                      : cur->ink   ? COLOR_ALPHA(cur->ink->border_hi, 52 - line * 14)
+                                   : COLOR_ALPHA(cur->accent, 48 - line * 12);
+        }
+        gfx_stroke(xy, colors, 24, 2.0f - line * 0.5f);
+    }
+
+    u32 watermark = is_default ? RGBA(126, 158, 200, 19)
+                  : cur->ink   ? COLOR_ALPHA(cur->ink->shadow, 26)
+                               : COLOR_ALPHA(cur->accent, 22);
+    draw_ps_watermark(watermark);
+}
+
 static void draw_background(Ui *ui)
 {
-    /* en bild som täcker hela skärmen (färdigtonad, eller den gamla helt under den nya) – då behövs ingen yta under */
-    if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old))
-        draw_spotlight(ui->accent, ui->time);
+    int calm_bg = ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC;
+    int has_art = ui->bg_cur != NULL || ui->bg_old != NULL;
 
-    const u32 tint = RGBA(205, 205, 210, 0);
-    int fade = (int)(ui->bg_fade * 255);
-    if (ui->bg_old)
-        gfx_tex(ui->bg_old, 0, 0, SCREEN_W, SCREEN_H, tint | (u32)(ui->bg_cur ? 255 : 255 - fade) << 24);
-    if (ui->bg_cur)
-        gfx_tex(ui->bg_cur, 0, 0, SCREEN_W, SCREEN_H, tint | (u32)fade << 24);
+    /* Visa lugn temabakgrund som grund på huvudflikarna, men låt spelets bakgrundsbild (PIC1)
+     * tonas in ovanpå när "Spelens bilder i bakgrunden" (g_theme_art) är aktiverat. */
+    if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old)) {
+        if (calm_bg)
+            ui_draw_calm_backdrop(theme_cur(), ui->time, ui->accent, 1);
+        else
+            draw_spotlight(ui->accent, ui->time);
+    }
 
-    /* toningar: uppe (flikar/kort), vänster (text) och nere (knappar) */
-    gfx_gradient_v(0, 0, SCREEN_W, 120, RGBA(0, 0, 0, 165), RGBA(0, 0, 0, 0));
-    gfx_gradient_h(0, 0, 300, SCREEN_H, RGBA(0, 0, 0, 120), RGBA(0, 0, 0, 0));
-    gfx_gradient_v(0, 160, SCREEN_W, SCREEN_H - 160, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 175));
+    if (has_art) {
+        const u32 tint = RGBA(205, 205, 210, 0);
+        int fade = (int)(ui->bg_fade * 255);
+        if (ui->bg_old)
+            gfx_tex(ui->bg_old, 0, 0, SCREEN_W, SCREEN_H, tint | (u32)(ui->bg_cur ? 255 : 255 - fade) << 24);
+        if (ui->bg_cur)
+            gfx_tex(ui->bg_cur, 0, 0, SCREEN_W, SCREEN_H, tint | (u32)fade << 24);
+
+        /* toningar: uppe (flikar/kort), vänster (text) och nere (fotlist/knappar) */
+        gfx_gradient_v(0, 0, SCREEN_W, 120, RGBA(0, 0, 0, 165), RGBA(0, 0, 0, 0));
+        gfx_gradient_h(0, 0, 300, SCREEN_H, RGBA(0, 0, 0, 120), RGBA(0, 0, 0, 0));
+        gfx_gradient_v(0, 160, SCREEN_W, SCREEN_H - 160, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 175));
+    }
 }
 
 /* Laddas batteriet sveper fyllningen från nivån upp till fullt om och om igen,
  * och en liten blixt syns till vänster om batteriet. */
 /* bolt_gap: extra plats mellan blixten och batteriet (för procent/tid kvar) */
-static void draw_battery(float x, float y, int percent, int charging, float time, float a, float bolt_gap)
+static void draw_battery(float x, float y, int percent, int charging, float time, float a, float bolt_gap,
+                         const Theme *t, float art_a)
 {
-    gfx_round_rect(x, y, 20, 10, 2.5f, with_alpha(LIGHT, 0.85f * a));
-    gfx_round_rect(x + 1.3f, y + 1.3f, 17.4f, 7.4f, 1.8f, with_alpha(DARK, a));
-    gfx_rect(x + 20, y + 3, 1.8f, 4, with_alpha(LIGHT, 0.85f * a));
+    u32 fg = ink_over_art(t, t->ink ? t->ink->graphite : LIGHT, LIGHT, art_a);
+    u32 inside = ink_over_art(t, t->top, DARK, art_a);
+    u32 low = ink_over_art(t, t->ink ? t->ink->err : RGBA(255, 95, 85, 255), RGBA(255, 95, 85, 255), art_a);
+    gfx_round_rect(x, y, 20, 10, 2.5f, with_alpha(fg, 0.85f * a));
+    gfx_round_rect(x + 1.3f, y + 1.3f, 17.4f, 7.4f, 1.8f, with_alpha(inside, a));
+    gfx_rect(x + 20, y + 3, 1.8f, 4, with_alpha(fg, 0.85f * a));
     if (percent >= 0) {
         const float full = 14.8f;
         float w = full * percent / 100.0f;
@@ -2277,9 +2512,9 @@ static void draw_battery(float x, float y, int percent, int charging, float time
             float p = fmodf(time, 1.8f) / 1.8f;
             float sweep = w + (full - w) * smooth(p / 0.8f);
             float fade = 1 - smooth((p - 0.75f) / 0.25f);
-            gfx_round_rect(x + 2.6f, y + 2.6f, sweep + 0.4f, 4.8f, 1, with_alpha(LIGHT, 0.5f * fade * a));
+            gfx_round_rect(x + 2.6f, y + 2.6f, sweep + 0.4f, 4.8f, 1, with_alpha(fg, 0.5f * fade * a));
         }
-        u32 c = percent <= 15 && !charging ? RGBA(255, 95, 85, 255) : LIGHT;
+        u32 c = percent <= 15 && !charging ? low : fg;
         gfx_round_rect(x + 2.6f, y + 2.6f, w + 0.4f, 4.8f, 1, with_alpha(c, a));
     }
     if (charging) {
@@ -2288,7 +2523,7 @@ static void draw_battery(float x, float y, int percent, int charging, float time
         float cx = x - 7 - bolt_gap, cy = y + 5;
         float bolt[12] = { cx + 1.6f * s, cy - 5.2f * s, cx - 2.6f * s, cy + 0.9f * s, cx - 0.2f * s, cy + 0.9f * s,
                            cx - 1.6f * s, cy + 5.2f * s, cx + 2.6f * s, cy - 0.9f * s, cx + 0.2f * s, cy - 0.9f * s };
-        gfx_fan(cx, cy, bolt, 6, with_alpha(LIGHT, 0.9f * a));
+        gfx_fan(cx, cy, bolt, 6, with_alpha(fg, 0.9f * a));
     }
 }
 
@@ -2342,16 +2577,40 @@ static u32 mix(u32 a, u32 b, float t)
 
 /* Sök- och inställningsikoner uppe till höger i toppraden (som på PS5): förrenderade och
  * kantutjämnade i 16 × 16 (tools/make_icons.ps1 → icons.h), ritade pixel för pixel */
-static void draw_icon(const unsigned char *alpha, Texture **tex, float cx, float cy, u32 c)
+static void draw_icon_wh(const unsigned char *alpha, int w, int h, Texture **tex, float x, float y, u32 c)
 {
-    if (!*tex && (*tex = tex_create(ICON_N, ICON_N, GU_PSM_8888))) {
+    if (!*tex && (*tex = tex_create(w, h, GU_PSM_8888))) {
         u32 *px = (*tex)->data;
-        for (int y = 0; y < ICON_N; y++)
-            for (int x = 0; x < ICON_N; x++)
-                px[y * (*tex)->stride + x] = RGBA(255, 255, 255, alpha[y * ICON_N + x]);
+        for (int row = 0; row < h; row++)
+            for (int col = 0; col < w; col++)
+                px[row * (*tex)->stride + col] = RGBA(255, 255, 255, alpha[row * w + col]);
         tex_flush(*tex);
     }
-    gfx_tex_1to1(*tex, cx - ICON_N / 2.0f, cy - ICON_N / 2.0f, c);
+    if (*tex)
+        gfx_tex_1to1(*tex, x, y, c);
+}
+
+static void draw_icon_n(const unsigned char *alpha, int n, Texture **tex, float cx, float cy, u32 c)
+{
+    draw_icon_wh(alpha, n, n, tex, cx - n / 2.0f, cy - n / 2.0f, c);
+}
+
+static void draw_icon(const unsigned char *alpha, Texture **tex, float cx, float cy, u32 c)
+{
+    draw_icon_n(alpha, ICON_N, tex, cx, cy, c);
+}
+
+/* Förrenderade ikoner som även inställningarna använder (kategorier, Control Center). */
+void ui_draw_mask_icon(int id, float cx, float cy, u32 c)
+{
+    static Texture *t[UI_ICON_COUNT];
+    static const unsigned char *const masks[UI_ICON_COUNT] = {
+        ICON_CAT_PSP5, ICON_CAT_THEME, ICON_CAT_PERF, ICON_CAT_SYSTEM, ICON_CAT_PLUGINS, ICON_CAT_POWER,
+        ICON_CC_USB, ICON_CC_GEAR
+    };
+    if (id < 0 || id >= UI_ICON_COUNT)
+        return;
+    draw_icon_n(masks[id], id >= UI_ICON_CC_USB ? ICON_CC_N : ICON_N, &t[id], cx, cy, c);
 }
 
 static void draw_search_icon(float cx, float cy, u32 c)
@@ -2366,17 +2625,32 @@ static void draw_gear_icon(float cx, float cy, u32 c)
     draw_icon(ICON_GEAR, &t, cx, cy, c);
 }
 
-static void draw_top_bar(Ui *ui)
+/* Skarpa, kantutjämnade 16x16-ikoner från src/icons.h (genererade via tools/make_icons.ps1). */
+static void draw_tab_icon(int tab, float cx, float cy, u32 c)
 {
-    float a = ui->intro;
+    static Texture *t[4];
+    static const unsigned char *const icons[4] = {
+        ICON_TAB_GAMES, ICON_TAB_APPS, ICON_TAB_LIBRARY, ICON_TAB_MUSIC
+    };
+    if (tab >= 0 && tab < 4)
+        draw_icon(icons[tab], &t[tab], cx, cy, c);
+}
 
-    ScePspDateTime now;
-    char clock[8] = "";
-    if (read_clock(&now))
-        snprintf(clock, sizeof(clock), "%02d:%02d", now.hour, now.minute);
-    text_draw(SCREEN_W - MARGIN, 24.5f, 0.74f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock);
+void ui_draw_top_bar_for(int active_tab, int in_settings, float a, float anim_time, const Theme *t, float art_a)
+{
+    if (!t)
+        t = theme_cur();
+    u32 pill_col = (t == theme_get(0)) ? RGBA(37, 84, 150, (int)(255 * a))
+                                       : COLOR_ALPHA(theme_toggle_on(t), (int)(240 * a));
+    u32 main_fg = ink_over_art(t, t->ink ? t->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 dim_fg = ink_over_art(t, t->ink ? t->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
+
+    char clock[16] = "";
+    dt_clock_text(clock, sizeof(clock));
+    float right_edge = SCREEN_W - 14.0f;
+    text_draw(right_edge, 24.5f, 0.74f, 0, with_alpha(main_fg, a), ALIGN_RIGHT, clock);
     float cw = text_width(0.74f, 0, clock);
-    float bx = SCREEN_W - MARGIN - cw - 30;
+    float bx = right_edge - cw - 30;
     int battery = scePowerIsBatteryExist();
     int charging = testrun_charging() >= 0 ? testrun_charging() : battery && scePowerIsBatteryCharging() > 0;
     int level = testrun_battery() >= 0 ? testrun_battery() : battery ? scePowerGetBatteryLifePercent() : -1;
@@ -2402,45 +2676,49 @@ static void draw_top_bar(Ui *ui)
     }
     float iw = info[0] ? text_width(0.58f, 0, info) + 5 : 0;
     if (info[0])
-        text_draw(bx - 5, 24.0f, 0.58f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, info);
-    draw_battery(bx, 15.0f, level, charging, ui->time, a, iw);
+        text_draw(bx - 5, 24.0f, 0.58f, 0, with_alpha(dim_fg, a), ALIGN_RIGHT, info);
+    draw_battery(bx, 15.0f, level, charging, anim_time, a, iw, t, art_a);
     float status_left = bx - (charging ? 10 : 0) - iw;
 
-    /* PS5-topprad till höger: Sök (🔍) och Inställningar (⚙) till vänster om batteriet & klockan */
-    float gear_cx = status_left - 18.0f, search_cx = status_left - 44.0f, icon_cy = 19.5f;
-    int on_search = ui->tab == TAB_SEARCH;
-    if (on_search) {
-        gfx_circle(search_cx, icon_cy, 11.0f, RGBA(255, 255, 255, (int)(36 * a)));
-        gfx_ring(search_cx - 11.0f, icon_cy - 11.0f, 22.0f, 22.0f, 11.0f, RGBA(255, 255, 255, (int)(190 * a)));
+    /* Höger: Inställningar (⚙) till vänster om batteriet & klockan */
+    float gear_cx = status_left - (in_settings ? 22.0f : 18.0f), icon_cy = 20.0f;
+    if (in_settings)
+        theme_sel_box(t, gear_cx - 15.0f, 9.0f, 30.0f, 22.0f, 11.0f, pill_col);
+    u32 gear_idle = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->graphite : TEXT_MAIN, (int)(215 * a)),
+                                 RGBA(255, 255, 255, (int)(195 * a)), art_a);
+    u32 gear_act = with_alpha(THEME_INK(t, sel_ink, TEXT_MAIN), a);
+    draw_gear_icon(gear_cx, icon_cy, in_settings ? gear_act : gear_idle);
+    status_left = gear_cx - (in_settings ? 19.0f : 12.0f);
+
+    /* Enhetlig topprad för alla huvudflikar: Games, Apps, Library, Music */
+    static const int tabs[4] = { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC };
+    const char *names[4] = { L(S_TAB_GAMES), L(S_TAB_APPS), L(S_TAB_LIBRARY), L(S_TAB_MUSIC) };
+    u32 tab_idle_ic = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text_dim : TEXT_DIM, (int)(240 * a)),
+                                   RGBA(209, 213, 219, (int)(230 * a)), art_a);
+    u32 tab_idle_tx = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text : TEXT_MAIN, (int)(220 * a)),
+                                   RGBA(209, 213, 219, (int)(245 * a)), art_a);
+    float x = 14.0f;
+    for (int k = 0; k < 4; k++) {
+        int active = !in_settings && tabs[k] == active_tab;
+        float w = text_width(0.62f, active, names[k]);
+        float item_w = active ? 40.0f + w : 28.0f + w;
+        if (active) {
+            theme_sel_box(t, x, 9.0f, item_w, 22.0f, 11.0f, pill_col);
+            u32 act_ic = t->ink ? with_alpha(t->ink->sel_ink, a) : RGBA(255, 255, 255, (int)(255 * a));
+            u32 act_tx = with_alpha(THEME_INK(t, sel_ink, TEXT_MAIN), a);
+            draw_tab_icon(tabs[k], x + 17.0f, 20.0f, act_ic);
+            text_draw(x + 29.0f, 24.5f, 0.62f, 1, act_tx, ALIGN_LEFT, names[k]);
+        } else {
+            draw_tab_icon(tabs[k], x + 13.0f, 20.0f, tab_idle_ic);
+            text_draw(x + 24.0f, 24.5f, 0.62f, 0, tab_idle_tx, ALIGN_LEFT, names[k]);
+        }
+        x += item_w + 8.0f;
     }
-    draw_search_icon(search_cx, icon_cy, on_search ? with_alpha(TEXT_MAIN, a) : RGBA(255, 255, 255, (int)(135 * a)));
-    draw_gear_icon(gear_cx, icon_cy, RGBA(255, 255, 255, (int)(135 * a)));
-    status_left = search_cx - 14.0f;
-
-    /* PS5-topprad till vänster: bara Spel och Media i originalets rena typografi */
-    int on_games = ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY;
-    int on_media = ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO;
-    char gname[64];
-    int gcat = ui->tab == TAB_LIBRARY ? ui->cat[TAB_LIBRARY] : ui->cat[TAB_GAMES];
-    if (on_games && gcat > 0)
-        snprintf(gname, sizeof(gname), "%s · %s", L(S_TAB_GAMES), cat_title(gcat));
-    else
-        snprintf(gname, sizeof(gname), "%s", L(S_TAB_GAMES));
-
-    float x = MARGIN;
-    u32 gc = on_games ? with_alpha(TEXT_MAIN, a) : RGBA(255, 255, 255, (int)(120 * a));
-    text_draw(x, 25, 0.8f, on_games, gc, ALIGN_LEFT, gname);
-    x += text_width(0.8f, on_games, gname) + 22;
-
-    const char *mname = L(S_TAB_MEDIA);
-    u32 mc = on_media ? with_alpha(TEXT_MAIN, a) : RGBA(255, 255, 255, (int)(120 * a));
-    text_draw(x, 25, 0.8f, on_media, mc, ALIGN_LEFT, mname);
-    x += text_width(0.8f, on_media, mname) + 22;
 
     /* musik som spelas syns som en liten not med titeln i de andra flikarna */
     int cur = music_current();
-    if (ui->tab != TAB_MUSIC && cur >= 0 && music_state() != MUSIC_STOPPED) {
-        float right = status_left - 10, left = x + 4;
+    if ((in_settings || active_tab != TAB_MUSIC) && cur >= 0 && music_state() != MUSIC_STOPPED) {
+        float right = status_left - 8, left = x + 4;
         if (right - left > 40) {
             static char line[100];
             static int line_for = -2, line_gen = -1;
@@ -2452,12 +2730,23 @@ static void draw_top_bar(Ui *ui)
                 line_gen = music_generation();
                 line_w = right - left;
             }
-            float pulse = music_state() == MUSIC_PLAYING ? 0.75f + 0.25f * sinf(ui->time * 3) : 0.5f;
+            float pulse = music_state() == MUSIC_PLAYING ? 0.75f + 0.25f * sinf(anim_time * 3) : 0.5f;
             float tw = text_width(0.5f, 0, line);
-            draw_note(right - tw - 8, 20.0f, 10, with_alpha(LIGHT, pulse * a));
-            text_draw(right, 24.0f, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, line);
+            u32 note_col = ink_over_art(t, t->ink ? t->ink->graphite : LIGHT, LIGHT, art_a);
+            draw_note(right - tw - 8, 20.0f, 10, with_alpha(note_col, pulse * a));
+            text_draw(right, 24.0f, 0.5f, 0, with_alpha(dim_fg, a), ALIGN_RIGHT, line);
         }
     }
+}
+
+void ui_draw_top_bar(int active_tab, int in_settings, float a, float anim_time)
+{
+    ui_draw_top_bar_for(active_tab, in_settings, a, anim_time, theme_cur(), 0.0f);
+}
+
+static void draw_top_bar(Ui *ui)
+{
+    ui_draw_top_bar_for(ui->tab, 0, ui->intro, ui->time, theme_cur(), ui_art_alpha(ui));
 }
 
 /* Placering för kortet på avståndet d från markeringen (0 = valt). */
@@ -2477,8 +2766,9 @@ static void card_geometry(float d, float *x, float *w, float *h, float *y)
         *x = MARGIN - STEP + (d + 1) * STEP;
 }
 
-static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h, float focus, float alpha)
+static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h, float focus, float alpha, float art_a)
 {
+    const Theme *th = theme_cur();
     IconSlot *slot = loader_icon(list_index);
     float r = lerpf(5.0f, BIG_R, (w - SMALL_W) / (BIG_W - SMALL_W));
 
@@ -2494,23 +2784,29 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
         int loading = !slot || slot->state == SLOT_EMPTY || slot->state == SLOT_LOADING;
         float b = loading ? 0.5f + 0.5f * sinf(ui->time * 4.0f + list_index) : 0;
         float pa = alpha * (1 - shown);
-        u32 cc = theme_cur()->card; /* temats färg, andas medan bilden laddas */
+        u32 cc = th->card; /* temats färg, andas medan bilden laddas */
         gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + (int)(10 * b), ((cc >> 8) & 0xFF) + (int)(10 * b),
                                            ((cc >> 16) & 0xFF) + (int)(12 * b), (int)(235 * pa)));
         const char *t = ui->list->items[list_index].title;
         char initial[2] = { (t[0] >= 'a' && t[0] <= 'z') ? t[0] - 32 : t[0], 0 };
-        if ((u8)initial[0] < 0x80 && initial[0])
+        if ((u8)initial[0] < 0x80 && initial[0]) {
+            u32 init_col = th->ink ? COLOR_ALPHA(th->ink->text, (int)(200 * pa))
+                                   : RGBA(205, 208, 220, (int)(200 * pa));
             text_draw(x + w / 2, y + h / 2 + 8 * (w / BIG_W), 1.1f * (w / BIG_W), 0,
-                      RGBA(205, 208, 220, (int)(200 * pa)), ALIGN_CENTER, initial);
+                      init_col, ALIGN_CENTER, initial);
+        }
     }
     if (shown > 0) {
         int tint = (int)lerpf(200, 255, focus);
         gfx_tex(slot->tex, x, y, w, h, RGBA(tint, tint, tint, (int)(255 * alpha * shown)));
     }
     /* spelets video (ICON1.PMF) över ikonen på valt kort */
-    Texture *video = focus > 0.5f && ui->preview_anim > 0 ? preview_frame(list_index) : NULL;
+    int vx, vy, vw, vh;
+    Texture *video = focus > 0.5f && ui->preview_anim > 0
+                     ? preview_frame_sub(list_index, &vx, &vy, &vw, &vh) : NULL;
     if (video)
-        gfx_tex(video, x, y, w, h, RGBA(255, 255, 255, (int)(255 * alpha * smooth(ui->preview_anim))));
+        gfx_tex_sub(video, (float)vx, (float)vy, (float)vw, (float)vh,
+                    x, y, w, h, RGBA(255, 255, 255, (int)(255 * alpha * smooth(ui->preview_anim))));
 
     /* fäst: en liten nål i övre högra hörnet */
     if (meta(list_index)->pinned) {
@@ -2521,23 +2817,28 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
     }
 
     /* valt kort: tunn ljus ram med ett litet glapp */
-    if (focus > 0.01f)
-        gfx_ring(x - 4, y - 4, w + 8, h + 8, r + 4, RGBA(240, 240, 244, (int)(235 * focus * alpha)));
+    if (focus > 0.01f) {
+        u32 ring = ink_over_art(th, COLOR_ALPHA(th->ink ? th->ink->sel_edge : LIGHT, (int)(240 * focus * alpha)),
+                                RGBA(240, 240, 244, (int)(235 * focus * alpha)), art_a);
+        gfx_ring(x - 4, y - 4, w + 8, h + 8, r + 4, ring);
+    }
 }
 
-/* PS5 Game Library-kortet längst till höger i spelraden: 3×2-rutnät + liten handkontroll */
-static void draw_library_card(Ui *ui, float x, float y, float w, float h, float focus, float alpha)
+/* PS5 Game Library-kortet: 3×2-rutnät + liten handkontroll med valfri hörnradie. */
+static void draw_library_card_r(Ui *ui, float x, float y, float w, float h, float r, float focus, float alpha)
 {
     (void)ui;
-    float r = lerpf(5.0f, BIG_R, (w - SMALL_W) / (BIG_W - SMALL_W));
+    const Theme *th = theme_cur();
     float s = w / BIG_W;
     gfx_glow(x + 1, y + 3, w - 2, h - 2, 5 + 4 * focus, RGBA(0, 0, 0, (int)(130 * alpha)));
-    u32 cc = theme_cur()->card;
-    gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + 4, ((cc >> 8) & 0xFF) + 5,
-                                       ((cc >> 16) & 0xFF) + 8, (int)(238 * alpha)));
+    u32 cc = th->card;
+    u32 fill = th->ink ? COLOR_ALPHA(th->ink->panel, (int)(245 * alpha))
+                       : RGBA((cc & 0xFF) + 4, ((cc >> 8) & 0xFF) + 5, ((cc >> 16) & 0xFF) + 8, (int)(238 * alpha));
+    gfx_round_rect(x, y, w, h, r, fill);
 
     float cx = x + w / 2, cy = y + h / 2;
-    u32 ic = RGBA(240, 242, 248, (int)((185 + 65 * focus) * alpha));
+    u32 ic = th->ink ? COLOR_ALPHA(th->ink->graphite, (int)((185 + 65 * focus) * alpha))
+                     : RGBA(240, 242, 248, (int)((185 + 65 * focus) * alpha));
     float sq = 6.2f * s, gap = 2.6f * s;
     float gx0 = cx - (3 * sq + 2 * gap) / 2, gy0 = cy - 11.5f * s;
     for (int row = 0; row < 2; row++) {
@@ -2554,12 +2855,21 @@ static void draw_library_card(Ui *ui, float x, float y, float w, float h, float 
     gfx_round_rect(cx + 3.4f * s, py - 2.0f * s, 3.8f * s, 6.2f * s, 1.8f * s, ic);
 
     if (focus > 0.01f)
-        gfx_ring(x - 4, y - 4, w + 8, h + 8, r + 4, RGBA(240, 240, 244, (int)(235 * focus * alpha)));
+        gfx_ring(x - 4, y - 4, w + 8, h + 8, r + 4,
+                 COLOR_ALPHA(THEME_INK(th, sel_edge, RGBA(240, 240, 244, 255)), (int)(235 * focus * alpha)));
+}
+
+static void draw_library_card(Ui *ui, float x, float y, float w, float h, float focus, float alpha)
+{
+    float r = lerpf(5.0f, BIG_R, (w - SMALL_W) / (BIG_W - SMALL_W));
+    draw_library_card_r(ui, x, y, w, h, r, focus, alpha);
 }
 
 static void draw_row(Ui *ui)
 {
     const LoaderView *v = view(ui);
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float launch = ui->launch < 0 ? 0 : smooth(ui->launch);
     float row_alpha = ui->intro * smooth(ui->tab_anim);
     int total = v->count > 0 ? v->count + 1 : 0; /* +1 för Spelbibliotek-kortet längst till höger */
@@ -2600,11 +2910,296 @@ static void draw_row(Ui *ui)
                 float ay = y + h / 2, pa = alpha * (0.6f + 0.4f * sinf(ui->time * 5));
                 float l[6] = { x - 13, ay, x - 7, ay - 6, x - 7, ay + 6 };
                 float r[6] = { x + w + 13, ay, x + w + 7, ay - 6, x + w + 7, ay + 6 };
-                gfx_fan(x - 9, ay, l, 3, with_alpha(LIGHT, pa));
-                gfx_fan(x + w + 9, ay, r, 3, with_alpha(LIGHT, pa));
+                u32 arr = ink_over_art(th, th->ink ? th->ink->graphite : LIGHT, LIGHT, art_a);
+                gfx_fan(x - 9, ay, l, 3, with_alpha(arr, pa));
+                gfx_fan(x + w + 9, ay, r, 3, with_alpha(arr, pa));
             }
-            draw_card(ui, v->idx[p], x, y, w, h, focus, alpha);
+            draw_card(ui, v->idx[p], x, y, w, h, focus, alpha, art_a);
         }
+    }
+}
+
+/* Games-skärmen: ett valt spel till vänster och fem nästa spel till höger.
+ * Ikonerna och urvalet kommer från samma loader och lista som den äldre raden. */
+static const char *type_name(u32 t);
+
+/* Vertical bottom scrim whose bottom corners follow the card corner radius r cleanly. */
+static void draw_card_scrim(float x, float y, float w, float h, float r, float sh, int max_alpha)
+{
+    if (max_alpha <= 0)
+        return;
+    if (r > sh)
+        r = sh;
+    float sy = y + h - sh, by = y + h - r;
+    u32 top_c = RGBA(0, 0, 0, 0);
+    u32 mid_c = RGBA(0, 0, 0, (int)(max_alpha * ((sh - r) / sh)));
+    if (by > sy)
+        gfx_gradient_v(x, sy, w, by - sy, top_c, mid_c);
+    const int steps = 4;
+    float prev_y = by, prev_dx = 0;
+    u32 prev_c = mid_c;
+    for (int i = 1; i <= steps; i++) {
+        float t = (float)i / steps;
+        float ny = by + t * r;
+        float dx = r * (1.0f - sqrtf(fmaxf(0.0f, 1.0f - t * t)));
+        u32 nc = RGBA(0, 0, 0, (int)(max_alpha * ((sh - r + t * r) / sh)));
+        float xy[8] = { x + prev_dx, prev_y, x + w - prev_dx, prev_y,
+                        x + dx, ny, x + w - dx, ny };
+        u32 cols[4] = { prev_c, prev_c, nc, nc };
+        gfx_quad(xy, cols);
+        prev_y = ny;
+        prev_dx = dx;
+        prev_c = nc;
+    }
+}
+
+static float draw_meta_badge(float x, float y, const char *label, float a)
+{
+    const Theme *t = theme_cur();
+    float bw = text_width(0.42f, 1, label) + 12.0f;
+    gfx_round_rect(x, y, bw, 12.0f, 3.0f,
+                   t->ink ? COLOR_ALPHA(t->ink->graphite, (int)(242 * a)) : RGBA(255, 255, 255, (int)(242 * a)));
+    text_draw(x + bw / 2.0f, y + 8.5f, 0.42f, 1, with_alpha(THEME_INK(t, text_inverse, DARK), a), ALIGN_CENTER, label);
+    return bw;
+}
+
+void ui_draw_footer_bar(float a)
+{
+    if (a <= 0.01f)
+        return;
+    const Theme *t = theme_cur();
+    u32 bg = t->ink            ? COLOR_ALPHA(t->ink->panel, (int)(242 * a))
+           : g_theme == 0      ? RGBA(11, 15, 22, (int)(226 * a))
+                               : RGBA(10, 12, 18, (int)(205 * a));
+    u32 line = t->ink          ? COLOR_ALPHA(t->ink->border, (int)(235 * a))
+             : g_theme == 0    ? RGBA(44, 56, 74, (int)(190 * a))
+                               : COLOR_ALPHA(t->accent, (int)(110 * a));
+    gfx_rect(0.0f, FOOTER_Y, SCREEN_W, SCREEN_H - FOOTER_Y, bg);
+    gfx_rect(0.0f, FOOTER_Y, SCREEN_W, 1.0f, line);
+}
+
+static float hints_total_width(const Ui *ui);
+
+static void games_card_geom(float d, float *x, float *y, float *w, float *h, float *r, float *alpha_mul)
+{
+    const float hx = LIB_MARGIN, hy = 40.0f, hw = (float)ICON_W, hh = (float)ICON_H, hr = 7.0f;
+    const float x0 = 176.0f, cy = 40.0f, cw = 90.0f, ch = 50.0f, cr = 4.5f, gap = 9.0f;
+    if (d < 0.0f) {
+        float t = clampf(-d, 0.0f, 1.0f);
+        *w = lerpf(hw, 108.0f, t);
+        *h = lerpf(hh, 60.0f, t);
+        *x = lerpf(hx, hx - 92.0f, t);
+        *y = hy + (hh - *h) * 0.5f;
+        *r = lerpf(hr, 5.5f, t);
+        *alpha_mul = clampf(1.0f + d * 1.15f, 0.0f, 1.0f);
+    } else if (d < 1.0f) {
+        *x = lerpf(hx, x0, d);
+        *y = hy;
+        *w = lerpf(hw, cw, d);
+        *h = lerpf(hh, ch, d);
+        *r = lerpf(hr, cr, d);
+        *alpha_mul = 1.0f;
+    } else {
+        *x = x0 + (d - 1.0f) * (cw + gap);
+        *y = cy;
+        *w = cw;
+        *h = ch;
+        *r = cr;
+        *alpha_mul = d > 3.0f ? clampf((3.75f - d) / 0.75f, 0.0f, 1.0f) : 1.0f;
+    }
+}
+
+static void draw_games_card(Ui *ui, int list_index, int is_library, float x, float y, float w, float h,
+                            float r, float focus, float alpha, float ring_alpha, float art_a)
+{
+    const Theme *th = theme_cur();
+    float f = smooth(focus);
+    if (is_library) {
+        /* Pass focus=0 so the shared PS5 selection ring scales uniformly during card transitions. */
+        draw_library_card_r(ui, x, y, w, h, r, 0, alpha);
+    } else {
+        gfx_glow(x, y + lerpf(2.0f, 3.0f, f), w, h, lerpf(4.0f, 8.0f, f),
+                 RGBA(0, 0, 0, (int)(lerpf(85.0f, 125.0f, f) * alpha)));
+        IconSlot *slot = loader_icon(list_index);
+        float shown = 0.0f;
+        if (slot && slot->state == SLOT_READY && slot->tex) {
+            slot->shown = clampf(slot->shown + 1.0f / 9.0f, 0.0f, 1.0f);
+            shown = slot->shown;
+        }
+        if (shown < 1.0f) {
+            float pa = alpha * (1.0f - shown);
+            gfx_round_rect(x, y, w, h, r, with_alpha(th->card, pa));
+            const char *title = ui->list->items[list_index].title;
+            char initial[2] = { (title[0] >= 'a' && title[0] <= 'z') ? title[0] - 32 : title[0], 0 };
+            if ((u8)initial[0] < 0x80 && initial[0] && pa > 0.02f) {
+                float s = w / (float)ICON_W;
+                text_draw(x + w * 0.5f, y + h * 0.5f + 9.0f * s, 1.3f * s, 1,
+                          with_alpha(THEME_INK(th, text, TEXT_MAIN), pa), ALIGN_CENTER, initial);
+            }
+        }
+        if (shown > 0.0f) {
+            int tint = (int)lerpf(238.0f, 255.0f, f);
+            gfx_tex(slot->tex, x, y, w, h, RGBA(tint, tint, tint, (int)(255.0f * alpha * shown)));
+        }
+        int vx, vy, vw, vh;
+        Texture *video = focus > 0.5f && ui->preview_anim > 0
+                         ? preview_frame_sub(list_index, &vx, &vy, &vw, &vh) : NULL;
+        if (video)
+            gfx_tex_sub(video, (float)vx, (float)vy, (float)vw, (float)vh,
+                        x, y, w, h, RGBA(255, 255, 255, (int)(255.0f * alpha * smooth(ui->preview_anim))));
+        if (meta(list_index)->pinned) {
+            float s = w / (float)ICON_W, px = x + w - 10.0f * s, py = y + 10.0f * s;
+            gfx_circle(px, py, 6.0f * s, RGBA(18, 18, 22, (int)(200.0f * alpha)));
+            gfx_circle(px, py - 1.3f * s, 2.2f * s, RGBA(240, 240, 244, (int)(255.0f * alpha)));
+            gfx_rect(px - 0.5f * s, py - 0.5f * s, 1.0f * s, 3.8f * s, RGBA(240, 240, 244, (int)(255.0f * alpha)));
+        }
+    }
+
+    if (is_library && f < 0.99f) {
+        float la = alpha * (1.0f - f);
+        draw_card_scrim(x, y, w, h, r, 17.0f, (int)(205.0f * la));
+        text_draw(x + w * 0.5f, y + h - 5.0f, 0.38f, 1,
+                  with_alpha(THEME_INK(th, text_inverse, TEXT_MAIN), la), ALIGN_CENTER, L(S_TAB_LIBRARY));
+    }
+
+    if (f > 0.01f && ring_alpha > 0.01f) {
+        u32 ring = ink_over_art(th, COLOR_ALPHA(th->ink ? th->ink->sel_edge : LIGHT, (int)(242.0f * f * ring_alpha)),
+                                RGBA(255, 255, 255, (int)(242.0f * f * ring_alpha)), art_a);
+        gfx_ring(x - 3.0f, y - 3.0f, w + 6.0f, h + 6.0f, r + 3.0f, ring);
+    }
+}
+
+static void draw_games_redesign(Ui *ui)
+{
+    const LoaderView *v = view(ui);
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
+    float a = ui->intro * smooth(ui->tab_anim);
+    float launch = ui->launch < 0 ? 0 : smooth(ui->launch);
+    float ui_a = a * (1.0f - smooth(launch * 2.0f));
+    if (!v->count)
+        return;
+
+    int sel = ui->sel[ui->tab];
+    if (sel < 0) sel = 0;
+    if (sel > v->count) sel = v->count;
+    if (ui->cat[ui->tab] > 0) {
+        const char *ct = cat_title(ui->cat[ui->tab]);
+        float cw = text_width(0.46f, 0, ct) + 14;
+        u32 cpill = th->ink      ? COLOR_ALPHA(th->ink->graphite, (int)(220 * ui_a))
+                  : g_theme == 0 ? RGBA(37, 84, 150, (int)(200 * ui_a))
+                                 : COLOR_ALPHA(theme_toggle_on(th), (int)(200 * ui_a));
+        gfx_round_rect(LIB_MARGIN, 148, cw, 16, 8, cpill);
+        text_draw(LIB_MARGIN + 7, 159.5f, 0.46f, 0,
+                  with_alpha(THEME_INK(th, text_inverse, TEXT_MAIN), ui_a), ALIGN_LEFT, ct);
+    }
+
+    int total = v->count + 1; /* +1 för Spelbibliotek-kortet längst till höger */
+    int first = (int)floorf(ui->pos) - 1, last = (int)floorf(ui->pos) + 4;
+    if (first < 0) first = 0;
+    if (last > total - 1) last = total - 1;
+    int nearest = ui->moving || launch > 0.0f ? sel : (int)floorf(ui->pos + 0.5f);
+
+    for (int pass = 0; pass < 2; pass++) {
+        for (int p = last; p >= first; p--) {
+            if ((p == nearest) != (pass == 1))
+                continue;
+            float d = (ui->moving && p == sel) ? 0.0f : (float)p - ui->pos;
+            float x, y, w, h, r, amul;
+            games_card_geom(d, &x, &y, &w, &h, &r, &amul);
+            if (ui->moving && p == sel)
+                y -= 3.5f;
+            float focus = clampf(1.0f - fabsf(d), 0.0f, 1.0f);
+            float alpha = a * amul;
+            float ring_a = alpha;
+            if (launch > 0.0f) {
+                if (p == sel) {
+                    float grow = 1.0f + launch * 1.4f;
+                    float cx = lerpf(x + w * 0.5f, SCREEN_W * 0.5f, launch);
+                    float cy = lerpf(y + h * 0.5f, SCREEN_H * 0.5f, launch);
+                    w *= grow;
+                    h *= grow;
+                    x = cx - w * 0.5f;
+                    y = cy - h * 0.5f;
+                    r *= grow;
+                    alpha = ui->intro * (1.0f - smooth(fmaxf(0.0f, launch - 0.15f) * 1.3f));
+                    ring_a = alpha * (1.0f - smooth(launch * 2.5f));
+                } else {
+                    alpha *= 1.0f - smooth(launch * 1.5f);
+                    ring_a = 0.0f;
+                }
+            }
+            if ((p != sel || launch <= 0.0f) && (x > SCREEN_W || x + w < -8.0f || alpha <= 0.01f))
+                continue;
+            int lib_card = p == v->count;
+            draw_games_card(ui, lib_card ? -1 : v->idx[p], lib_card, x, y, w, h, r, focus, alpha, ring_a, art_a);
+        }
+    }
+
+    int is_library = sel == v->count;
+    int selected = is_library ? -1 : v->idx[sel];
+    float la = smooth(ui->label_anim);
+    char name[96];
+    float name_w = 380.0f;
+    text_ellipsis(name, sizeof(name), is_library ? L(S_TAB_LIBRARY) : ui->list->items[selected].title, 0.66f, name_w);
+    u32 title_col = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    text_draw(LIB_MARGIN + (1.0f - la) * 14.0f, 138.0f, text_fit(0.66f, 0.48f, 1, name_w, name), 1,
+              with_alpha(title_col, ui_a * la), ALIGN_LEFT, name);
+
+    int confirm = ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS;
+    float fy = 257.0f;
+    u32 foot_dim = th->ink ? COLOR_ALPHA(th->ink->text_dim, (int)(240 * ui_a)) : RGBA(203, 213, 225, (int)(225 * ui_a));
+    if (is_library) {
+        char count[24];
+        snprintf(count, sizeof(count), "%d", ui->views[TAB_LIBRARY].count);
+        float bw = draw_meta_badge(LIB_MARGIN, 251.0f, "LIB", ui_a);
+        text_draw(LIB_MARGIN + bw + 8.0f, 260.5f, 0.54f, 0, foot_dim, ALIGN_LEFT, count);
+        return;
+    }
+
+    const Entry *e = &ui->list->items[selected];
+    if (!ui->moving) {
+        float lx = LIB_MARGIN;
+        float bw = draw_meta_badge(lx, 251.0f, type_name(e->type), ui_a);
+        lx += bw + 8.0f;
+        if (e->type != ENTRY_HOMEBREW && e->game_id[0]) {
+            text_draw(lx, 260.5f, 0.54f, 0, foot_dim, ALIGN_LEFT, e->game_id);
+            lx += text_width(0.54f, 0, e->game_id) + 14.0f;
+        }
+        if (e->type != ENTRY_UMD) {
+            float oa = ui_a * (1.0f - smooth(ui->menu_anim));
+            float max_opt = SCREEN_W - LIB_MARGIN - hints_total_width(ui) - 14.0f - (lx + 17.0f);
+            if (oa > 0.02f && max_opt > 24.0f) {
+                float osz = text_fit(0.56f, 0.40f, 0, max_opt, L(S_OPTIONS));
+                theme_button(th, lx + 6.5f, fy, 6.5f, BTN_SQUARE, 0,
+                             with_alpha(LIGHT, 0.96f * oa), with_alpha(DARK, oa));
+                u32 opt_col = th->ink ? COLOR_ALPHA(th->ink->text, (int)(245 * oa))
+                                      : RGBA(218, 224, 235, (int)(238 * oa));
+                text_draw(lx + 17.0f, fy + 4.5f, osz, 0, opt_col, ALIGN_LEFT, L(S_OPTIONS));
+            }
+        }
+    } else {
+        float hx = LIB_MARGIN, hy = 40.0f - 3.5f, hw = (float)ICON_W, hh = (float)ICON_H;
+        float ay = hy + hh / 2.0f, pa = ui_a * (0.6f + 0.4f * sinf(ui->time * 5.0f));
+        float ltri[6] = { hx - 12.0f, ay, hx - 6.0f, ay - 6.0f, hx - 6.0f, ay + 6.0f };
+        float rtri[6] = { hx + hw + 12.0f, ay, hx + hw + 6.0f, ay - 6.0f, hx + hw + 6.0f, ay + 6.0f };
+        u32 card_arr = ink_over_art(th, th->ink ? th->ink->graphite : LIGHT, LIGHT, art_a);
+        gfx_fan(hx - 8.0f, ay, ltri, 3, with_alpha(card_arr, pa));
+        gfx_fan(hx + hw + 8.0f, ay, rtri, 3, with_alpha(card_arr, pa));
+
+        /* Flytta-läge: lägg kontrollerna i fotlisten precis som i biblioteket */
+        float hx_f = LIB_MARGIN;
+        u32 foot_arr = THEME_INK(th, graphite, LIGHT);
+        u32 foot_tx = th->ink ? COLOR_ALPHA(th->ink->text, (int)(245 * ui_a)) : RGBA(218, 224, 235, (int)(238 * ui_a));
+        float l[6] = { hx_f, fy, hx_f + 6.0f, fy - 4.5f, hx_f + 6.0f, fy + 4.5f };
+        gfx_fan(hx_f + 3.0f, fy, l, 3, with_alpha(foot_arr, 0.94f * ui_a));
+        float r[6] = { hx_f + 15.0f, fy, hx_f + 9.0f, fy - 4.5f, hx_f + 9.0f, fy + 4.5f };
+        gfx_fan(hx_f + 12.0f, fy, r, 3, with_alpha(foot_arr, 0.94f * ui_a));
+        hx_f += 20.0f;
+        text_draw(hx_f, fy + 4.5f, 0.56f, 0, foot_tx, ALIGN_LEFT, L(S_F_MOVE));
+        hx_f += text_width(0.56f, 0, L(S_F_MOVE)) + 14.0f;
+        theme_button(th, hx_f + 6.5f, fy, 6.5f, confirm, 0, with_alpha(LIGHT, 0.96f * ui_a), with_alpha(DARK, ui_a));
+        text_draw(hx_f + 17.0f, fy + 4.5f, 0.56f, 0, foot_tx, ALIGN_LEFT, L(S_F_DONE));
     }
 }
 
@@ -2622,32 +3217,37 @@ static const char *type_name(u32 t)
 
 static void draw_details(Ui *ui)
 {
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float fade = ui->intro * smooth(ui->tab_anim) * (ui->launch < 0 ? 1 : 1 - smooth(ui->launch * 2));
     if (fade <= 0)
         return;
 
+    u32 title_col = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 dim_col = ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
+
     /* Spelbibliotek-kortet längst till höger i Spel-raden */
     if (ui->tab == TAB_GAMES && view(ui)->count > 0 && ui->sel[TAB_GAMES] == view(ui)->count) {
         float la = smooth(ui->label_anim);
-        text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * fade),
+        text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(title_col, la * fade),
                   ALIGN_LEFT, ui->label);
         const char *badge = "LIB";
         float bw = text_width(0.5f, 1, badge) + 12, y = 206;
-        gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(LIGHT, 0.92f * fade));
-        text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(DARK, fade), ALIGN_CENTER, badge);
+        gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(THEME_INK(th, graphite, LIGHT), 0.92f * fade));
+        text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(THEME_INK(th, text_inverse, DARK), fade), ALIGN_CENTER, badge);
         char cnt[32];
         snprintf(cnt, sizeof(cnt), "%d", ui->views[TAB_LIBRARY].count);
-        text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, fade), ALIGN_LEFT, cnt);
+        text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(dim_col, fade), ALIGN_LEFT, cnt);
 
         const char *open = L(S_F_OPEN);
         float bx = MARGIN, by = 233, bh = 26;
         float tw = text_width(0.66f, 0, open);
         float w = 8 + 16 + 8 + tw + 14;
         gfx_glow(bx, by + 2, w, bh, 6, RGBA(0, 0, 0, (int)(110 * fade)));
-        gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(LIGHT, 0.95f * fade));
-        gfx_button(bx + 16, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(DARK, fade),
-                   with_alpha(LIGHT, fade));
-        text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(DARK, fade), ALIGN_LEFT, open);
+        gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(THEME_INK(th, graphite, LIGHT), 0.95f * fade));
+        theme_button(th, bx + 16, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, 1,
+                     with_alpha(DARK, fade), with_alpha(LIGHT, fade));
+        text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(THEME_INK(th, text_inverse, DARK), fade), ALIGN_LEFT, open);
         return;
     }
 
@@ -2666,30 +3266,31 @@ static void draw_details(Ui *ui)
 
     /* titeln bredvid kortet glider in när markeringen byts */
     float la = smooth(ui->label_anim);
-    text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * fade),
+    text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(title_col, la * fade),
               ALIGN_LEFT, ui->label);
 
     /* nere till vänster: typetikett, spel-ID och startknapp (i linje med knapptipsen på y = 246) */
     const char *type = type_name(e->type);
     float bw = text_width(0.5f, 1, type) + 12;
     float y = 206;
-    gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(LIGHT, 0.92f * fade));
-    text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(DARK, fade), ALIGN_CENTER, type);
+    gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(THEME_INK(th, graphite, LIGHT), 0.92f * fade));
+    text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(THEME_INK(th, text_inverse, DARK), fade), ALIGN_CENTER, type);
     if (e->type != ENTRY_HOMEBREW && e->game_id[0])
-        text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, fade), ALIGN_LEFT, e->game_id);
+        text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(dim_col, fade), ALIGN_LEFT, e->game_id);
 
     if (ui->moving) { /* Flytta: ◀ ▶ Flytta   ✕ Klart i stället för Starta */
         float hx = MARGIN, hy = 246;
         float l[6] = { hx, hy, hx + 6, hy - 4.5f, hx + 6, hy + 4.5f };
         float r[6] = { hx + 15, hy, hx + 9, hy - 4.5f, hx + 9, hy + 4.5f };
-        gfx_fan(hx + 3, hy, l, 3, with_alpha(LIGHT, 0.9f * fade));
-        gfx_fan(hx + 12, hy, r, 3, with_alpha(LIGHT, 0.9f * fade));
+        u32 arr = ink_over_art(th, th->ink ? th->ink->graphite : LIGHT, LIGHT, art_a);
+        gfx_fan(hx + 3, hy, l, 3, with_alpha(arr, 0.9f * fade));
+        gfx_fan(hx + 12, hy, r, 3, with_alpha(arr, 0.9f * fade));
         hx += 21;
-        text_draw(hx, hy + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, fade), ALIGN_LEFT, L(S_F_MOVE));
+        text_draw(hx, hy + 4.5f, 0.6f, 0, with_alpha(title_col, fade), ALIGN_LEFT, L(S_F_MOVE));
         hx += text_width(0.6f, 0, L(S_F_MOVE)) + 14;
-        gfx_button(hx + 6.5f, hy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * fade),
-                   with_alpha(DARK, fade));
-        text_draw(hx + 17, hy + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, fade), ALIGN_LEFT, L(S_F_DONE));
+        theme_button(th, hx + 6.5f, hy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, art_a > 0.3f,
+                     with_alpha(LIGHT, 0.9f * fade), with_alpha(DARK, fade));
+        text_draw(hx + 17, hy + 4.5f, 0.6f, 0, with_alpha(title_col, fade), ALIGN_LEFT, L(S_F_DONE));
         return;
     }
     const char *go = L(S_LAUNCH);
@@ -2697,9 +3298,10 @@ static void draw_details(Ui *ui)
     float tw = text_width(0.66f, 0, go);
     float w = 8 + 16 + 8 + tw + 14;
     gfx_glow(bx, by + 2, w, bh, 6, RGBA(0, 0, 0, (int)(110 * fade)));
-    gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(LIGHT, 0.95f * fade));
-    gfx_button(bx + 8 + 8, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(DARK, fade), with_alpha(LIGHT, fade));
-    text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(DARK, fade), ALIGN_LEFT, go);
+    gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(THEME_INK(th, graphite, LIGHT), 0.95f * fade));
+    theme_button(th, bx + 8 + 8, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, 1,
+                 with_alpha(DARK, fade), with_alpha(LIGHT, fade));
+    text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(THEME_INK(th, text_inverse, DARK), fade), ALIGN_LEFT, go);
 
     /* □ Alternativ (inte för UMD-skivan) – på samma y = 246 som L R-tipsen till höger */
     if (e->type == ENTRY_UMD)
@@ -2707,23 +3309,27 @@ static void draw_details(Ui *ui)
     float oa = fade * (1 - smooth(ui->menu_anim));
     float mx = bx + w + 16, my = by + bh / 2;
     float ow = 13 + 6 + text_width(0.6f, 0, L(S_OPTIONS));
-    gfx_round_rect(mx - 9, my - 11, ow + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * oa)));
-    gfx_button(mx + 6.5f, my, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.9f * oa), with_alpha(DARK, oa));
-    text_draw(mx + 19, my + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, oa), ALIGN_LEFT, L(S_OPTIONS));
+    gfx_round_rect(mx - 9, my - 11, ow + 18, 22, 11,
+                   th->ink && art_a <= 0.3f ? COLOR_ALPHA(th->ink->panel, (int)(225 * oa)) : RGBA(0, 0, 0, (int)(120 * oa)));
+    theme_button(th, mx + 6.5f, my, 6.5f, BTN_SQUARE, art_a > 0.3f, with_alpha(LIGHT, 0.9f * oa), with_alpha(DARK, oa));
+    text_draw(mx + 19, my + 4.5f, 0.6f, 0, with_alpha(title_col, oa), ALIGN_LEFT, L(S_OPTIONS));
 }
 
 /* Media-raden: tre PS5-kort för Musik, Bilder och Videor */
 static void draw_media_card(int kind, float x, float y, float w, float h, float focus, float alpha)
 {
+    const Theme *th = theme_cur();
     float r = lerpf(5.0f, BIG_R, (w - SMALL_W) / (BIG_W - SMALL_W));
     float s = w / BIG_W;
     gfx_glow(x + 1, y + 3, w - 2, h - 2, 5 + 4 * focus, RGBA(0, 0, 0, (int)(130 * alpha)));
-    u32 cc = theme_cur()->card;
-    gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + 6, ((cc >> 8) & 0xFF) + 7,
-                                       ((cc >> 16) & 0xFF) + 12, (int)(238 * alpha)));
+    u32 cc = th->card;
+    u32 bg = th->ink ? COLOR_ALPHA(th->ink->panel, (int)(242 * alpha))
+                     : RGBA((cc & 0xFF) + 6, ((cc >> 8) & 0xFF) + 7, ((cc >> 16) & 0xFF) + 12, (int)(238 * alpha));
+    gfx_round_rect(x, y, w, h, r, bg);
     float cx = x + w / 2, cy = y + h / 2;
-    u32 ic = RGBA(242, 244, 250, (int)((185 + 65 * focus) * alpha));
-    u32 hole = RGBA((cc & 0xFF) + 6, ((cc >> 8) & 0xFF) + 7, ((cc >> 16) & 0xFF) + 12, (int)(238 * alpha));
+    u32 ic = th->ink ? COLOR_ALPHA(th->ink->graphite, (int)((185 + 65 * focus) * alpha))
+                     : RGBA(242, 244, 250, (int)((185 + 65 * focus) * alpha));
+    u32 hole = bg;
     if (kind == 0) { /* Musik: not */
         draw_note(cx, cy + 2.0f * s, 32.0f * s, ic);
     } else if (kind == 1) { /* Bilder: ram med sol och berg */
@@ -2739,11 +3345,14 @@ static void draw_media_card(int kind, float x, float y, float w, float h, float 
         gfx_fan(cx, cy, tri, 3, ic);
     }
     if (focus > 0.01f)
-        gfx_ring(x - 4, y - 4, w + 8, h + 8, r + 4, RGBA(240, 240, 244, (int)(235 * focus * alpha)));
+        gfx_ring(x - 4, y - 4, w + 8, h + 8, r + 4,
+                 COLOR_ALPHA(THEME_INK(th, sel_edge, RGBA(240, 240, 244, 255)), (int)(235 * focus * alpha)));
 }
 
 static void draw_media_row(Ui *ui)
 {
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float row_alpha = ui->intro * smooth(ui->tab_anim);
     int nearest = (int)floorf(ui->pos + 0.5f);
     for (int pass = 0; pass < 2; pass++) {
@@ -2759,8 +3368,10 @@ static void draw_media_row(Ui *ui)
         }
     }
 
+    u32 title_col = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 dim_col = ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
     float la = smooth(ui->label_anim);
-    text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * row_alpha),
+    text_draw(SMALL_X + (1 - la) * 8, LABEL_Y, ui->label_size, 0, with_alpha(title_col, la * row_alpha),
               ALIGN_LEFT, ui->label);
 
     static const char *const badges[3] = { "MP3", "IMG", "VIDEO" };
@@ -2768,30 +3379,31 @@ static void draw_media_row(Ui *ui)
     int sel = clampf(ui->sel[TAB_MEDIA], 0, 2);
     const char *badge = badges[sel];
     float bw = text_width(0.5f, 1, badge) + 12, y = 206;
-    gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(LIGHT, 0.92f * row_alpha));
-    text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(DARK, row_alpha), ALIGN_CENTER, badge);
+    gfx_round_rect(MARGIN, y, bw, 15, 3, with_alpha(THEME_INK(th, graphite, LIGHT), 0.92f * row_alpha));
+    text_draw(MARGIN + bw / 2, y + 11, 0.5f, 1, with_alpha(THEME_INK(th, text_inverse, DARK), row_alpha), ALIGN_CENTER, badge);
     char cnt[32];
     if (sel > 0 && media_loading())
         snprintf(cnt, sizeof(cnt), "...");
     else
         snprintf(cnt, sizeof(cnt), "%d", counts[sel]);
-    text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(TEXT_DIM, row_alpha), ALIGN_LEFT, cnt);
+    text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(dim_col, row_alpha), ALIGN_LEFT, cnt);
 
     const char *open = L(S_F_OPEN);
     float bx = MARGIN, by = 233, bh = 26;
     float tw = text_width(0.66f, 0, open);
     float w = 8 + 16 + 8 + tw + 14;
     gfx_glow(bx, by + 2, w, bh, 6, RGBA(0, 0, 0, (int)(110 * row_alpha)));
-    gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(LIGHT, 0.95f * row_alpha));
-    gfx_button(bx + 16, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(DARK, row_alpha),
-               with_alpha(LIGHT, row_alpha));
-    text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(DARK, row_alpha), ALIGN_LEFT, open);
+    gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(THEME_INK(th, graphite, LIGHT), 0.95f * row_alpha));
+    theme_button(th, bx + 16, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, 1,
+                 with_alpha(DARK, row_alpha), with_alpha(LIGHT, row_alpha));
+    text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(THEME_INK(th, text_inverse, DARK), row_alpha), ALIGN_LEFT, open);
 }
 
 /* Alternativmenyn (□): en panel nere till vänster, över Starta-knappen, med kortets namn,
  * fäst, flytta, sortering och ✕ / ○ längst ner. */
 static void draw_menu(Ui *ui)
 {
+    const Theme *th = theme_cur();
     float a = smooth(ui->menu_anim);
     int i = ui_selected(ui);
     if (a <= 0 || i < 0)
@@ -2800,56 +3412,168 @@ static void draw_menu(Ui *ui)
     const float row = 26;
     float w = 214, h = 26 + ui->menu_rows * row + 34, x = MARGIN - 6, y = 258 - h + (1 - a) * 10;
     gfx_glow(x, y, w, h, 10, RGBA(0, 0, 0, (int)(150 * a)));
-    gfx_round_rect(x, y, w, h, 9, RGBA(40, 41, 47, (int)(255 * a)));
+    if (th->ink) {
+        gfx_round_rect(x, y, w, h, 9, COLOR_ALPHA(th->ink->border, (int)(255 * a)));
+        gfx_round_rect(x + 1, y + 1, w - 2, h - 2, 8.2f, COLOR_ALPHA(th->ink->graphite, (int)(255 * a)));
+    } else {
+        gfx_round_rect(x, y, w, h, 9, RGBA(40, 41, 47, (int)(255 * a)));
+    }
 
     char title[160];
     text_ellipsis(title, sizeof(title), ui->list->items[i].title, 0.5f, w - 24);
-    text_draw(x + 12, y + 18, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, title);
+    u32 hdr = th->ink ? COLOR_ALPHA(th->ink->panel_alt, (int)(230 * a)) : with_alpha(TEXT_DIM, a);
+    text_draw(x + 12, y + 18, 0.5f, 0, hdr, ALIGN_LEFT, title);
 
+    u32 inv = THEME_INK(th, text_inverse, TEXT_MAIN);
+    u32 sel_fg = THEME_INK(th, sel_ink, DARK);
     for (int k = 0; k < ui->menu_rows; k++) {
         char buf[64];
         const char *item = menu_label(ui, k, buf, sizeof(buf));
         float ry = y + 26 + k * row;
         int sel = k == ui->menu_sel;
         if (sel)
-            gfx_round_rect(x + 6, ry, w - 12, row - 2, 7, with_alpha(LIGHT, 0.95f * a));
-        text_draw(x + 16, ry + 17, text_fit(0.6f, 0.45f, 0, w - 32, item), 0, with_alpha(sel ? DARK : TEXT_MAIN, a),
-                  ALIGN_LEFT, item);
+            theme_sel_box(th, x + 6, ry, w - 12, row - 2, 7, with_alpha(LIGHT, 0.95f * a));
+        text_draw(x + 16, ry + 17, text_fit(0.6f, 0.45f, 0, w - 32, item), 0,
+                  with_alpha(sel ? sel_fg : inv, a), ALIGN_LEFT, item);
     }
 
     float fx = x + 12, fy = y + h - 18;
-    gfx_button(fx + 6.5f, fy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a),
-               with_alpha(DARK, a));
+    theme_button(th, fx + 6.5f, fy, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, 1,
+                 with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     fx += 17;
-    text_draw(fx, fy + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_SELECT));
+    text_draw(fx, fy + 4.5f, 0.52f, 0, with_alpha(inv, a), ALIGN_LEFT, L(S_SELECT));
     fx += text_width(0.52f, 0, L(S_SELECT)) + 12;
-    gfx_button(fx + 6.5f, fy, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, with_alpha(LIGHT, 0.9f * a),
-               with_alpha(DARK, a));
+    theme_button(th, fx + 6.5f, fy, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, 1,
+                 with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     fx += 17;
-    text_draw(fx, fy + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_BACK));
+    text_draw(fx, fy + 4.5f, 0.52f, 0, with_alpha(inv, a), ALIGN_LEFT, L(S_BACK));
+}
+
+static int is_shoulder_key(const char *key)
+{
+    return key && (key[0] == 'L' || key[0] == 'R') && key[1] == '\0';
+}
+
+static float key_cap_width(const char *key)
+{
+    if (is_shoulder_key(key))
+        return (float)ICON_SHLD_W;
+    float w = text_width(0.42f, 1, key) + 8.0f;
+    return w < 14.0f ? 14.0f : w;
 }
 
 static float key_cap(float x, float y, const char *key, float a)
 {
-    float kw = text_width(0.42f, 1, key) + 9;
-    gfx_round_rect(x, y - 6.5f, kw, 13, 3, with_alpha(LIGHT, 0.9f * a));
-    text_draw(x + kw / 2, y + 3.5f, 0.42f, 1, with_alpha(DARK, a), ALIGN_CENTER, key);
+    const Theme *t = theme_cur();
+    float kw = key_cap_width(key);
+    if (is_shoulder_key(key)) {
+        static Texture *plate_tex, *l_tex, *r_tex;
+        float py = y - ICON_SHLD_H * 0.5f;
+        const unsigned char *glyph = key[0] == 'L' ? ICON_SHLD_L : ICON_SHLD_R;
+        Texture **gtex = key[0] == 'L' ? &l_tex : &r_tex;
+        if (t->ink) {
+            draw_icon_wh(ICON_SHLD_PLATE, ICON_SHLD_W, ICON_SHLD_H, &plate_tex, x, py + 1.0f,
+                         with_alpha(t->ink->shadow, 0.92f * a));
+            draw_icon_wh(ICON_SHLD_PLATE, ICON_SHLD_W, ICON_SHLD_H, &plate_tex, x, py,
+                         with_alpha(t->ink->panel_hi, 0.96f * a));
+            draw_icon_wh(glyph, ICON_SHLD_W, ICON_SHLD_H, gtex, x, py, with_alpha(t->ink->graphite, a));
+        } else {
+            draw_icon_wh(ICON_SHLD_PLATE, ICON_SHLD_W, ICON_SHLD_H, &plate_tex, x, py,
+                         with_alpha(LIGHT, 0.94f * a));
+            draw_icon_wh(glyph, ICON_SHLD_W, ICON_SHLD_H, gtex, x, py, with_alpha(DARK, a));
+        }
+        return kw;
+    }
+    if (t->ink) {
+        gfx_round_rect(x, y - 7.0f, kw, 14.0f, 3.0f, with_alpha(t->ink->shadow, 0.92f * a));
+        gfx_round_rect(x + 1.0f, y - 6.0f, kw - 2.0f, 12.0f, 2.2f, with_alpha(t->ink->panel_hi, 0.96f * a));
+        text_draw(x + kw / 2.0f, y + 3.5f, 0.42f, 1, with_alpha(t->ink->graphite, a), ALIGN_CENTER, key);
+    } else {
+        gfx_round_rect(x, y - 7.0f, kw, 14.0f, 3.0f, with_alpha(LIGHT, 0.94f * a));
+        text_draw(x + kw / 2.0f, y + 3.5f, 0.42f, 1, with_alpha(DARK, a), ALIGN_CENTER, key);
+    }
     return kw;
+}
+
+static void draw_outline_triangle_btn(float cx, float cy, float r, u32 color)
+{
+    static Texture *t;
+    (void)r;
+    draw_icon(ICON_BTN_OUTLINE_TRI, &t, cx, cy, color);
+}
+
+static float hints_width_for(float tab_size)
+{
+    float lw = key_cap_width("L"), rw = key_cap_width("R");
+    return lw + 2.0f + rw + 6.0f + text_width(tab_size, 0, L(S_HINT_TAB));
 }
 
 static float hints_width(void);
 
+static const char *hints_confirm_label(const Ui *ui)
+{
+    int cnt = view(ui)->count;
+    if (ui->tab == TAB_LIBRARY && cnt > 0)
+        return L(S_F_OPEN);
+    if ((ui->tab == TAB_GAMES || ui->tab == TAB_APPS) && cnt > 0 && !ui->moving)
+        return ui->sel[ui->tab] == cnt ? L(S_F_OPEN) : L(S_LAUNCH);
+    return NULL;
+}
+
+static float hints_total_width(const Ui *ui)
+{
+    int figma = ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC;
+    int show_settings = figma && ui->tab != TAB_MUSIC && !(ui->moving && (ui->tab == TAB_GAMES || ui->tab == TAB_APPS));
+    const char *conf = hints_confirm_label(ui);
+    float base = figma ? hints_width_for(0.56f) : hints_width();
+    float sw = show_settings ? 29.0f + text_width(0.56f, 0, L(S_SETTINGS)) : 0.0f;
+    float cw = conf ? 29.0f + text_width(0.56f, 0, conf) : 0.0f;
+    return base + sw + cw;
+}
+
 static void draw_hints(Ui *ui)
 {
+    const Theme *t = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float a = ui->intro * (ui->launch < 0 ? 1 : 1 - smooth(ui->launch * 2));
     const char *tab = L(S_HINT_TAB);
-    float w = hints_width();
-    float x = SCREEN_W - MARGIN - w, y = 246;
+    int figma = ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC;
+    int show_settings = figma && ui->tab != TAB_MUSIC && !(ui->moving && (ui->tab == TAB_GAMES || ui->tab == TAB_APPS));
+    const char *conf = hints_confirm_label(ui);
+    float tab_sz = figma ? 0.56f : 0.60f;
+    float w = hints_total_width(ui);
+    float x = SCREEN_W - (figma ? LIB_MARGIN : MARGIN) - w, y = figma ? 257.0f : 246.0f;
 
-    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
-    x += key_cap(x, y, "L", a) + 3;
-    x += key_cap(x, y, "R", a) + 6;
-    text_draw(x, y + 4.5f, 0.6f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, tab);
+    int on_dark = !figma && (!t->ink || art_a > 0.3f);
+    if (!figma) {
+        if (t->ink && art_a <= 0.3f) {
+            gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, COLOR_ALPHA(t->ink->border, (int)(230 * a)));
+            gfx_round_rect(x - 8, y - 10, w + 16, 20, 10, COLOR_ALPHA(t->ink->panel, (int)(235 * a)));
+        } else {
+            gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
+        }
+    }
+    u32 label_col = figma ? (t->ink ? COLOR_ALPHA(t->ink->text, (int)(245 * a)) : RGBA(218, 224, 235, (int)(238 * a)))
+                          : with_alpha(ink_over_art(t, t->ink ? t->ink->text : TEXT_MAIN, TEXT_MAIN, art_a), a);
+    x += key_cap(x, y, "L", a) + 2.0f;
+    x += key_cap(x, y, "R", a) + 6.0f;
+    text_draw(x, y + 4.5f, tab_sz, 0, label_col, ALIGN_LEFT, tab);
+    if (show_settings) {
+        x += text_width(tab_sz, 0, tab) + 12.0f;
+        u32 tri_col = t->ink ? COLOR_ALPHA(t->ink->sym[THEME_SYM_TRIANGLE], (int)(245 * a))
+                             : RGBA(74, 222, 128, (int)(235 * a));
+        draw_outline_triangle_btn(x + 6.5f, y, 6.0f, tri_col);
+        text_draw(x + 17.0f, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, L(S_SETTINGS));
+        x += 17.0f + text_width(0.56f, 0, L(S_SETTINGS));
+    } else if (conf) {
+        x += text_width(tab_sz, 0, tab);
+    }
+    if (conf) {
+        x += 12.0f;
+        theme_button(t, x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, on_dark,
+                     with_alpha(LIGHT, 0.96f * a), with_alpha(DARK, a));
+        text_draw(x + 17.0f, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, conf);
+    }
 }
 
 static float hints_width(void)
@@ -2857,49 +3581,102 @@ static float hints_width(void)
     static float w;
     static const char *for_lang; /* bredden ändras bara med språket */
     if (for_lang != L(S_HINT_TAB)) {
-        float lw = text_width(0.42f, 1, "L") + 9, rw = text_width(0.42f, 1, "R") + 9;
-        w = lw + 3 + rw + 6 + text_width(0.6f, 0, L(S_HINT_TAB));
+        w = hints_width_for(0.60f);
         for_lang = L(S_HINT_TAB);
     }
     return w;
+}
+
+static void draw_library_tile(Ui *ui, int list_index, float x, float y, float w, float h,
+                              float focus, float card_a, float title_a, float art_a)
+{
+    const Theme *t = theme_cur();
+    draw_card(ui, list_index, x, y, w, h, focus, card_a, art_a);
+    IconSlot *slot = loader_icon(list_index);
+    float shown = slot && slot->state == SLOT_READY && slot->tex ? slot->shown : 0.0f;
+    if (shown <= 0.02f || title_a <= 0.02f)
+        return;
+
+    float s = w / CELL_W;
+    float r = 4.5f * s;
+    float ta = title_a * shown;
+    draw_card_scrim(x, y, w, h, r, 16.0f * s, (int)(205 * ta));
+    char label[48];
+    float tsz = 0.36f * s;
+    text_ellipsis(label, sizeof(label), ui->list->items[list_index].title, tsz, w - 10.0f * s);
+    text_draw(x + 5.5f * s, y + h - 5.5f * s, tsz, 1,
+              with_alpha(THEME_INK(t, text_inverse, TEXT_MAIN), ta), ALIGN_LEFT, label);
 }
 
 /* Biblioteket: allt i ett rutnät, rubrik med antal och sortering, vald titel nere till vänster. */
 static void draw_library(Ui *ui)
 {
     const LoaderView *v = view(ui);
+    const Theme *t = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float launch = ui->launch < 0 ? 0 : smooth(ui->launch);
     float a = ui->intro * smooth(ui->tab_anim);
     float ui_a = a * (1 - smooth(launch * 2));
     float slide = (1 - smooth(ui->tab_anim)) * 10;
 
-    /* rubrik: antal till vänster, sortering till höger */
+    /* Rensa sorteringskapsel uppe till höger för att lämna plats till kategori-knappen till vänster. */
+    char sort_txt[64];
+    snprintf(sort_txt, sizeof(sort_txt), "%s: %s", L(S_SORT), L(ui->lib_sort ? S_SORT_RECENT : S_SORT_NAME));
+    float sw_txt = text_width(0.50f, 0, sort_txt);
+    float sort_w = 10.0f + 9.0f + 6.0f + sw_txt + 10.0f;
+    float sort_x = SCREEN_W - LIB_MARGIN - sort_w, sort_y = 35.5f;
+    u32 sort_border = t->ink       ? COLOR_ALPHA(t->ink->border, (int)(235 * ui_a))
+                    : g_theme == 0 ? RGBA(62, 74, 94, (int)(200 * ui_a))
+                                   : COLOR_ALPHA(t->accent, (int)(135 * ui_a));
+    u32 sort_fill = t->ink         ? COLOR_ALPHA(t->ink->panel, (int)(242 * ui_a))
+                  : g_theme == 0   ? RGBA(23, 30, 42, (int)(240 * ui_a))
+                                   : COLOR_ALPHA(t->card, (int)(235 * ui_a));
+    u32 sort_fg = t->ink ? COLOR_ALPHA(t->ink->text, (int)(245 * ui_a)) : RGBA(203, 213, 225, (int)(242 * ui_a));
+    gfx_round_rect(sort_x, sort_y, sort_w, 20.0f, 10.0f, sort_border);
+    gfx_round_rect(sort_x + 1.0f, sort_y + 1.0f, sort_w - 2.0f, 18.0f, 9.0f, sort_fill);
+    gfx_frame(sort_x + 10.0f, sort_y + 5.5f, 9.0f, 9.0f, 1.2f, sort_fg);
+    text_draw(sort_x + 25.0f, sort_y + 13.5f, 0.50f, 0, sort_fg, ALIGN_LEFT, sort_txt);
+
+    /* Rubrik + antal-kapsel till vänster. */
     char head[96];
-    snprintf(head, sizeof(head), "%s", ui->cat[TAB_LIBRARY] ? cat_title(ui->cat[TAB_LIBRARY]) : L(S_LIB_ALL));
-    text_draw(MARGIN, 53, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, head);
+    const char *raw_head = ui->cat[TAB_LIBRARY] ? cat_title(ui->cat[TAB_LIBRARY]) : L(S_LIB_ALL);
+    float max_head_w = sort_x - LIB_MARGIN - 52.0f;
+    text_ellipsis(head, sizeof(head), raw_head, 0.66f, max_head_w > 60.0f ? max_head_w : 60.0f);
+    float hw = text_width(0.66f, 1, head);
+    u32 head_col = ink_over_art(t, t->ink ? t->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    text_draw(LIB_MARGIN, 49.0f, 0.66f, 1, with_alpha(head_col, ui_a), ALIGN_LEFT, head);
     char num[16];
     snprintf(num, sizeof(num), "%d", v->count);
-    float hw = text_width(0.66f, 0, head);
-    text_draw(MARGIN + hw + 8, 53, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num);
-    if (s_ncat) { /* SELECT Kategorier */
-        float kx = MARGIN + hw + 8 + text_width(0.6f, 0, num) + 14;
-        kx += key_cap(kx, 49, "SELECT", ui_a) + 5;
-        text_draw(kx, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, L(S_CATEGORIES));
+    float nw = text_width(0.48f, 1, num);
+    float pw = nw + 14.0f;
+    if (pw < 20.0f)
+        pw = 20.0f;
+    float cx = LIB_MARGIN + hw + 8.0f;
+    u32 count_bg = t->ink       ? COLOR_ALPHA(t->ink->panel, (int)(240 * ui_a))
+                 : g_theme == 0 ? RGBA(34, 45, 64, (int)(225 * ui_a))
+                                : COLOR_ALPHA(t->card, (int)(235 * ui_a));
+    u32 count_fg = t->ink ? COLOR_ALPHA(t->ink->text, (int)(245 * ui_a)) : RGBA(168, 182, 204, (int)(245 * ui_a));
+    gfx_round_rect(cx, 37.5f, pw, 16.0f, 8.0f, count_bg);
+    text_draw(cx + pw / 2.0f, 48.5f, 0.48f, 1, count_fg, ALIGN_CENTER, num);
+
+    if (s_ncat) {
+        float kx = cx + pw + 10.0f;
+        float cap_w = key_cap_width("SELECT") + 5.0f;
+        float avail = sort_x - 10.0f - (kx + cap_w);
+        if (avail > 28.0f) {
+            kx += key_cap(kx, 45.5f, "SELECT", ui_a) + 5.0f;
+            char cat_lbl[40];
+            text_ellipsis(cat_lbl, sizeof(cat_lbl), L(S_CATEGORIES), 0.50f, avail);
+            u32 cat_col = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text_dim : TEXT_DIM, (int)(235 * ui_a)),
+                                       RGBA(175, 188, 210, (int)(230 * ui_a)), art_a);
+            text_draw(kx, 49.0f, 0.50f, 0, cat_col, ALIGN_LEFT, cat_lbl);
+        }
     }
 
-    /* till höger: △ Inställningar   □ Alternativ (fäst, sortering) */
-    float rx = SCREEN_W - MARGIN;
-    text_draw(rx, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_RIGHT, L(S_OPTIONS));
-    rx -= text_width(0.56f, 0, L(S_OPTIONS)) + 11;
-    gfx_button(rx, 49, 6, BTN_SQUARE, with_alpha(LIGHT, 0.85f * ui_a), with_alpha(DARK, ui_a));
-    rx -= 16;
-    text_draw(rx, 53, 0.56f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_RIGHT, L(S_SETTINGS));
-    rx -= text_width(0.56f, 0, L(S_SETTINGS)) + 11;
-    gfx_button(rx, 49, 6, BTN_TRIANGLE, with_alpha(LIGHT, 0.85f * ui_a), with_alpha(DARK, ui_a));
-
-    /* korten – klipps under rubriken */
+    /* Korten – vertikalt balanserade vid få objekt och skrollbara vid fler än 2 rader. */
     int sel = ui->sel[TAB_LIBRARY];
     float focus_anim = smooth(ui->label_anim);
+    float grid_y0 = v->count <= GRID_COLS * 2 ? GRID_Y + 14.0f : GRID_Y;
     int first_row = (int)floorf(ui->grid_scroll) - 1, last_row = (int)ceilf(ui->grid_scroll) + GRID_ROWS + 1;
     gfx_clip(0, GRID_Y - 8, SCREEN_W, GRID_BOTTOM - (GRID_Y - 8));
     float sx = 0, sy = 0, sw = 0, shh = 0;
@@ -2907,49 +3684,51 @@ static void draw_library(Ui *ui)
         if (p < 0)
             continue;
         int r = p / GRID_COLS, c = p % GRID_COLS;
-        float x = MARGIN + c * (CELL_W + GRID_GAP);
-        float y = GRID_Y + (r - ui->grid_scroll) * ROW_STEP + slide;
+        float x = LIB_MARGIN + c * (CELL_W + GRID_GAP);
+        float y = grid_y0 + (r - ui->grid_scroll) * ROW_STEP + slide;
         if (y > SCREEN_H || y + CELL_H < GRID_Y - 8)
             continue;
         if (p == sel) { /* ritas sist, ovanpå grannarna */
             sx = x; sy = y; sw = CELL_W; shh = CELL_H;
             continue;
         }
-        /* en rad som bara syns delvis bleknar */
         float fade = clampf((GRID_BOTTOM - y) / CELL_H, 0, 1) * clampf((y + CELL_H - GRID_Y + 8) / CELL_H, 0, 1);
-        draw_card(ui, v->idx[p], x, y, CELL_W, CELL_H, 0, a * (1 - launch) * fade);
+        float ta = a * (1 - launch) * fade;
+        draw_library_tile(ui, v->idx[p], x, y, CELL_W, CELL_H, 0, ta, ta, art_a);
     }
     if (sw > 0) {
         float grow = 1 + 0.08f * focus_anim;
         float w = sw * grow, h = shh * grow;
-        float cx = sx + sw / 2, cy = sy + shh / 2;
+        float cx_tile = sx + sw / 2, cy_tile = sy + shh / 2;
         if (launch > 0) { /* startanimation: kortet växer mot mitten */
             gfx_clip_reset();
             float g = 1 + launch * 2.4f;
             w *= g;
             h *= g;
-            cx = lerpf(cx, SCREEN_W / 2, launch);
-            cy = lerpf(cy, SCREEN_H / 2, launch);
+            cx_tile = lerpf(cx_tile, SCREEN_W / 2, launch);
+            cy_tile = lerpf(cy_tile, SCREEN_H / 2, launch);
         }
-        draw_card(ui, v->idx[sel], cx - w / 2, cy - h / 2, w, h, 0.4f + 0.6f * focus_anim, a);
+        draw_library_tile(ui, v->idx[sel], cx_tile - w / 2, cy_tile - h / 2, w, h,
+                          0.4f + 0.6f * focus_anim, a, a * (1 - launch), art_a);
     }
     gfx_clip_reset();
 
-    /* vald titel med typetikett nere till vänster, bredvid knapptipsen */
+    /* Vald titel med typetikett nere till vänster, synkad med footerns högerkant. */
     int i = ui_selected(ui);
     if (i >= 0) {
-        const char *type = type_name(ui->list->items[i].type);
-        float bw = text_width(0.5f, 1, type) + 12;
-        gfx_round_rect(MARGIN, 238.5f, bw, 15, 3, with_alpha(LIGHT, 0.92f * ui_a));
-        text_draw(MARGIN + bw / 2, 249.5f, 0.5f, 1, with_alpha(DARK, ui_a), ALIGN_CENTER, type);
-        float tx = MARGIN + bw + 8;
-        float max_w = SCREEN_W - MARGIN - hints_width() - 30 - tx;
-        if (ui->lib_label_for != i) {
-            text_ellipsis(ui->lib_label, sizeof(ui->lib_label), ui->list->items[i].title, 0.66f, max_w);
+        static float max_w_cached;
+        float bw = draw_meta_badge(LIB_MARGIN, 251.0f, type_name(ui->list->items[i].type), ui_a);
+        float tx = LIB_MARGIN + bw + 8.0f;
+        float max_w = SCREEN_W - LIB_MARGIN - hints_total_width(ui) - 14.0f - tx;
+        if (max_w < 40.0f)
+            max_w = 40.0f;
+        if (ui->lib_label_for != i || fabsf(max_w_cached - max_w) > 1.0f) {
+            text_ellipsis(ui->lib_label, sizeof(ui->lib_label), ui->list->items[i].title, 0.58f, max_w);
             ui->lib_label_for = i;
+            max_w_cached = max_w;
         }
-        text_draw(tx + (1 - focus_anim) * 6, 250.5f, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim),
-                  ALIGN_LEFT, ui->lib_label);
+        text_draw(tx + (1 - focus_anim) * 6.0f, 260.5f, 0.58f, 0,
+                  with_alpha(THEME_INK(t, text, TEXT_MAIN), ui_a * focus_anim), ALIGN_LEFT, ui->lib_label);
     }
 }
 
@@ -3001,23 +3780,70 @@ static void draw_shuffle(float cx, float cy, u32 c)
     gfx_fan(cx + 5.7f, cy + 5, dn, 3, c);
 }
 
-/* Albumlistan i musikfliken: först "Alla låtar", sedan ett album per rad (namn, artist · antal) */
-static void draw_album_rows(Ui *ui, float a, float slide, float lw)
+/* Gemensam radrendering för både spårlistan och albumlistan i musikfliken */
+static void draw_music_row(float x, float y, float w, const char *title, const char *sub,
+                           int selected, int active, int show_eq, int playing, float time, float a, float art_a)
 {
-    static RowCache cache[MROWS + 3];
+    const Theme *t = theme_cur();
+    float rh = MUSIC_ROW_H - 2.0f;
+    if (selected)
+        theme_sel_box(t, x, y, w, rh, 7.0f, with_alpha(LIGHT, 0.95f * a));
+    u32 main = selected ? with_alpha(THEME_INK(t, sel_ink, DARK), a)
+                        : with_alpha(ink_over_art(t, t->ink ? t->ink->text : TEXT_MAIN, TEXT_MAIN, art_a), a);
+    u32 dim = selected ? (t->ink ? with_alpha(t->ink->text_dim, a) : RGBA(74, 82, 96, (int)(255 * a)))
+                       : ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text_dim : TEXT_DIM, (int)(245 * a)),
+                                      RGBA(134, 146, 166, (int)(240 * a)), art_a);
+    u32 tile = active
+        ? (t->ink ? with_alpha(t->ink->graphite, a)
+                  : (g_theme == 0 ? RGBA(232, 62, 62, (int)(255 * a)) : with_alpha(t->accent, a)))
+        : (t->ink ? COLOR_ALPHA(t->ink->panel_alt, (int)(245 * a))
+                  : (selected ? RGBA(44, 52, 68, (int)(235 * a)) : RGBA(31, 38, 50, (int)(238 * a))));
+    u32 note = active ? with_alpha(THEME_INK(t, text_inverse, LIGHT), a)
+        : (t->ink ? with_alpha(selected ? t->ink->graphite : t->ink->text_dim, a)
+                  : (selected ? with_alpha(LIGHT, 0.90f * a) : RGBA(154, 166, 186, (int)(225 * a))));
+    float tx = x + 7.0f, ty = y + (rh - 18.0f) * 0.5f;
+    gfx_round_rect(tx, ty, 18.0f, 18.0f, 4.0f, tile);
+    draw_note(tx + 9.0f, ty + 9.0f, 10.0f, note);
+    if (show_eq) {
+        float ex = x + w - 20.0f;
+        for (int k = 0; k < 3; k++) {
+            float hgt = playing ? 3.5f + 7.5f * (0.5f + 0.5f * sinf(time * (7.0f + k * 2.3f) + k)) : 3.5f;
+            gfx_rect(ex + k * 4.0f, y + rh - 6.5f - hgt, 2.5f, hgt, main);
+        }
+    }
+    text_draw(x + 31.0f, y + 11.5f, 0.58f, 0, main, ALIGN_LEFT, title);
+    text_draw(x + 31.0f, y + 21.5f, 0.45f, 0, dim, ALIGN_LEFT, sub);
+}
+
+static void draw_transport_step(float cx, float cy, int dir, int active, float a)
+{
+    const Theme *t = theme_cur();
+    u32 bg = active ? (t->ink ? with_alpha(t->ink->graphite, a) : with_alpha(t->accent, 0.88f * a))
+                    : (t->ink ? COLOR_ALPHA(t->ink->panel_alt, (int)(242 * a)) : RGBA(37, 45, 58, (int)(238 * a)));
+    u32 fg = t->ink ? (active ? with_alpha(t->ink->text_inverse, a) : with_alpha(t->ink->graphite, a))
+                    : with_alpha(LIGHT, 0.94f * a);
+    gfx_round_rect(cx - 12.0f, cy - 9.0f, 24.0f, 18.0f, 4.0f, bg);
+    draw_seek_glyph(cx, cy, 4.2f, dir, fg);
+}
+
+/* Albumlistan i musikfliken: först "Alla låtar", sedan ett album per rad (namn, artist · antal) */
+static void draw_album_rows(Ui *ui, float a, float slide, float art_a)
+{
+    static RowCache cache[MUSIC_ROWS + 3];
     static int cache_gen = -1, cache_n = -1;
     static const char *cache_lang;
     if (cache_gen != s_alb_gen || cache_n != s_alb_count || cache_lang != L(S_ALL_TRACKS)) {
-        for (int i = 0; i < MROWS + 3; i++)
+        for (int i = 0; i < MUSIC_ROWS + 3; i++)
             cache[i].idx = -1;
         cache_gen = s_alb_gen;
         cache_n = s_alb_count;
         cache_lang = L(S_ALL_TRACKS);
     }
-    int first = (int)floorf(ui->album_scroll), last = first + MROWS;
+    float max_tw = MUSIC_LIST_W - 42.0f;
+    int first = (int)floorf(ui->album_scroll), last = first + MUSIC_ROWS;
     for (int i = first < 0 ? 0 : first; i <= last && i <= s_nalb; i++) {
-        float y = MLIST_Y + (i - ui->album_scroll) * MROW_H + slide;
-        RowCache *c = &cache[i % (MROWS + 3)];
+        float y = MUSIC_LIST_Y + (i - ui->album_scroll) * MUSIC_ROW_H + slide;
+        RowCache *c = &cache[i % (MUSIC_ROWS + 3)];
         if (c->idx != i) {
             const Track *t = i ? music_track(s_alb_first[i - 1]) : NULL;
             int cnt = i ? s_alb_first[i] - s_alb_first[i - 1] : s_alb_count;
@@ -3028,42 +3854,57 @@ static void draw_album_rows(Ui *ui, float a, float slide, float lw)
                 snprintf(sub, sizeof(sub), "%d", cnt);
             /* låtar direkt i MUSIC-mappen har inget album */
             text_ellipsis(c->title, sizeof(c->title), !t ? L(S_ALL_TRACKS) : t->album[0] ? t->album : L(S_TAB_MUSIC),
-                          0.6f, lw - 30);
-            text_ellipsis(c->sub, sizeof(c->sub), sub, 0.46f, lw - 30);
+                          0.58f, max_tw);
+            text_ellipsis(c->sub, sizeof(c->sub), sub, 0.45f, max_tw);
             c->idx = i;
         }
-        int selected = i == ui->album_sel;
-        if (selected)
-            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
-        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
-        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
-        draw_note(MARGIN + 7, y + 12, 13, i == ui->music_album ? with_alpha(theme_cur()->accent, a) : dim);
-        text_draw(MARGIN + 20, y + 11.5f, 0.6f, 0, main, ALIGN_LEFT, c->title);
-        text_draw(MARGIN + 20, y + 22, 0.46f, 0, dim, ALIGN_LEFT, c->sub);
+        draw_music_row(MUSIC_LIST_X, y, MUSIC_LIST_W, c->title, c->sub,
+                       i == ui->album_sel, i == ui->music_album, 0, 0, ui->time, a, art_a);
     }
 }
 
 static void draw_music(Ui *ui)
 {
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
     int n = music_count(), cur = music_current(), state = music_state();
 
-    /* --- spelas nu --- */
-    float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
-    gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
-    text_draw(px + 12, py + 17, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_NOW_PLAYING));
-    /* blanda (□): uppe till höger, i temats färg när det är på, svag när det är av */
-    draw_shuffle(px + pw - 20, py + 13, g_shuffle ? with_alpha(theme_cur()->accent, a) : with_alpha(LIGHT, 0.3f * a));
+    /* --- höger kort: "spelas nu" --- */
+    float px = MUSIC_PANEL_X, pw = SCREEN_W - LIB_MARGIN - MUSIC_PANEL_X;
+    float py = MUSIC_LIST_Y + slide, ph = MUSIC_PANEL_H;
+    u32 border = th->ink      ? COLOR_ALPHA(th->ink->border, (int)(235 * a))
+               : g_theme == 0 ? RGBA(44, 55, 74, (int)(210 * a))
+                              : with_alpha(th->accent, 0.35f * a);
+    u32 panel_bg = th->ink      ? COLOR_ALPHA(th->ink->panel, (int)(242 * a))
+                 : g_theme == 0 ? RGBA(18, 24, 34, (int)(238 * a))
+                                : with_alpha(th->card, 0.90f * a);
+    gfx_round_rect(px, py, pw, ph, 10.0f, border);
+    gfx_round_rect(px + 1.0f, py + 1.0f, pw - 2.0f, ph - 2.0f, 9.2f, panel_bg);
+    text_draw(px + 12.0f, py + 16.5f, 0.54f, 0, with_alpha(THEME_INK(th, text, TEXT_MAIN), a), ALIGN_LEFT, L(S_NOW_PLAYING));
+    u32 shuf_on = th->ink ? with_alpha(th->ink->sym[THEME_SYM_CROSS], a) : with_alpha(th->accent, a);
+    u32 shuf_off = th->ink ? COLOR_ALPHA(th->ink->text_muted, (int)(160 * a)) : RGBA(140, 152, 172, (int)(75 * a));
+    draw_shuffle(px + pw - 20.0f, py + 12.5f, g_shuffle ? shuf_on : shuf_off);
+    gfx_rect(px + 10.0f, py + 25.0f, pw - 20.0f, 1.0f,
+             th->ink      ? COLOR_ALPHA(th->ink->border, (int)(200 * a))
+           : g_theme == 0 ? RGBA(44, 55, 74, (int)(190 * a))
+                          : RGBA(255, 255, 255, (int)(28 * a)));
+
     const Track *t = cur >= 0 ? music_track(cur) : NULL;
-    /* omslaget, eller en ruta med färgton från låtens nummer och en egenritad not */
-    float as = 64, ax = px + (pw - as) / 2, ay = py + 28;
-    unsigned h = (cur >= 0 ? cur : 7) * 2654435761u;
+    float as = 72.0f, ax = px + (pw - as) * 0.5f, ay = py + 33.0f;
+    unsigned h = (cur >= 0 ? (unsigned)cur : 7u) * 2654435761u;
     int r0 = 60 + (h >> 8) % 120, g0 = 60 + (h >> 16) % 110, b0 = 90 + (h >> 24) % 140;
-    gfx_glow(ax, ay + 3, as, as, 8, RGBA(0, 0, 0, (int)(120 * a)));
-    gfx_round_rect(ax, ay, as, as, 8, RGBA(r0, g0, b0, (int)((t ? 255 : 90) * a)));
-    gfx_gradient_v(ax + 4, ay + as * 0.5f, as - 8, as * 0.5f - 4, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, (int)(60 * a)));
-    draw_note(ax + as / 2, ay + as / 2, 30, RGBA(255, 255, 255, (int)((t ? 230 : 120) * a)));
+    gfx_glow(ax, ay + 3.0f, as, as, 8.0f, RGBA(0, 0, 0, (int)(110 * a)));
+    u32 art_bg = t ? RGBA(r0, g0, b0, (int)(255 * a))
+                   : (th->ink ? COLOR_ALPHA(th->ink->panel_alt, (int)(235 * a)) : RGBA(30, 38, 52, (int)(205 * a)));
+    gfx_round_rect(ax, ay, as, as, 8.0f, art_bg);
+    if (t)
+        gfx_gradient_v(ax + 4.0f, ay + as * 0.5f, as - 8.0f, as * 0.5f - 4.0f,
+                       RGBA(0, 0, 0, 0), RGBA(0, 0, 0, (int)(65 * a)));
+    u32 note_empty = (!t && th->ink) ? COLOR_ALPHA(th->ink->text_muted, (int)(185 * a))
+                                     : RGBA(255, 255, 255, (int)((t ? 230 : 105) * a));
+    draw_note(ax + as * 0.5f, ay + as * 0.5f, 30.0f, note_empty);
     if (ui->cover && ui->cover_for == cur && cur >= 0) {
         float ca = smooth(ui->cover_fade);
         gfx_tex(ui->cover, ax, ay, as, as, RGBA(255, 255, 255, (int)(255 * a * ca)));
@@ -3075,132 +3916,156 @@ static void draw_music(Ui *ui)
     if (pfor != cur || pgen != music_generation() || plang != L(S_UNKNOWN_ARTIST)) {
         pgen = music_generation();
         plang = L(S_UNKNOWN_ARTIST);
-        text_ellipsis(ptitle, sizeof(ptitle), t ? t->title : L(S_NOTHING_PLAYING), 0.6f, pw - 20);
-        text_ellipsis(partist, sizeof(partist), t ? (t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST)) : "", 0.5f, pw - 20);
+        text_ellipsis(ptitle, sizeof(ptitle), t ? t->title : L(S_NOTHING_PLAYING), 0.58f, pw - 20.0f);
+        text_ellipsis(partist, sizeof(partist), t ? (t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST)) : "", 0.46f, pw - 20.0f);
         pfor = cur;
     }
-    text_draw(px + pw / 2, ay + as + 20, 0.6f, 0, with_alpha(TEXT_MAIN, a), ALIGN_CENTER, ptitle);
-    text_draw(px + pw / 2, ay + as + 35, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, partist);
+    text_draw(px + pw * 0.5f, ay + as + 16.0f, 0.58f, 0, with_alpha(THEME_INK(th, text, TEXT_MAIN), a), ALIGN_CENTER, ptitle);
+    u32 sub_col = th->ink ? COLOR_ALPHA(th->ink->text_dim, (int)(245 * a)) : RGBA(148, 163, 184, (int)(235 * a));
+    text_draw(px + pw * 0.5f, ay + as + 30.0f, 0.46f, 0, sub_col, ALIGN_CENTER, partist);
+
     if (t) {
         int seek = ui->seeking || ui->seek_show > 0;
         float el = seek ? ui->seek_pos : music_elapsed(), du = music_duration();
-        float bw = pw - 28, bxx = px + 14, by = py + ph - 30;
-        gfx_round_rect(bxx, by, bw, 3, 1.5f, RGBA(255, 255, 255, (int)(50 * a)));
-        if (du > 0)
-            gfx_round_rect(bxx, by, fmaxf(3, bw * clampf(el / du, 0, 1)), 3, 1.5f, with_alpha(theme_cur()->accent, a));
-        if (du > 0 && ui->seeking) /* spolning: en knopp på målet */
-            gfx_circle(bxx + bw * clampf(el / du, 0, 1), by + 1.5f, 4.5f, with_alpha(LIGHT, a));
+        float bw = pw - 28.0f, bxx = px + 14.0f, by = py + ph - 53.0f;
+        gfx_round_rect(bxx, by, bw, 3.0f, 1.5f,
+                       th->ink ? COLOR_ALPHA(th->ink->panel_deep, (int)(240 * a)) : RGBA(44, 56, 74, (int)(220 * a)));
+        if (du > 0) {
+            float fw = fmaxf(3.0f, bw * clampf(el / du, 0.0f, 1.0f));
+            u32 bar_fg = THEME_INK(th, graphite, LIGHT);
+            gfx_round_rect(bxx, by, fw, 3.0f, 1.5f, with_alpha(bar_fg, 0.96f * a));
+            gfx_circle(bxx + fw, by + 1.5f, ui->seeking ? 4.2f : 2.8f, with_alpha(bar_fg, a));
+        }
         char e[12], d[12];
         format_time(e, sizeof(e), el);
         format_time(d, sizeof(d), du);
-        text_draw(bxx, by + 15, 0.45f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, e);
+        u32 ts_col = th->ink ? COLOR_ALPHA(th->ink->text_dim, (int)(240 * a)) : RGBA(140, 152, 172, (int)(235 * a));
+        text_draw(bxx, by + 13.0f, 0.44f, 0, ts_col, ALIGN_LEFT, e);
         if (du > 0)
-            text_draw(bxx + bw, by + 15, 0.45f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, d);
-        gfx_circle(px + pw / 2, by + 11, 8, with_alpha(LIGHT, 0.95f * a));
+            text_draw(bxx + bw, by + 13.0f, 0.44f, 0, ts_col, ALIGN_RIGHT, d);
+        float tx = px + pw * 0.5f, ty = py + ph - 21.0f;
+        draw_transport_step(tx - 34.0f, ty, -1, ui->seeking && ui->seek_dir < 0, a);
+        gfx_circle(tx, ty, 10.5f, with_alpha(THEME_INK(th, graphite, LIGHT), 0.96f * a));
+        u32 glyph_fg = THEME_INK(th, text_inverse, DARK);
         if (ui->seeking)
-            draw_seek_glyph(px + pw / 2, by + 11, 5.5f, ui->seek_dir, with_alpha(DARK, a));
+            draw_seek_glyph(tx, ty, 5.2f, ui->seek_dir, with_alpha(glyph_fg, a));
         else
-            draw_play_glyph(px + pw / 2, by + 11, 6, state == MUSIC_PLAYING, with_alpha(DARK, a));
+            draw_play_glyph(tx, ty, 6.2f, state == MUSIC_PLAYING, with_alpha(glyph_fg, a));
+        draw_transport_step(tx + 34.0f, ty, 1, ui->seeking && ui->seek_dir > 0, a);
     }
 
+    float left_max = MUSIC_PANEL_X - LIB_MARGIN - 16.0f;
+    u32 list_main = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 list_dim = ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
     if (!n && music_scanning()) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MUSIC));
+        float tsz = text_fit(0.85f, 0.55f, 0, left_max, L(S_LOADING_MUSIC));
+        text_draw(LIB_MARGIN, 112.0f, tsz, 0, with_alpha(list_main, a), ALIGN_LEFT, L(S_LOADING_MUSIC));
         for (int i = 0; i < 3; i++) { /* tre punkter som pulserar i tur och ordning */
             float p = 0.5f + 0.5f * sinf(ui->time * 6.0f - i * 0.9f);
-            gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)((90 + 165 * p) * a)));
+            gfx_circle(LIB_MARGIN + 4 + i * 12, 134.0f, 2 + p, COLOR_ALPHA(th->accent, (int)((90 + 165 * p) * a)));
         }
         return;
     }
     if (!n) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_MUSIC));
-        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_MUSIC)));
+        const char *hint = on_root(L(S_HINT_MUSIC));
+        float tsz = text_fit(0.85f, 0.55f, 0, left_max, L(S_NO_MUSIC));
+        float hsz = text_fit(0.56f, 0.38f, 0, left_max, hint);
+        text_draw(LIB_MARGIN, 112.0f, tsz, 0, with_alpha(list_main, a), ALIGN_LEFT, L(S_NO_MUSIC));
+        text_draw(LIB_MARGIN, 134.0f, hsz, 0, with_alpha(list_dim, a), ALIGN_LEFT, hint);
         return;
     }
 
-    /* --- låtlistan --- */
-    static RowCache cache[MROWS + 3];
-    static int cache_gen = -1;
+    /* --- vänster lista: låtar eller album --- */
+    static RowCache cache[MUSIC_ROWS + 3];
+    static int cache_gen = -1, cache_cur = -2, cache_stopped = -1;
     static const char *cache_lang;
-    if (cache_gen != music_generation() || cache_lang != L(S_UNKNOWN_ARTIST)) { /* ny lista eller nytt språk */
-        for (int i = 0; i < MROWS + 3; i++)
+    int stopped = state == MUSIC_STOPPED;
+    if (cache_gen != music_generation() || cache_lang != L(S_UNKNOWN_ARTIST)
+        || cache_cur != cur || cache_stopped != stopped) {
+        for (int i = 0; i < MUSIC_ROWS + 3; i++)
             cache[i].idx = -1;
         cache_gen = music_generation();
         cache_lang = L(S_UNKNOWN_ARTIST);
+        cache_cur = cur;
+        cache_stopped = stopped;
     }
-    float lw = PANEL_X - 14 - MARGIN;
-    gfx_clip(0, MLIST_Y - 2, PANEL_X - 6, MROWS * MROW_H + 2);
+    gfx_clip(0, MUSIC_LIST_Y - 2.0f, MUSIC_PANEL_X - 8.0f, MUSIC_ROWS * MUSIC_ROW_H + 2.0f);
     int lo, hi;
     music_range(ui, &lo, &hi);
     if (ui->music_view)
-        draw_album_rows(ui, a, slide, lw);
-    int first = (int)floorf(ui->music_scroll), last = first + MROWS;
+        draw_album_rows(ui, a, slide, art_a);
+    int first = (int)floorf(ui->music_scroll), last = first + MUSIC_ROWS;
     for (int i = first; !ui->music_view && i <= last && i < hi; i++) {
         if (i < lo)
             continue;
-        float y = MLIST_Y + (i - ui->music_scroll) * MROW_H + slide;
-        RowCache *c = &cache[i % (MROWS + 3)];
+        float y = MUSIC_LIST_Y + (i - ui->music_scroll) * MUSIC_ROW_H + slide;
+        RowCache *c = &cache[i % (MUSIC_ROWS + 3)];
         const Track *tr = music_track(i);
         if (!tr)
             continue;
+        int active = i == cur && state != MUSIC_STOPPED;
         if (c->idx != i) {
-            text_ellipsis(c->title, sizeof(c->title), tr->title, 0.6f, lw - 30);
-            text_ellipsis(c->sub, sizeof(c->sub), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.46f, lw - 30);
+            float max_tw = MUSIC_LIST_W - (active ? 56.0f : 42.0f);
+            text_ellipsis(c->title, sizeof(c->title), tr->title, 0.58f, max_tw);
+            text_ellipsis(c->sub, sizeof(c->sub), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.45f, max_tw);
             c->idx = i;
         }
-        int selected = i == ui->music_sel;
-        if (selected)
-            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
-        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
-        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
-        if (i == cur && state != MUSIC_STOPPED) {
-            /* små staplar som rör sig medan låten spelas */
-            for (int k = 0; k < 3; k++) {
-                float hgt = state == MUSIC_PLAYING ? 3 + 7 * (0.5f + 0.5f * sinf(ui->time * (7 + k * 2.3f) + k)) : 3;
-                gfx_rect(MARGIN + 2 + k * 4, y + 18 - hgt, 2.5f, hgt, main);
-            }
-        }
-        text_draw(MARGIN + 20, y + 11.5f, 0.6f, 0, main, ALIGN_LEFT, c->title);
-        text_draw(MARGIN + 20, y + 22, 0.46f, 0, dim, ALIGN_LEFT, c->sub);
+        draw_music_row(MUSIC_LIST_X, y, MUSIC_LIST_W, c->title, c->sub,
+                       i == ui->music_sel, active, active, state == MUSIC_PLAYING, ui->time, a, art_a);
     }
     gfx_clip_reset();
 
-    /* knapptips nere till vänster: ✕ Spela/Paus  □ Blanda  ◀ ▶ Spår */
-    float x = MARGIN, y = 246;
+    /* knapptips nere till vänster i fotraden */
+    float x = LIB_MARGIN, y = 257.0f;
+    u32 label_col = th->ink ? COLOR_ALPHA(th->ink->text, (int)(245 * a)) : RGBA(218, 224, 235, (int)(238 * a));
+    u32 active_lbl = th->ink ? with_alpha(th->ink->sym[THEME_SYM_CROSS], a) : with_alpha(th->accent, a);
     const char *play = L(ui->music_view ? S_SELECT : ui->music_sel == cur && state == MUSIC_PLAYING ? S_PAUSE : S_PLAY);
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
-    x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, play);
-    x += text_width(0.56f, 0, play) + 12;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
-    x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, g_shuffle ? with_alpha(theme_cur()->accent, a) : with_alpha(TEXT_MAIN, a),
-              ALIGN_LEFT, L(S_SHUFFLE));
-    x += text_width(0.56f, 0, L(S_SHUFFLE)) + 12;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_TRIANGLE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
-    x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_ALBUMS));
-    x += text_width(0.56f, 0, L(S_ALBUMS)) + 12;
-    float l[6] = { x, y, x + 6, y - 4.5f, x + 6, y + 4.5f };
-    gfx_fan(x + 3, y, l, 3, with_alpha(LIGHT, 0.9f * a));
-    float r[6] = { x + 15, y, x + 9, y - 4.5f, x + 9, y + 4.5f };
-    gfx_fan(x + 12, y, r, 3, with_alpha(LIGHT, 0.9f * a));
-    /* krymper hellre än krockar med L R-tipsen till höger */
-    float tsize = text_fit(0.56f, 0.4f, 0, SCREEN_W - MARGIN - hints_width() - 26 - (x + 20), L(S_TRACK));
-    text_draw(x + 20, y + 4.5f, tsize, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_TRACK));
+    theme_button(th, x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, 0,
+                 with_alpha(LIGHT, 0.96f * a), with_alpha(DARK, a));
+    x += 17.0f;
+    text_draw(x, y + 4.5f, 0.54f, 0, label_col, ALIGN_LEFT, play);
+    x += text_width(0.54f, 0, play) + 10.0f;
+    theme_button(th, x + 6.5f, y, 6.5f, BTN_SQUARE, 0, with_alpha(LIGHT, 0.96f * a), with_alpha(DARK, a));
+    x += 17.0f;
+    text_draw(x, y + 4.5f, 0.54f, 0, g_shuffle ? active_lbl : label_col, ALIGN_LEFT, L(S_SHUFFLE));
+    x += text_width(0.54f, 0, L(S_SHUFFLE)) + 10.0f;
+    theme_button(th, x + 6.5f, y, 6.5f, BTN_TRIANGLE, 0, with_alpha(LIGHT, 0.96f * a), with_alpha(DARK, a));
+    x += 17.0f;
+    text_draw(x, y + 4.5f, 0.54f, 0, ui->music_view ? active_lbl : label_col, ALIGN_LEFT, L(S_ALBUMS));
+    x += text_width(0.54f, 0, L(S_ALBUMS)) + 10.0f;
+    u32 arr = THEME_INK(th, graphite, LIGHT);
+    float l[6] = { x, y, x + 6.0f, y - 4.5f, x + 6.0f, y + 4.5f };
+    gfx_fan(x + 3.0f, y, l, 3, with_alpha(arr, 0.94f * a));
+    float r[6] = { x + 15.0f, y, x + 9.0f, y - 4.5f, x + 9.0f, y + 4.5f };
+    gfx_fan(x + 12.0f, y, r, 3, with_alpha(arr, 0.94f * a));
+    float max_tw = SCREEN_W - LIB_MARGIN - hints_total_width(ui) - 14.0f - (x + 19.0f);
+    float tsize = text_fit(0.54f, 0.38f, 0, max_tw, L(S_TRACK));
+    text_draw(x + 19.0f, y + 4.5f, tsize, 0, label_col, ALIGN_LEFT, L(S_TRACK));
 }
 
 /* Bildfliken: bildlista till vänster, förhandsvisning med upplösning till höger, helskärm med ✕ */
 static void draw_pictures(Ui *ui)
 {
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
     int n = s_npics;
 
     /* --- förhandsvisning till höger --- */
     float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
-    gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
+    if (th->ink) {
+        gfx_round_rect(px, py, pw, ph, 10, COLOR_ALPHA(th->ink->border, (int)(235 * a)));
+        gfx_round_rect(px + 1, py + 1, pw - 2, ph - 2, 9.2f, COLOR_ALPHA(th->ink->panel, (int)(242 * a)));
+    } else {
+        gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
+    }
     float bx = px + 10, by = py + 10, bw = pw - 20, bh = ph - 44;
     gfx_round_rect(bx, by, bw, bh, 7, RGBA(18, 19, 24, (int)(200 * a)));
+
+    u32 main_fg = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 dim_fg = ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
+    u32 cap_col = THEME_INK(th, text_dim, TEXT_DIM);
 
     if (n > 0 && ui->pic_tex && ui->pic_tex_for == ui->pic_sel) {
         Texture *tx = ui->pic_tex;
@@ -3212,20 +4077,20 @@ static void draw_pictures(Ui *ui)
         gfx_tex(tx, ix, iy, iw, ih, RGBA(255, 255, 255, (int)(255 * a * pa)));
         char info[96];
         snprintf(info, sizeof(info), "%d × %d  ·  %d / %d", tx->w, tx->h, ui->pic_sel + 1, n);
-        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, info);
+        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(cap_col, a), ALIGN_CENTER, info);
     } else if (n > 0) {
         char info[48];
         snprintf(info, sizeof(info), "%d / %d", ui->pic_sel + 1, n);
-        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, info);
+        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(cap_col, a), ALIGN_CENTER, info);
     }
 
     if (!n && media_loading()) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MEDIA));
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(main_fg, a), ALIGN_LEFT, L(S_LOADING_MEDIA));
         return;
     }
     if (!n) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_PICTURES));
-        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_PICTURES)));
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(main_fg, a), ALIGN_LEFT, L(S_NO_PICTURES));
+        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(dim_fg, a), ALIGN_LEFT, on_root(L(S_HINT_PICTURES)));
         return;
     }
 
@@ -3239,15 +4104,18 @@ static void draw_pictures(Ui *ui)
         float y = MLIST_Y + (i - ui->pic_scroll) * MROW_H + slide;
         int selected = i == ui->pic_sel;
         if (selected)
-            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
-        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
-        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
+            theme_sel_box(th, MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
+        u32 main = selected ? with_alpha(THEME_INK(th, sel_ink, DARK), a) : with_alpha(main_fg, a);
+        u32 dim = selected ? (th->ink ? with_alpha(th->ink->text_dim, a) : RGBA(70, 72, 80, (int)(255 * a)))
+                           : with_alpha(dim_fg, a);
 
         /* liten bildikon till vänster */
         int is_wall = g_wallpaper[0] && !strcmp(g_wallpaper, s_pics[i].path);
-        u32 ic = is_wall ? with_alpha(theme_cur()->accent, a) : dim;
+        u32 ic = is_wall ? (th->ink ? with_alpha(th->ink->sym[THEME_SYM_CROSS], a) : with_alpha(th->accent, a)) : dim;
         gfx_round_rect(MARGIN + 1, y + 7, 13, 10, 2, ic);
-        gfx_circle(MARGIN + 5, y + 10.5f, 1.3f, selected ? with_alpha(LIGHT, a) : RGBA(24, 25, 30, (int)(255 * a)));
+        u32 dot_col = selected ? with_alpha(THEME_INK(th, panel_hi, LIGHT), a)
+                               : (th->ink ? with_alpha(th->ink->text_inverse, a) : RGBA(24, 25, 30, (int)(255 * a)));
+        gfx_circle(MARGIN + 5, y + 10.5f, 1.3f, dot_col);
 
         char title[100], sub[72];
         text_ellipsis(title, sizeof(title), s_pics[i].title, 0.6f, lw - 30);
@@ -3260,18 +4128,20 @@ static void draw_pictures(Ui *ui)
     /* knapptips nere till vänster: ✕ Öppna  □ Som bakgrundsbild */
     float x = MARGIN, y = 246;
     const char *open = L(S_F_OPEN), *wall = L(S_SET_WALLPAPER);
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    theme_button(th, x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, art_a > 0.3f,
+                 with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, open);
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(main_fg, a), ALIGN_LEFT, open);
     x += text_width(0.56f, 0, open) + 12;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_SQUARE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    theme_button(th, x + 6.5f, y, 6.5f, BTN_SQUARE, art_a > 0.3f, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
     float wsize = text_fit(0.56f, 0.4f, 0, SCREEN_W - MARGIN - hints_width() - 22 - x, wall);
-    text_draw(x, y + 4.5f, wsize, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, wall);
+    text_draw(x, y + 4.5f, wsize, 0, with_alpha(main_fg, a), ALIGN_LEFT, wall);
 }
 
 static void draw_pic_fullscreen(Ui *ui)
 {
+    const Theme *th = theme_cur();
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 248));
     if (ui->pic_tex) {
         Texture *tx = ui->pic_tex;
@@ -3286,29 +4156,42 @@ static void draw_pic_fullscreen(Ui *ui)
     float w = 17 + text_width(0.52f, 0, back) + 14 + 17 + text_width(0.52f, 0, wall) + 14 + text_width(0.52f, 0, cnt);
     float x = MARGIN, y = 248;
     gfx_round_rect(x - 8, y - 10, w + 16, 20, 10, RGBA(0, 0, 0, 165));
-    gfx_button(x + 6, y, 6, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, LIGHT, DARK);
+    u32 fg = THEME_INK(th, text_inverse, TEXT_MAIN);
+    u32 dim = th->ink ? th->ink->panel_alt : TEXT_DIM;
+    theme_button(th, x + 6, y, 6, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, 1, LIGHT, DARK);
     x += 16;
-    text_draw(x, y + 4, 0.52f, 0, TEXT_MAIN, ALIGN_LEFT, back);
+    text_draw(x, y + 4, 0.52f, 0, fg, ALIGN_LEFT, back);
     x += text_width(0.52f, 0, back) + 14;
-    gfx_button(x + 6, y, 6, BTN_SQUARE, LIGHT, DARK);
+    theme_button(th, x + 6, y, 6, BTN_SQUARE, 1, LIGHT, DARK);
     x += 16;
-    text_draw(x, y + 4, 0.52f, 0, TEXT_MAIN, ALIGN_LEFT, wall);
+    text_draw(x, y + 4, 0.52f, 0, fg, ALIGN_LEFT, wall);
     x += text_width(0.52f, 0, wall) + 14;
-    text_draw(x, y + 4, 0.52f, 0, TEXT_DIM, ALIGN_LEFT, cnt);
+    text_draw(x, y + 4, 0.52f, 0, dim, ALIGN_LEFT, cnt);
 }
 
 /* Videofliken: videolista till vänster, PMF/MPS-uppspelning till höger, helskärm med ✕ */
 static void draw_videos(Ui *ui)
 {
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
     int n = s_nvids;
 
     /* --- videoförhandsvisning till höger --- */
     float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
-    gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
+    if (th->ink) {
+        gfx_round_rect(px, py, pw, ph, 10, COLOR_ALPHA(th->ink->border, (int)(235 * a)));
+        gfx_round_rect(px + 1, py + 1, pw - 2, ph - 2, 9.2f, COLOR_ALPHA(th->ink->panel, (int)(242 * a)));
+    } else {
+        gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
+    }
     float bx = px + 10, by = py + 10, bw = pw - 20, bh = ph - 44;
     gfx_round_rect(bx, by, bw, bh, 7, RGBA(18, 19, 24, (int)(210 * a)));
+
+    u32 main_fg = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 dim_fg = ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
+    u32 cap_col = THEME_INK(th, text_dim, TEXT_DIM);
 
     if (n > 0 && ui->vid_sel < n) {
         Texture *vt = ui->preview_anim > 0 ? preview_frame(VID_PREVIEW + ui->vid_sel) : NULL;
@@ -3325,7 +4208,8 @@ static void draw_videos(Ui *ui)
             gfx_tex(vt, ix, iy, iw, ih, RGBA(255, 255, 255, (int)(255 * a * va)));
         } else {
             gfx_circle(bx + bw / 2, by + bh / 2, 13, RGBA(0, 0, 0, (int)(140 * a)));
-            draw_play_glyph(bx + bw / 2 + 1, by + bh / 2, 7.5f, 0, with_alpha(LIGHT, 0.9f * a));
+            draw_play_glyph(bx + bw / 2 + 1, by + bh / 2, 7.5f, 0,
+                            with_alpha(THEME_INK(th, text_inverse, LIGHT), 0.9f * a));
         }
         char info[64];
         int kind = s_vids[ui->vid_sel].kind;
@@ -3337,16 +4221,16 @@ static void draw_videos(Ui *ui)
             snprintf(info, sizeof(info), "%d × %d  ·  %d / %d", vt->w, vt->h, ui->vid_sel + 1, n);
         else
             snprintf(info, sizeof(info), "%d / %d", ui->vid_sel + 1, n);
-        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, info);
+        text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(cap_col, a), ALIGN_CENTER, info);
     }
 
     if (!n && media_loading()) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MEDIA));
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(main_fg, a), ALIGN_LEFT, L(S_LOADING_MEDIA));
         return;
     }
     if (!n) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_VIDEOS));
-        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_VIDEOS)));
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(main_fg, a), ALIGN_LEFT, L(S_NO_VIDEOS));
+        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(dim_fg, a), ALIGN_LEFT, on_root(L(S_HINT_VIDEOS)));
         return;
     }
 
@@ -3360,13 +4244,15 @@ static void draw_videos(Ui *ui)
         float y = MLIST_Y + (i - ui->vid_scroll) * MROW_H + slide;
         int selected = i == ui->vid_sel;
         if (selected)
-            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
-        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
-        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
+            theme_sel_box(th, MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
+        u32 main = selected ? with_alpha(THEME_INK(th, sel_ink, DARK), a) : with_alpha(main_fg, a);
+        u32 dim = selected ? (th->ink ? with_alpha(th->ink->text_dim, a) : RGBA(70, 72, 80, (int)(255 * a)))
+                           : with_alpha(dim_fg, a);
 
         gfx_round_rect(MARGIN + 1, y + 7, 13, 10, 2, dim);
-        draw_play_glyph(MARGIN + 7.8f, y + 12.0f, 3.6f, 0,
-                        selected ? with_alpha(LIGHT, a) : RGBA(24, 25, 30, (int)(255 * a)));
+        u32 tri_col = selected ? with_alpha(THEME_INK(th, panel_hi, LIGHT), a)
+                               : (th->ink ? with_alpha(th->ink->text_inverse, a) : RGBA(24, 25, 30, (int)(255 * a)));
+        draw_play_glyph(MARGIN + 7.8f, y + 12.0f, 3.6f, 0, tri_col);
 
         char title[100], sub[72];
         text_ellipsis(title, sizeof(title), s_vids[i].title, 0.6f, lw - 30);
@@ -3379,17 +4265,20 @@ static void draw_videos(Ui *ui)
     /* knapptips nere till vänster: ✕ Öppna  ○ Tillbaka */
     float x = MARGIN, y = 246;
     const char *open = L(S_F_OPEN), *back = L(S_BACK);
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    theme_button(th, x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, art_a > 0.3f,
+                 with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, open);
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(main_fg, a), ALIGN_LEFT, open);
     x += text_width(0.56f, 0, open) + 12;
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    theme_button(th, x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, art_a > 0.3f,
+                 with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
-    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, back);
+    text_draw(x, y + 4.5f, 0.56f, 0, with_alpha(main_fg, a), ALIGN_LEFT, back);
 }
 
 static void draw_vid_fullscreen(Ui *ui)
 {
+    const Theme *th = theme_cur();
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(6, 6, 10, 252));
     Texture *vt = preview_frame(VID_PREVIEW + ui->vid_sel);
     if (!vt && ui->vid_thumb_for == ui->vid_sel)
@@ -3405,29 +4294,34 @@ static void draw_vid_fullscreen(Ui *ui)
     float w = 17 + text_width(0.52f, 0, back) + 14 + text_width(0.52f, 0, cnt);
     float x = MARGIN, y = 248;
     gfx_round_rect(x - 8, y - 10, w + 16, 20, 10, RGBA(0, 0, 0, 165));
-    gfx_button(x + 6, y, 6, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, LIGHT, DARK);
+    theme_button(th, x + 6, y, 6, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, 1, LIGHT, DARK);
     x += 16;
-    text_draw(x, y + 4, 0.52f, 0, TEXT_MAIN, ALIGN_LEFT, back);
+    text_draw(x, y + 4, 0.52f, 0, THEME_INK(th, text_inverse, TEXT_MAIN), ALIGN_LEFT, back);
     x += text_width(0.52f, 0, back) + 14;
-    text_draw(x, y + 4, 0.52f, 0, TEXT_DIM, ALIGN_LEFT, cnt);
+    text_draw(x, y + 4, 0.52f, 0, th->ink ? th->ink->panel_alt : TEXT_DIM, ALIGN_LEFT, cnt);
 }
 
 /* ✕ Välj  ○ Tillbaka – längst ner i panelerna */
-static void draw_select_back(Ui *ui, float x, float y, float a)
+static void draw_select_back(Ui *ui, float x, float y, int on_dark, float a)
 {
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, with_alpha(LIGHT, 0.9f * a),
-               with_alpha(DARK, a));
+    const Theme *th = theme_cur();
+    u32 fg = on_dark ? THEME_INK(th, text_inverse, TEXT_MAIN)
+                     : ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, ui_art_alpha(ui));
+    theme_button(th, x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, on_dark,
+                 with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
     x += 17;
-    text_draw(x, y + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_SELECT));
+    text_draw(x, y + 4.5f, 0.52f, 0, with_alpha(fg, a), ALIGN_LEFT, L(S_SELECT));
     x += text_width(0.52f, 0, L(S_SELECT)) + 12;
-    gfx_button(x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, with_alpha(LIGHT, 0.9f * a),
-               with_alpha(DARK, a));
-    text_draw(x + 17, y + 4.5f, 0.52f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_BACK));
+    theme_button(th, x + 6.5f, y, 6.5f, ui->confirm_circle ? BTN_CROSS : BTN_CIRCLE, on_dark,
+                 with_alpha(LIGHT, 0.9f * a), with_alpha(DARK, a));
+    text_draw(x + 17, y + 4.5f, 0.52f, 0, with_alpha(fg, a), ALIGN_LEFT, L(S_BACK));
 }
 
 /* Sökfliken (🔍): PS5-sökfält med tangentrad och direktfiltrerade spel/appar */
 static void draw_search(Ui *ui)
 {
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 8;
     float launch = ui->launch < 0 ? 0 : smooth(ui->launch);
@@ -3438,35 +4332,57 @@ static void draw_search(Ui *ui)
 
     /* sökfältet högst upp */
     float sx = MARGIN, sy = 42 + slide, sw = SCREEN_W - 2 * MARGIN, sh = 24;
-    gfx_round_rect(sx, sy, sw, sh, 12, RGBA(255, 255, 255, (int)((ui->search_focus == 0 ? 28 : 18) * a)));
-    if (ui->search_focus == 0)
-        gfx_ring(sx, sy, sw, sh, 12, RGBA(255, 255, 255, (int)(130 * a)));
-    draw_search_icon(sx + 14, sy + 12, with_alpha(TEXT_MAIN, a));
+    if (th->ink) {
+        u32 edge = ui->search_focus == 0 ? th->ink->sel_edge : th->ink->border;
+        u32 fill = ui->search_focus == 0 ? th->ink->sel_fill : th->ink->panel;
+        gfx_round_rect(sx, sy, sw, sh, 12, COLOR_ALPHA(edge, (int)(245 * a)));
+        gfx_round_rect(sx + 1, sy + 1, sw - 2, sh - 2, 11, COLOR_ALPHA(fill, (int)(245 * a)));
+    } else {
+        gfx_round_rect(sx, sy, sw, sh, 12, RGBA(255, 255, 255, (int)((ui->search_focus == 0 ? 28 : 18) * a)));
+        if (ui->search_focus == 0)
+            gfx_ring(sx, sy, sw, sh, 12, RGBA(255, 255, 255, (int)(130 * a)));
+    }
+    draw_search_icon(sx + 14, sy + 12, with_alpha(THEME_INK(th, text, TEXT_MAIN), a));
 
     if (ui->search_query[0]) {
-        text_draw(sx + 28, sy + 16.5f, 0.62f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, ui->search_query);
+        text_draw(sx + 28, sy + 16.5f, 0.62f, 0, with_alpha(THEME_INK(th, text, TEXT_MAIN), a), ALIGN_LEFT, ui->search_query);
         float qw = text_width(0.62f, 0, ui->search_query);
         if (ui->search_focus == 0 && ((int)(ui->time * 2.5f) & 1) == 0)
-            gfx_rect(sx + 30 + qw, sy + 6, 1.5f, 12, with_alpha(LIGHT, a));
+            gfx_rect(sx + 30 + qw, sy + 6, 1.5f, 12, with_alpha(THEME_INK(th, graphite, LIGHT), a));
     } else {
-        text_draw(sx + 28, sy + 16.5f, 0.6f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_SEARCH));
+        text_draw(sx + 28, sy + 16.5f, 0.6f, 0, with_alpha(THEME_INK(th, text_muted, TEXT_DIM), a), ALIGN_LEFT, L(S_SEARCH));
     }
     char cnt[24];
     snprintf(cnt, sizeof(cnt), "%d", n);
-    text_draw(sx + sw - 12, sy + 16.5f, 0.54f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, cnt);
+    text_draw(sx + sw - 12, sy + 16.5f, 0.54f, 0, with_alpha(THEME_INK(th, text_dim, TEXT_DIM), a), ALIGN_RIGHT, cnt);
 
     /* tangentbordet till vänster: 7 tangenter per rad */
     float kw = 22, kh = 20, kgap = 3, ky0 = sy + 34;
     for (int k = 0; k < SEARCH_KEY_COUNT; k++) {
         float kx = sx + (k % SEARCH_COLS) * (kw + kgap), ky = ky0 + (k / SEARCH_COLS) * (kh + kgap);
         int sel = k == ui->search_key;
-        if (sel) {
-            u32 kc = ui->search_focus == 0 ? with_alpha(LIGHT, 0.95f * a) : RGBA(255, 255, 255, (int)(55 * a));
-            gfx_round_rect(kx, ky, kw, kh, 4.5f, kc);
+        u32 tc;
+        if (th->ink) {
+            if (sel && ui->search_focus == 0) {
+                gfx_round_rect(kx, ky, kw, kh, 4.5f, with_alpha(th->ink->graphite, a));
+                tc = with_alpha(th->ink->text_inverse, a);
+            } else if (sel) {
+                gfx_round_rect(kx, ky, kw, kh, 4.5f, COLOR_ALPHA(th->ink->panel_deep, (int)(245 * a)));
+                tc = with_alpha(th->ink->text, a);
+            } else {
+                gfx_round_rect(kx, ky, kw, kh, 4.5f, COLOR_ALPHA(th->ink->border, (int)(225 * a)));
+                gfx_round_rect(kx + 1, ky + 1, kw - 2, kh - 2, 3.8f, COLOR_ALPHA(th->ink->panel, (int)(242 * a)));
+                tc = with_alpha(th->ink->text, a);
+            }
         } else {
-            gfx_round_rect(kx, ky, kw, kh, 4.5f, RGBA(255, 255, 255, (int)(16 * a)));
+            if (sel) {
+                u32 kc = ui->search_focus == 0 ? with_alpha(LIGHT, 0.95f * a) : RGBA(255, 255, 255, (int)(55 * a));
+                gfx_round_rect(kx, ky, kw, kh, 4.5f, kc);
+            } else {
+                gfx_round_rect(kx, ky, kw, kh, 4.5f, RGBA(255, 255, 255, (int)(16 * a)));
+            }
+            tc = (sel && ui->search_focus == 0) ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
         }
-        u32 tc = (sel && ui->search_focus == 0) ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
         char ch = SEARCH_KEYS[k];
         if (ch == ' ') {
             gfx_rect(kx + kw / 2 - 4, ky + kh - 5.5f, 8, 1.6f, tc);
@@ -3482,8 +4398,10 @@ static void draw_search(Ui *ui)
 
     /* träffarna till höger om tangentbordet */
     float rx = sx + SEARCH_COLS * (kw + kgap) + 9, rw = sx + sw - rx, ry0 = ky0, rh = 31;
+    u32 list_main = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 list_dim = ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
     if (!n) {
-        text_draw(rx + rw / 2, ry0 + 60, 0.72f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, L(S_NO_RESULTS));
+        text_draw(rx + rw / 2, ry0 + 60, 0.72f, 0, with_alpha(list_dim, a), ALIGN_CENTER, L(S_NO_RESULTS));
     } else {
         gfx_clip((int)rx - 2, (int)ry0 - 2, (int)rw + 4, (int)(SEARCH_ROWS * rh + 2));
         int first = (int)floorf(ui->search_scroll), last = first + SEARCH_ROWS;
@@ -3493,7 +4411,7 @@ static void draw_search(Ui *ui)
             float y = ry0 + (r - ui->search_scroll) * rh;
             int sel = ui->search_focus == 1 && r == ui->search_sel;
             if (sel)
-                gfx_round_rect(rx, y, rw, rh - 3, 7, with_alpha(LIGHT, 0.94f * a));
+                theme_sel_box(th, rx, y, rw, rh - 3, 7, with_alpha(LIGHT, 0.94f * a));
             int idx = hits[r];
             const Entry *e = &ui->list->items[idx];
             IconSlot *slot = loader_icon(idx);
@@ -3501,10 +4419,12 @@ static void draw_search(Ui *ui)
             if (slot && slot->state == SLOT_READY)
                 gfx_tex(slot->tex, ix, iy, iw, ih, RGBA(255, 255, 255, (int)(255 * a)));
             else
-                gfx_round_rect(ix, iy, iw, ih, 3, RGBA(32, 34, 42, (int)(220 * a)));
+                gfx_round_rect(ix, iy, iw, ih, 3,
+                               th->ink ? COLOR_ALPHA(th->ink->panel_alt, (int)(235 * a)) : RGBA(32, 34, 42, (int)(220 * a)));
 
-            u32 main = sel ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
-            u32 dim = sel ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
+            u32 main = sel ? with_alpha(THEME_INK(th, sel_ink, DARK), a) : with_alpha(list_main, a);
+            u32 dim = sel ? (th->ink ? with_alpha(th->ink->text_dim, a) : RGBA(70, 72, 80, (int)(255 * a)))
+                          : with_alpha(list_dim, a);
             char title[120];
             text_ellipsis(title, sizeof(title), e->title, 0.6f, rw - 110);
             text_draw(ix + iw + 10, y + 18.5f, 0.6f, 0, main, ALIGN_LEFT, title);
@@ -3513,24 +4433,29 @@ static void draw_search(Ui *ui)
         gfx_clip_reset();
     }
 
-    draw_select_back(ui, MARGIN, 246, a);
+    draw_select_back(ui, MARGIN, 246, !th->ink || art_a > 0.3f, a);
 }
 
 static void draw_toast(Ui *ui)
 {
     if (ui->toast_time <= 0)
         return;
+    const Theme *th = theme_cur();
     float a = clampf(ui->toast_time / 0.4f, 0, 1) * clampf((2.8f - ui->toast_time) / 0.2f, 0, 1);
     float w = text_width(0.62f, 0, ui->toast) + 32;
     float x = (SCREEN_W - w) / 2, y = 132;
     gfx_glow(x, y, w, 28, 10, RGBA(0, 0, 0, (int)(150 * a)));
-    gfx_round_rect(x, y, w, 28, 7, RGBA(40, 41, 47, (int)(245 * a)));
-    text_draw(SCREEN_W / 2, y + 18.5f, 0.62f, 0, RGBA(240, 240, 245, (int)(255 * a)), ALIGN_CENTER, ui->toast);
+    gfx_round_rect(x, y, w, 28, 7,
+                   COLOR_ALPHA(THEME_INK(th, graphite, RGBA(40, 41, 47, 255)), (int)(245 * a)));
+    text_draw(SCREEN_W / 2, y + 18.5f, 0.62f, 0,
+              COLOR_ALPHA(THEME_INK(th, text_inverse, RGBA(240, 240, 245, 255)), (int)(255 * a)),
+              ALIGN_CENTER, ui->toast);
 }
 
 /* Kategoriväljaren: kategorimappens bg.png över hela skärmen, listan till vänster */
 static void draw_categories(Ui *ui)
 {
+    const Theme *th = theme_cur();
     float a = smooth(ui->cat_anim);
     if (a <= 0)
         return;
@@ -3540,7 +4465,9 @@ static void draw_categories(Ui *ui)
     gfx_gradient_h(0, 0, 300, SCREEN_H, RGBA(0, 0, 0, (int)(170 * a)), RGBA(0, 0, 0, 0));
 
     float slide = (1 - a) * -16;
-    text_draw(MARGIN + slide, 34, 0.95f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_CATEGORIES));
+    u32 inv = THEME_INK(th, text_inverse, TEXT_MAIN);
+    u32 inv_dim = th->ink ? th->ink->panel_alt : TEXT_DIM;
+    text_draw(MARGIN + slide, 34, 0.95f, 0, with_alpha(inv, a), ALIGN_LEFT, L(S_CATEGORIES));
     float lw = 236;
     gfx_clip(0, 50, SCREEN_W, CAT_ROWS * CAT_ROW_H + 6);
     for (int r = 0; r < CAT_ROWS && ui->cat_scroll + r < s_npick; r++) {
@@ -3548,17 +4475,18 @@ static void draw_categories(Ui *ui)
         float y = 54 + r * CAT_ROW_H;
         int selected = i == ui->cat_sel;
         if (selected)
-            gfx_round_rect(MARGIN - 6 + slide, y, lw, CAT_ROW_H - 3, 7, with_alpha(LIGHT, 0.95f * a));
-        u32 main = with_alpha(selected ? DARK : TEXT_MAIN, a);
+            theme_sel_box(th, MARGIN - 6 + slide, y, lw, CAT_ROW_H - 3, 7, with_alpha(LIGHT, 0.95f * a));
+        u32 main = with_alpha(selected ? THEME_INK(th, sel_ink, DARK) : inv, a);
         char name[48], num[12];
         text_ellipsis(name, sizeof(name), cat_title(c), 0.62f, lw - 60);
         snprintf(num, sizeof(num), "%d", s_cat_n[ui->tab][c]);
         text_draw(MARGIN + 4 + slide, y + 16.5f, 0.62f, 0, main, ALIGN_LEFT, name);
-        text_draw(MARGIN - 16 + lw + slide, y + 16.5f, 0.52f, 0,
-                  selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a), ALIGN_RIGHT, num);
+        u32 cnt_col = selected ? (th->ink ? with_alpha(th->ink->text_dim, a) : RGBA(70, 72, 80, (int)(255 * a)))
+                               : with_alpha(inv_dim, a);
+        text_draw(MARGIN - 16 + lw + slide, y + 16.5f, 0.52f, 0, cnt_col, ALIGN_RIGHT, num);
     }
     gfx_clip_reset();
-    draw_select_back(ui, MARGIN, 246, a);
+    draw_select_back(ui, MARGIN, 246, 1, a);
 }
 
 /* Control Center: ikonerna ritas med enkla former i färgen c, med "hål" i bakgrundsfärgen bg */
@@ -3572,8 +4500,14 @@ static void draw_cc_glyph(int item, float cx, float cy, u32 c, u32 bg)
         gfx_circle(cx, cy, 8, c);
         gfx_circle(cx + 4, cy - 3, 6.8f, bg);
         break;
+    case CC_STANDBY: /* [medhatk] Standby Screen clock glyph (circle + 12/3 o'clock hands) */
+        gfx_circle(cx, cy, 8.5f, c);
+        gfx_circle(cx, cy, 6.5f, bg);
+        gfx_round_rect(cx - 0.9f, cy - 5.0f, 1.8f, 5.9f, 0.9f, c);
+        gfx_round_rect(cx - 0.9f, cy - 0.9f, 4.9f, 1.8f, 0.9f, c);
+        break;
     case CC_USB:
-        text_draw(cx, cy + 4, 0.45f, 1, c, ALIGN_CENTER, "USB");
+        ui_draw_mask_icon(UI_ICON_CC_USB, cx, cy, c);
         break;
     case CC_FILES: /* mapp */
         gfx_round_rect(cx - 9, cy - 7.5f, 8, 5, 1.5f, c);
@@ -3586,10 +4520,7 @@ static void draw_cc_glyph(int item, float cx, float cy, u32 c, u32 bg)
         gfx_circle(cx, cy + 1, 2.4f, c);
         break;
     case CC_SETTINGS: /* kugghjul */
-        for (int k = 0; k < 8; k++)
-            gfx_circle(cx + cosf(k * 0.785f) * 7.5f, cy + sinf(k * 0.785f) * 7.5f, 2.4f, c);
-        gfx_circle(cx, cy, 7, c);
-        gfx_circle(cx, cy, 3, bg);
+        ui_draw_mask_icon(UI_ICON_CC_GEAR, cx, cy, c);
         break;
     case CC_XMB:
         text_draw(cx, cy + 4, 0.45f, 1, c, ALIGN_CENTER, "XMB");
@@ -3614,12 +4545,17 @@ static void draw_cc_glyph(int item, float cx, float cy, u32 c, u32 bg)
 /* Panelens färg: temats (som inställningarna, lite mörkare för texten) – grå med egen bakgrundsbild */
 static void cc_colors(u32 *top, u32 *bottom)
 {
+    const Theme *t = theme_cur();
+    if (t->ink) {
+        *top = t->ink->graphite_soft;
+        *bottom = t->ink->graphite;
+        return;
+    }
     if (g_wallpaper[0]) {
         *top = RGBA(48, 49, 55, 255);
         *bottom = RGBA(26, 27, 31, 255);
         return;
     }
-    const Theme *t = theme_cur();
     *top = mix(t->stop, RGBA(0, 0, 0, 255), 0.25f);
     *bottom = mix(t->sbottom, RGBA(0, 0, 0, 255), 0.1f);
 }
@@ -3638,6 +4574,7 @@ static void draw_cc_music(Ui *ui, float x, float y, float a, u32 bg)
     const Track *t = cur >= 0 ? music_track(cur) : NULL;
     if (!t || shown <= 0)
         return;
+    const Theme *th = theme_cur();
     a *= smooth(shown);
     const float w = 206, h = 46, as = 34;
     static char title[80], artist[64];
@@ -3651,19 +4588,23 @@ static void draw_cc_music(Ui *ui, float x, float y, float a, u32 bg)
     gfx_glow(x, y + 2, w, h, 8, RGBA(0, 0, 0, (int)(120 * a)));
     gfx_round_rect(x, y, w, h, 12, with_alpha(bg, 0.96f * a));
     float ax = x + 6, ay = y + 6;
-    gfx_round_rect(ax, ay, as, as, 7, RGBA(70, 72, 84, (int)(255 * a)));
-    draw_note(ax + as / 2, ay + as / 2, 16, with_alpha(LIGHT, 0.9f * a));
+    gfx_round_rect(ax, ay, as, as, 7,
+                   th->ink ? COLOR_ALPHA(th->ink->graphite, (int)(255 * a)) : RGBA(70, 72, 84, (int)(255 * a)));
+    u32 inv = THEME_INK(th, text_inverse, LIGHT);
+    draw_note(ax + as / 2, ay + as / 2, 16, with_alpha(inv, 0.9f * a));
     if (ui->cover && ui->cover_for == cur)
         gfx_tex(ui->cover, ax, ay, as, as, RGBA(255, 255, 255, (int)(255 * a * smooth(ui->cover_fade))));
-    text_draw(ax + as + 9, y + 20, 0.56f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, title);
-    text_draw(ax + as + 9, y + 35, 0.46f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, artist);
-    draw_play_glyph(x + w - 18, y + h / 2, 6, music_state() == MUSIC_PLAYING, with_alpha(LIGHT, a));
+    text_draw(ax + as + 9, y + 20, 0.56f, 0, with_alpha(THEME_INK(th, text_inverse, TEXT_MAIN), a), ALIGN_LEFT, title);
+    text_draw(ax + as + 9, y + 35, 0.46f, 0,
+              th->ink ? COLOR_ALPHA(th->ink->panel_alt, (int)(220 * a)) : with_alpha(TEXT_DIM, a), ALIGN_LEFT, artist);
+    draw_play_glyph(x + w - 18, y + h / 2, 6, music_state() == MUSIC_PLAYING, with_alpha(inv, a));
 }
 
 /* Control Center: en panel som glider upp nerifrån med en rad ikoner, som PS5:s. Den vita
  * markeringen glider mellan ikonerna och namnet på valt alternativ står ovanför. */
 static void draw_cc(Ui *ui)
 {
+    const Theme *th = theme_cur();
     float t = ui->cc_anim;
     if (t <= 0)
         return;
@@ -3672,26 +4613,31 @@ static void draw_cc(Ui *ui)
     cc_colors(&top, &bottom);
     gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * e)));
 
-    const float ph = 84, step = 48;
+    /* [medhatk] Narrow Control Center icon stride from 48 to 44 px when CC_COUNT > 9 so all 10 icons fit comfortably */
+    const float ph = 84, step = CC_COUNT > 9 ? 44 : 48;
     float py = SCREEN_H - ph * e;
     draw_cc_music(ui, MARGIN, py - 56, e, top);
     gfx_glow(0, py, SCREEN_W, ph + 20, 12, RGBA(0, 0, 0, (int)(150 * e)));
     gfx_round_rect(0, py, SCREEN_W, ph + 20, 16, with_alpha(top, 0.97f * e));
     gfx_gradient_v(0, py + 16, SCREEN_W, ph - 16, with_alpha(top, 0.97f * e), with_alpha(bottom, 0.97f * e));
-    gfx_rect(16, py, SCREEN_W - 32, 1, RGBA(255, 255, 255, (int)(22 * e))); /* svag ljus kant upptill */
+    gfx_rect(16, py, SCREEN_W - 32, 1,
+             th->ink ? COLOR_ALPHA(th->ink->border, (int)(110 * e)) : RGBA(255, 255, 255, (int)(22 * e))); /* svag ljus kant upptill */
 
     float x0 = SCREEN_W / 2 - (CC_COUNT - 1) * step / 2, cy = py + 52;
     float hx = x0 + ui->cc_pos * step;
     gfx_glow(hx - 20, cy - 18, 40, 40, 6, RGBA(0, 0, 0, (int)(90 * e)));
-    gfx_round_rect(hx - 20, cy - 20, 40, 40, 10, with_alpha(LIGHT, e));
+    u32 sel_bg = THEME_INK(th, sel_fill, LIGHT);
+    u32 sel_fg = THEME_INK(th, sel_ink, DARK);
+    u32 idle_fg = THEME_INK(th, text_inverse, LIGHT);
+    gfx_round_rect(hx - 20, cy - 20, 40, 40, 10, with_alpha(sel_bg, e));
 
     u32 hole = mix(top, bottom, 0.6f); /* panelens färg vid ikonerna – för "hålen" i ikonerna */
     for (int k = 0; k < CC_COUNT; k++) {
         float f = clampf(1 - fabsf(k - ui->cc_pos), 0, 1); /* hur mycket markeringen täcker ikonen */
         float ia = smooth(t * 1.7f - k * 0.08f);           /* ikonerna tonas in en i taget */
         float iy = cy + (1 - ia) * 10;
-        draw_cc_glyph(k, x0 + k * step, iy, with_alpha(mix(LIGHT, DARK, f), ia * e),
-                      with_alpha(mix(hole, LIGHT, f), ia * e));
+        draw_cc_glyph(k, x0 + k * step, iy, with_alpha(mix(idle_fg, sel_fg, f), ia * e),
+                      with_alpha(mix(hole, sel_bg, f), ia * e));
     }
 
     /* namnet ovanför markeringen */
@@ -3699,29 +4645,38 @@ static void draw_cc(Ui *ui)
     float la = smooth(ui->cc_label) * e;
     float lw = text_width(0.6f, 0, label);
     float lx = clampf(x0 + ui->cc_sel * step, MARGIN + lw / 2, SCREEN_W - MARGIN - lw / 2);
-    text_draw(lx, py + 22 + (1 - la) * 4, 0.6f, 0, with_alpha(TEXT_MAIN, la), ALIGN_CENTER, label);
+    text_draw(lx, py + 22 + (1 - la) * 4, 0.6f, 0,
+              with_alpha(THEME_INK(th, text_inverse, TEXT_MAIN), la), ALIGN_CENTER, label);
 }
 
 static void draw_empty(Ui *ui)
 {
+    const Theme *th = theme_cur();
+    float art_a = ui_art_alpha(ui);
     float a = ui->intro * smooth(ui->tab_anim);
-    const char *title = L(S_NO_GAMES);
-    const char *hint = on_root(L(S_HINT_GAMES));
-    text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, title);
-    text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, hint);
+    const char *title = ui->tab == TAB_APPS ? L(S_NO_APPS) : L(S_NO_GAMES);
+    const char *hint = on_root(L(ui->tab == TAB_APPS ? S_HINT_APPS : S_HINT_GAMES));
+    text_draw(MARGIN, 120, 0.9f, 0,
+              with_alpha(ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a), a), ALIGN_LEFT, title);
+    text_draw(MARGIN, 142, 0.62f, 0,
+              with_alpha(ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a), a), ALIGN_LEFT, hint);
 }
 
 void ui_draw(Ui *ui)
 {
-    gfx_begin(CLEAR_COLOR);
+    const Theme *th = theme_cur();
+    gfx_begin(THEME_INK(th, panel_alt, CLEAR_COLOR));
     draw_background(ui);
-    /* Bibliotek, Musik, Bilder, Videor och Sök: mörkare yta än i raden – valt spels bild skymtar bara svagt.
-     * Före toppraden, så att den är lika ljus i alla flikar. */
-    if (ui->tab == TAB_LIBRARY && view(ui)->count)
-        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 165));
-    else if (ui->tab == TAB_MUSIC || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO || ui->tab == TAB_SEARCH)
+    /* Dämpar bakgrundsbild i Bibliotek/Musik för läsbarhet ovanpå rutnät/låtlista. */
+    if (ui->tab == TAB_LIBRARY && (g_wallpaper[0] || ui->bg_cur || ui->bg_old))
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(9, 13, 19, g_wallpaper[0] && !ui->bg_cur ? 115 : 85));
+    else if (ui->tab == TAB_MUSIC && g_wallpaper[0])
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(9, 13, 19, 115));
+    else if ((ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO || ui->tab == TAB_SEARCH) && (!th->ink || g_wallpaper[0]))
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 150));
     draw_top_bar(ui);
+    if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC)
+        ui_draw_footer_bar(ui->intro * (ui->launch < 0 ? 1.0f : 1.0f - smooth(ui->launch * 2.0f)));
     if (ui->tab == TAB_MEDIA) {
         draw_media_row(ui);
     } else if (ui->tab == TAB_MUSIC) {
@@ -3735,8 +4690,12 @@ void ui_draw(Ui *ui)
     } else if (view(ui)->count && ui->tab == TAB_LIBRARY) {
         draw_library(ui);
     } else if (view(ui)->count) {
-        draw_row(ui);
-        draw_details(ui);
+        if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS)
+            draw_games_redesign(ui);
+        else {
+            draw_row(ui);
+            draw_details(ui);
+        }
     } else {
         draw_empty(ui);
     }
@@ -3745,7 +4704,7 @@ void ui_draw(Ui *ui)
         draw_pic_fullscreen(ui);
     if (ui->tab == TAB_VIDEO && ui->vid_viewing)
         draw_vid_fullscreen(ui);
-    if (ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY)
+    if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY)
         draw_menu(ui);
     draw_categories(ui);
     draw_cc(ui);
@@ -3763,25 +4722,329 @@ void ui_draw(Ui *ui)
     gfx_end();
 }
 
+/* [medhatk] Initialize/reset all Standby Screen state before entering standby_mode() */
+void ui_standby_open(Ui *ui)
+{
+    ui->sb_time = 0;
+    ui->sb_leave = 0;
+    ui->sb_power_open = 0;
+    ui->sb_power_sel = 0;
+    ui->sb_confirm = 0;
+    ui->sb_confirm_time = 0;
+    ui->sb_power_anim = 0;
+    ui->sb_step_dir = 0;
+    ui->sb_step_time = 0;
+}
+
+/* [medhatk] Process input & animations in Standby Screen:
+ * - Only HOME unlocks (SB_UNLOCK); Triangle toggles the Power panel (Sleep / Shut down).
+ * - Confirm plays/pauses music; Left/Right skips tracks when music is loaded.
+ * - Shut down requires a second confirm press within 3s to avoid accidental power-off. */
+int ui_standby_update(Ui *ui, const UiInput *in, float dt)
+{
+    ui->time += dt;
+    ui->sb_time += dt;
+    ui->sb_power_anim = clampf(ui->sb_power_anim + (ui->sb_power_open ? 7.0f : -8.0f) * dt, 0, 1);
+    if (ui->sb_step_time > 0) {
+        ui->sb_step_time -= dt;
+        if (ui->sb_step_time <= 0)
+            ui->sb_step_dir = 0;
+    }
+    media_poll(ui);
+    update_cover(ui, dt);
+    if (music_needs_cjk())
+        font_ensure_cjk();
+
+    if (ui->sb_confirm) {
+        ui->sb_confirm_time += dt;
+        if (ui->sb_confirm_time >= 3.0f) {
+            ui->sb_confirm = 0;
+            ui->sb_confirm_time = 0;
+        }
+    }
+
+    /* [medhatk] 0.3s entry guard absorbs any lingering button press from Control Center */
+    if (ui->sb_time < 0.3f)
+        return SB_NONE;
+
+    if (in->pressed & PSP_CTRL_HOME) {
+        sound_play(SND_BACK);
+        return SB_UNLOCK;
+    }
+
+    u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
+    u32 back = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
+
+    /* [medhatk] Power overlay active: navigate between Sleep (0) and Shut down (1) */
+    if (ui->sb_power_open) {
+        int move = step_input(ui, in, dt, 0);
+        if (move) {
+            ui->sb_power_sel ^= 1;
+            ui->sb_confirm = 0;
+            ui->sb_confirm_time = 0;
+            sound_play(SND_MOVE);
+        }
+        if (in->pressed & (back | PSP_CTRL_TRIANGLE)) {
+            ui->sb_power_open = 0;
+            ui->sb_confirm = 0;
+            ui->sb_confirm_time = 0;
+            sound_play(SND_BACK);
+        } else if (in->pressed & ok) {
+            if (ui->sb_power_sel == 0) {
+                sound_play(SND_SELECT);
+                return SB_SLEEP;
+            }
+            if (!ui->sb_confirm) {
+                ui->sb_confirm = 1;
+                ui->sb_confirm_time = 0;
+                sound_play(SND_SELECT);
+            } else {
+                sound_play(SND_SELECT);
+                return SB_SHUTDOWN;
+            }
+        }
+        return SB_NONE;
+    }
+
+    /* [medhatk] Main lock-screen shortcuts: Triangle = Power menu, OK = play/pause, Left/Right = track skip */
+    if (in->pressed & PSP_CTRL_TRIANGLE) {
+        ui->sb_power_open = 1;
+        ui->sb_power_sel = 0;
+        ui->sb_confirm = 0;
+        ui->sb_confirm_time = 0;
+        sound_play(SND_OPEN);
+    } else if (in->pressed & ok) {
+        if (music_current() >= 0 && music_state() != MUSIC_STOPPED)
+            music_toggle_pause();
+        else if (music_count())
+            music_play(ui->music_sel);
+        else
+            sound_play(SND_ERROR);
+    } else if (music_current() >= 0) {
+        if (in->pressed & PSP_CTRL_LEFT) {
+            music_prev();
+            ui->sb_step_dir = -1;
+            ui->sb_step_time = 0.22f;
+        } else if (in->pressed & PSP_CTRL_RIGHT) {
+            music_next();
+            ui->sb_step_dir = 1;
+            ui->sb_step_time = 0.22f;
+        }
+    }
+    return SB_NONE;
+}
+
+/* [medhatk] Render one Standby Screen frame using the active theme or custom wallpaper */
+void ui_draw_standby(Ui *ui)
+{
+    const Theme *th = theme_cur();
+    float art_a = g_wallpaper[0] ? 1.0f : 0.0f;
+    gfx_begin(THEME_INK(th, panel_alt, CLEAR_COLOR));
+    ui_draw_calm_backdrop(th, ui->time * 0.3f, ui->accent, 1);
+
+    u32 clk_col = ink_over_art(th, th->ink ? th->ink->text : TEXT_MAIN, TEXT_MAIN, art_a);
+    u32 dim_col = ink_over_art(th, th->ink ? th->ink->text_dim : TEXT_DIM, TEXT_DIM, art_a);
+
+    /* [medhatk] Battery percentage & icon in the top-right corner */
+    float bx = SCREEN_W - 36.0f;
+    int battery = scePowerIsBatteryExist();
+    int charging = testrun_charging() >= 0 ? testrun_charging() : battery && scePowerIsBatteryCharging() > 0;
+    int level = testrun_battery() >= 0 ? testrun_battery() : battery ? scePowerGetBatteryLifePercent() : -1;
+    char bat_info[12] = "";
+    if (level >= 0)
+        snprintf(bat_info, sizeof(bat_info), "%d%%", level);
+    float iw = bat_info[0] ? text_width(0.58f, 0, bat_info) + 5.0f : 0.0f;
+    if (bat_info[0])
+        text_draw(bx - 5.0f, 24.0f, 0.58f, 0, with_alpha(dim_col, 0.95f), ALIGN_RIGHT, bat_info);
+    draw_battery(bx, 15.0f, level, charging, ui->time, 0.95f, iw, th, art_a);
+
+    int cur = music_current(), mstate = music_state();
+    const Track *tr = cur >= 0 ? music_track(cur) : NULL;
+    int has_music = tr && mstate != MUSIC_STOPPED;
+
+    /* [medhatk] Large centered digital clock (with blinking colon) + date; shifts slightly up when music card is shown */
+    ScePspDateTime now;
+    if (read_clock(&now)) {
+        char hh[4], mm[4], date[20];
+        snprintf(hh, sizeof(hh), "%02d", now.hour);
+        snprintf(mm, sizeof(mm), "%02d", now.minute);
+        const float clk_sz = 1.8f;
+        float hw = text_width(clk_sz, 0, hh);
+        float cw = text_width(clk_sz, 0, ":");
+        float mw = text_width(clk_sz, 0, mm);
+        float tx = SCREEN_W * 0.5f - (hw + cw + mw) * 0.5f;
+        float cy = has_music ? 60.0f : 96.0f;
+        text_draw(tx, cy, clk_sz, 0, clk_col, ALIGN_LEFT, hh);
+        text_draw(tx + hw, cy, clk_sz, 0, with_alpha(clk_col, (now.second & 1) ? 0.45f : 1.0f), ALIGN_LEFT, ":");
+        text_draw(tx + hw + cw, cy, clk_sz, 0, clk_col, ALIGN_LEFT, mm);
+
+        snprintf(date, sizeof(date), "%02d/%02d/%04d", now.day, now.month, now.year);
+        text_draw(SCREEN_W * 0.5f, cy + 21.0f, 0.60f, 0, dim_col, ALIGN_CENTER, date);
+    }
+
+    /* [medhatk] Compact launcher-style Now Playing card (168x140) centered under the clock when playing/paused */
+    u32 card_top, card_bot;
+    cc_colors(&card_top, &card_bot);
+    if (has_music) {
+        const float pw = 168.0f, ph = 140.0f;
+        const float px = (SCREEN_W - pw) * 0.5f, py = 94.0f;
+        u32 border = th->ink      ? COLOR_ALPHA(th->ink->border, 235)
+                   : g_theme == 0 ? RGBA(44, 55, 74, 210)
+                                  : with_alpha(th->accent, 0.35f);
+        u32 panel_bg = th->ink      ? COLOR_ALPHA(th->ink->panel, 242)
+                     : g_theme == 0 ? RGBA(18, 24, 34, 238)
+                                    : with_alpha(th->card, 0.90f);
+        gfx_glow(px, py + 2.0f, pw, ph, 8.0f, RGBA(0, 0, 0, 120));
+        gfx_round_rect(px, py, pw, ph, 10.0f, border);
+        gfx_round_rect(px + 1.0f, py + 1.0f, pw - 2.0f, ph - 2.0f, 9.2f, panel_bg);
+
+        /* [medhatk] 44x44 album cover thumbnail with note-icon fallback */
+        float as = 44.0f, ax = px + (pw - as) * 0.5f, ay = py + 9.0f;
+        unsigned h = (unsigned)cur * 2654435761u;
+        int r0 = 60 + (h >> 8) % 120, g0 = 60 + (h >> 16) % 110, b0 = 90 + (h >> 24) % 140;
+        gfx_glow(ax, ay + 2.0f, as, as, 6.0f, RGBA(0, 0, 0, 110));
+        gfx_round_rect(ax, ay, as, as, 7.0f, RGBA(r0, g0, b0, 255));
+        gfx_gradient_v(ax + 3.0f, ay + as * 0.5f, as - 6.0f, as * 0.5f - 3.0f,
+                       RGBA(0, 0, 0, 0), RGBA(0, 0, 0, 65));
+        draw_note(ax + as * 0.5f, ay + as * 0.5f, 20.0f, RGBA(255, 255, 255, 230));
+        if (ui->cover && ui->cover_for == cur)
+            gfx_tex(ui->cover, ax, ay, as, as, RGBA(255, 255, 255, (int)(255 * smooth(ui->cover_fade))));
+
+        /* [medhatk] Cache ellipsized track title & artist until track, music list, or language changes */
+        static char title[96], artist[64];
+        static int text_for = -2, text_gen = -1;
+        static const char *text_lang;
+        if (text_for != cur || text_gen != music_generation() || text_lang != L(S_UNKNOWN_ARTIST)) {
+            text_ellipsis(title, sizeof(title), tr->title, 0.54f, pw - 20.0f);
+            text_ellipsis(artist, sizeof(artist), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.43f,
+                          pw - 20.0f);
+            text_for = cur;
+            text_gen = music_generation();
+            text_lang = L(S_UNKNOWN_ARTIST);
+        }
+        text_draw(px + pw * 0.5f, ay + as + 13.0f, 0.54f, 0, THEME_INK(th, text, TEXT_MAIN), ALIGN_CENTER, title);
+        text_draw(px + pw * 0.5f, ay + as + 25.0f, 0.43f, 0,
+                  th->ink ? COLOR_ALPHA(th->ink->text_dim, 245) : RGBA(148, 163, 184, 235), ALIGN_CENTER, artist);
+
+        /* [medhatk] Playback progress bar, elapsed/duration timestamps, and [prev] [play/pause] [next] controls */
+        float el = music_elapsed(), du = music_duration();
+        float pbw = pw - 24.0f, pbx = px + 12.0f, pby = py + ph - 46.0f;
+        gfx_round_rect(pbx, pby, pbw, 2.5f, 1.25f,
+                       th->ink ? COLOR_ALPHA(th->ink->panel_deep, 240) : RGBA(44, 56, 74, 220));
+        if (du > 0.0f) {
+            float fw = fmaxf(2.5f, pbw * clampf(el / du, 0.0f, 1.0f));
+            u32 bar = THEME_INK(th, graphite, th->accent);
+            gfx_round_rect(pbx, pby, fw, 2.5f, 1.25f, with_alpha(bar, 0.96f));
+            gfx_circle(pbx + fw, pby + 1.25f, 2.5f, with_alpha(bar, 1.0f));
+        }
+        char e[12], d[12];
+        format_time(e, sizeof(e), el);
+        format_time(d, sizeof(d), du);
+        u32 ts_col = th->ink ? COLOR_ALPHA(th->ink->text_dim, 240) : RGBA(140, 152, 172, 235);
+        text_draw(pbx, pby + 11.0f, 0.42f, 0, ts_col, ALIGN_LEFT, e);
+        if (du > 0.0f)
+            text_draw(pbx + pbw, pby + 11.0f, 0.42f, 0, ts_col, ALIGN_RIGHT, d);
+
+        float ctx = px + pw * 0.5f, cty = py + ph - 17.0f;
+        draw_transport_step(ctx - 32.0f, cty, -1, ui->sb_step_time > 0 && ui->sb_step_dir < 0, 1.0f);
+        gfx_circle(ctx, cty, 9.5f, with_alpha(THEME_INK(th, graphite, LIGHT), 0.96f));
+        draw_play_glyph(ctx, cty, 5.6f, mstate == MUSIC_PLAYING, THEME_INK(th, text_inverse, DARK));
+        draw_transport_step(ctx + 32.0f, cty, 1, ui->sb_step_time > 0 && ui->sb_step_dir > 0, 1.0f);
+    }
+
+    /* [medhatk] Bottom hint bar: centered HOME unlock prompt + right-aligned Triangle Power shortcut */
+    const char *pwr = L(S_POWER);
+    float pw = text_width(0.52f, 0, pwr);
+    float pwr_x = SCREEN_W - MARGIN - pw;
+    float hy = 252.0f;
+    theme_button(th, pwr_x - 10.5f, hy, 6.0f, BTN_TRIANGLE, art_a > 0.3f,
+                 with_alpha(LIGHT, 0.88f), with_alpha(DARK, 0.95f));
+    text_draw(pwr_x, hy + 4.0f, 0.52f, 0, with_alpha(dim_col, 0.95f), ALIGN_LEFT, pwr);
+
+    const char *unlock = L(S_STANDBY_UNLOCK);
+    float max_uw = (pwr_x - 28.0f - MARGIN) * 2.0f - 16.0f;
+    if (max_uw < 80.0f)
+        max_uw = 80.0f;
+    float usz = text_fit(0.54f, 0.40f, 0, max_uw, unlock);
+    float uw = text_width(usz, 0, unlock);
+    float ux = SCREEN_W * 0.5f - (14.0f + uw) * 0.5f;
+    if (ux + 14.0f + uw > pwr_x - 22.0f)
+        ux = pwr_x - 22.0f - (14.0f + uw);
+    if (ux < MARGIN)
+        ux = MARGIN;
+    /* [medhatk] PlayStation logo glyph from Figma representing the PSP HOME/PS button */
+    static Texture *ps_tex;
+    u32 hc = with_alpha(dim_col, 0.95f);
+    draw_icon(ICON_PS_LOGO, &ps_tex, ux + 6.5f, hy, hc);
+    text_draw(ux + 15.0f, hy + 4.0f, usz, 0, hc, ALIGN_LEFT, unlock);
+
+    /* [medhatk] Slide-up Power overlay (Sleep / Shut down) when Triangle is toggled */
+    if (ui->sb_power_anim > 0.01f) {
+        float pa = smooth(ui->sb_power_anim);
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(95 * pa)));
+        const float pan_w = 210.0f, pan_h = 76.0f;
+        float pan_x = (SCREEN_W - pan_w) * 0.5f;
+        float pan_y = 236.0f - pan_h + (1.0f - pa) * 10.0f;
+        gfx_glow(pan_x, pan_y, pan_w, pan_h, 10.0f, RGBA(0, 0, 0, (int)(150 * pa)));
+        gfx_round_rect(pan_x, pan_y, pan_w, pan_h, 14.0f, with_alpha(card_top, 0.97f * pa));
+        gfx_ring(pan_x, pan_y, pan_w, pan_h, 14.0f,
+                 th->ink ? COLOR_ALPHA(th->ink->border, (int)(90 * pa)) : RGBA(255, 255, 255, (int)(26 * pa)));
+
+        float cx0 = pan_x + pan_w * 0.5f - 28.0f;
+        float cx1 = pan_x + pan_w * 0.5f + 28.0f;
+        float iy = pan_y + 49.0f;
+        float sel_x = ui->sb_power_sel ? cx1 : cx0;
+        u32 sel_bg = THEME_INK(th, sel_fill, LIGHT);
+        u32 sel_fg = THEME_INK(th, sel_ink, DARK);
+        u32 idle_fg = THEME_INK(th, text_inverse, LIGHT);
+        gfx_round_rect(sel_x - 20.0f, iy - 20.0f, 40.0f, 40.0f, 10.0f, with_alpha(sel_bg, pa));
+
+        int s0 = ui->sb_power_sel == 0, s1 = ui->sb_power_sel == 1;
+        draw_cc_glyph(CC_SLEEP, cx0, iy, with_alpha(s0 ? sel_fg : idle_fg, pa),
+                      with_alpha(s0 ? sel_bg : card_top, pa));
+        draw_cc_glyph(CC_OFF, cx1, iy, with_alpha(s1 ? sel_fg : idle_fg, pa),
+                      with_alpha(s1 ? sel_bg : card_top, pa));
+
+        const char *lbl = ui->sb_confirm ? L(S_CONFIRM) : L(ui->sb_power_sel == 0 ? S_SLEEP : S_SHUTDOWN);
+        float lsz = text_fit(0.56f, 0.40f, 0, pan_w - 20.0f, lbl);
+        text_draw(pan_x + pan_w * 0.5f, pan_y + 20.0f, lsz, 0,
+                  with_alpha(THEME_INK(th, text_inverse, TEXT_MAIN), pa), ALIGN_CENTER, lbl);
+    }
+
+    /* [medhatk] Keep volume & screenshot OSD functional on top of Standby Screen, then apply entry/exit fade */
+    osd_draw();
+
+    float black = 1.0f - clampf(ui->sb_time / 0.25f, 0.0f, 1.0f);
+    if (ui->sb_leave > 0.0f)
+        black = fmaxf(black, smooth(ui->sb_leave));
+    if (black > 0.0f)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * black)));
+    gfx_end();
+}
+
 void ui_draw_scanning(int done, const char *name, float time)
 {
     static const float neutral[3] = { 120, 120, 120 };
     gfx_begin(CLEAR_COLOR);
     draw_spotlight(neutral, time);
-    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, 90)); /* lugnare bakgrund bakom loggan */
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, theme_cur()->ink && !g_wallpaper[0] ? 235 : 90)); /* lugnare bakgrund bakom loggan */
 
     /* loggan i mitten, en tunn list där en ljus bit glider fram och tillbaka, texten under */
     float cx = SCREEN_W / 2;
-    logo_draw(cx, 108, RGBA(236, 236, 240, 255));
-    float bw = 120, bx = cx - bw / 2, by = 146, seg = 34;
+    Texture *lt = logo_texture(); /* [medhatk] Keep scan progress bar clear of taller stacked boot logos */
+    float lh = lt ? (float)lt->h : 54.0f;
+    float ly = lh > 80.0f ? 88.0f : 108.0f;
+    logo_draw(cx, ly, RGBA(236, 236, 240, 255));
+    float bw = 120, bx = cx - bw / 2, by = lh > 80.0f ? (ly + lh * 0.5f + 10.0f) : 146.0f, seg = 34;
     gfx_round_rect(bx, by, bw, 2, 1, RGBA(255, 255, 255, 38));
     float p = 0.5f - 0.5f * cosf(time * 2.4f);
     gfx_round_rect(bx + p * (bw - seg), by, seg, 2, 1, COLOR_ALPHA(theme_cur()->accent, 255));
-    text_draw(cx, 172, 0.56f, 0, TEXT_DIM, ALIGN_CENTER, L(S_LOADING));
+    float ty = lh > 80.0f ? (by + 26.0f) : 172.0f;
+    text_draw(cx, ty, 0.56f, 0, TEXT_DIM, ALIGN_CENTER, L(S_LOADING));
     char line[96], fit[96];
     snprintf(line, sizeof(line), "%d  ·  %.60s", done, name ? name : "");
     text_ellipsis(fit, sizeof(fit), line, 0.46f, 300);
-    text_draw(cx, 188, 0.46f, 0, COLOR_ALPHA(TEXT_DIM, 150), ALIGN_CENTER, fit);
+    text_draw(cx, ty + 16.0f, 0.46f, 0, COLOR_ALPHA(TEXT_DIM, 150), ALIGN_CENTER, fit);
 
     /* tonas in från startskärmens svarta slut */
     float in = clampf(time / 0.4f, 0, 1);

@@ -17,16 +17,24 @@
 #include "config.h"
 #include "theme.h"
 #include "osd.h"
+#include "datetime.h"
 #include "ui.h" /* bilderna i PICTURE */
 
-#define TITLE_Y     34.0f
-#define LEFT_X      32.0f
-#define LEFT_W      124.0f
-#define RIGHT_X     176.0f
-#define RIGHT_W     280.0f
-#define ROW_H       26.0f
-#define LIST_TOP    58.0f
-#define LIST_BOTTOM 236.0f
+#define TITLE_X     16.0f
+#define TITLE_Y     50.0f
+#define LEFT_X      16.0f
+#define LEFT_W      142.0f
+#define CAT_STEP    28.0f
+#define CAT_H       25.0f
+#define PANEL_X     168.0f
+#define PANEL_Y     56.0f
+#define PANEL_W     296.0f
+#define PANEL_H     182.0f
+#define RIGHT_X     180.0f
+#define RIGHT_W     272.0f
+#define ROW_H       25.0f
+#define LIST_TOP    64.0f
+#define LIST_BOTTOM 230.0f
 #define MAX_ITEMS   (MAX_PLUGINS + 4)
 #define CONFIRM_TIME 3.0f
 
@@ -34,19 +42,21 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_SUBPAGE, IT_DATETIME } ItemType;
 
 typedef struct {
     const char *label;
     ItemType type;
     unsigned char *value;        /* TOGGLE/CHOICE */
-    const char **opts;           /* CHOICE */
+    const char *const *opts;     /* CHOICE */
     int nopts;
-    int action;                  /* ACTION: SA_*, THEME: temats index */
+    int action;                  /* ACTION: SA_*, THEME: temats index, SUBPAGE: SUB_* */
     int confirm;                 /* ACTION: kräver ✕ två gånger */
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
+    int immediate;               /* systeminställning som gäller direkt (inget att spara) */
+    void (*set)(int opt);        /* valfri setter för IT_CHOICE */
 } Item;
 
 typedef struct {
@@ -57,8 +67,10 @@ typedef struct {
 } Category;
 
 enum { CAT_PSP5, CAT_THEME, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
+enum { SUB_NONE, SUB_DATETIME, SUB_INFO };
 
 static Category s_cats[CAT_COUNT];
+static Category s_sub[2]; /* SUB_DATETIME, SUB_INFO */
 static unsigned char s_plugin_on[MAX_PLUGINS];
 /* Radbrytningen mäter texten många gånger – gör den bara när texten byts, inte varje bildruta */
 static const char *s_wrapped; /* texten som s_desc håller, NULL = inget */
@@ -66,8 +78,9 @@ static int s_wrapped_n;
 
 static struct {
     int cat, item[CAT_COUNT];
+    int subpage, sub_item[2];
     int focus;          /* 0 = kategorier, 1 = alternativ */
-    float scroll, open, time;
+    float scroll, sub_scroll, open, time;
     int confirm_item;   /* -1 = ingen */
     float confirm_time;
     int cfw_dirty, plugins_dirty, own_dirty, toast_pending;
@@ -83,6 +96,8 @@ static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz"
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
 static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT], *OPT_BATTERY[3];
 static const char *OPT_SCREEN_OFF[5], *OPT_AUTO_SLEEP[5]; /* minuter: se config.h */
+static const char *OPT_PSP_CONFIRM[2], *OPT_DST[3], *OPT_TIMEFMT[2];
+static const char *const OPT_DATEFMT[] = { "YYYY.MM.DD", "MM.DD.YYYY", "DD.MM.YYYY" };
 
 /* Bakgrundsbilder att välja bland: bilderna i PICTURE (som XMB:s Foto), en nivå undermappar.
  * Val 0 = ingen (temats bakgrund). Läses när inställningarna öppnas. */
@@ -123,6 +138,13 @@ static void build_options(void)
         OPT_SCREEN_OFF[i] = i ? screen_off[i] : off;
         OPT_AUTO_SLEEP[i] = i ? auto_sleep[i] : off;
     }
+    OPT_PSP_CONFIRM[0] = L(S_BTN_CROSS);
+    OPT_PSP_CONFIRM[1] = L(S_BTN_CIRCLE);
+    OPT_DST[DT_DST_REMOVE] = L(S_DT_DST_REMOVE);
+    OPT_DST[DT_DST_KEEP] = L(S_DT_DST_KEEP);
+    OPT_DST[DT_DST_ADD] = L(S_DT_DST_ADD);
+    OPT_TIMEFMT[DT_TIME_24] = L(S_DT_24H);
+    OPT_TIMEFMT[DT_TIME_12] = L(S_DT_12H);
     OPT_WALL[0] = off;
     for (int i = 0; i < s_nwall; i++)
         OPT_WALL[i + 1] = s_wall_name[i];
@@ -201,7 +223,7 @@ static void toggle(Category *c, const char *label, unsigned char *v)
     add(c, label, IT_TOGGLE)->value = v;
 }
 
-static void choice(Category *c, const char *label, unsigned char *v, const char **opts, int n)
+static void choice(Category *c, const char *label, unsigned char *v, const char *const *opts, int n)
 {
     Item *it = add(c, label, IT_CHOICE);
     it->value = v;
@@ -223,16 +245,140 @@ static void info(Category *c, const char *label, const char *value)
     snprintf(add(c, label, IT_INFO)->info, sizeof(((Item *)0)->info), "%s", value);
 }
 
+static void subpage(Category *c, const char *label, int page, const char *preview)
+{
+    Item *it = add(c, label, IT_SUBPAGE);
+    it->action = page;
+    if (preview)
+        snprintf(it->info, sizeof(it->info), "%s", preview);
+}
+
+/* --- made by medhatk - System Settings helpers --- */
+
+#define VOLUME_MAX    30
+#define BRIGHT_MAX    100
+#define BRIGHT_LEVELS 4
+
+static unsigned char s_psp_circle;
+static int s_confirm_circle;
+static unsigned char s_volume, s_bright;
+static char s_vol_text[VOLUME_MAX + 1][4];
+static const char *s_vol_opts[VOLUME_MAX + 1];
+static int s_br_levels[6], s_br_n;
+static char s_br_text[6][12];
+static const char *s_br_opts[6];
+static Item *s_br_item;
+
+static void br_build(int now)
+{
+    int n = 0;
+    for (int i = 0; i < BRIGHT_LEVELS; i++)
+        s_br_levels[n++] = i;
+    if (now >= BRIGHT_LEVELS)
+        s_br_levels[n++] = now;
+    s_br_n = n;
+    for (int i = 0; i < n; i++) {
+        snprintf(s_br_text[i], sizeof(s_br_text[i]), "%d", s_br_levels[i] + 1);
+        s_br_opts[i] = s_br_text[i];
+        if (s_br_levels[i] == now)
+            s_bright = i;
+    }
+    if (s_br_item) {
+        s_br_item->opts = s_br_opts;
+        s_br_item->nopts = n;
+    }
+}
+
+static void set_brightness(int idx)
+{
+    int now = sys_set_brightness(s_br_levels[idx]);
+    br_build(now >= 0 && now <= BRIGHT_MAX ? now : s_br_levels[s_bright]);
+}
+
+static void set_volume(int level)
+{
+    int now = sys_set_volume(level);
+    if (now >= 0 && now <= VOLUME_MAX)
+        s_volume = now;
+}
+
+static void set_button_assign(int opt)
+{
+    s_psp_circle = sys_set_confirm_is_circle(opt) ? 1 : 0;
+    s_confirm_circle = s_psp_circle;
+}
+
+static const char *model_name(void)
+{
+    int m = sys_model();
+    return m == 0 ? "PSP-1000" : m == 1 ? "PSP-2000"
+         : (m == 2 || m == 3 || m == 5 || m == 6 || m == 7 || m == 8) ? "PSP-3000"
+         : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
+}
+
+static void fmt_bytes(char *out, int size, unsigned long long b)
+{
+    if (b >= 1024ull * 1024 * 1024)
+        snprintf(out, size, "%.1f GB", (float)(b / (1024.0f * 1024.0f)) / 1024.0f);
+    else if (b >= 1024 * 1024)
+        snprintf(out, size, "%.1f MB", (float)b / (1024.0f * 1024.0f));
+    else
+        snprintf(out, size, "%u KB", (unsigned)(b / 1024));
+}
+
+static void fill_about(Category *c)
+{
+    SysAbout a;
+    char v[48];
+    c->count = 0;
+    sys_about(&a);
+    if (a.nickname[0])
+        info(c, L(S_ABOUT_NICKNAME), a.nickname);
+    info(c, L(S_ABOUT_MODEL), model_name());
+    snprintf(v, sizeof(v), "%u.%u%u", a.devkit >> 24, (a.devkit >> 16) & 0xFF, (a.devkit >> 8) & 0xFF);
+    info(c, L(S_ABOUT_SYSTEM), v);
+    if (sys_ark_version()) {
+        static char cfw[24];
+        snprintf(cfw, sizeof(cfw), "CFW (ARK-%d)", sys_ark_version());
+        info(c, cfw, sys_ark_full_version()[0] ? sys_ark_full_version() : "-");
+    }
+#ifdef PSP5_ARK4
+    info(c, "PSP5 REMAKE", "1.0.1 (ARK-4)");
+#else
+    info(c, "PSP5 REMAKE", "1.0.1 (ARK-5)");
+#endif
+    if (a.has_mac) {
+        snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
+        info(c, L(S_ABOUT_MAC), v);
+    }
+    fmt_bytes(v, sizeof(v), a.ram_free);
+    info(c, L(S_ABOUT_RAM_FREE), v);
+    if (a.battery) {
+        if (a.percent >= 0) {
+            snprintf(v, sizeof(v), a.charging ? "%d %%, %s" : "%d %%", a.percent, L(S_ABOUT_CHARGING));
+            info(c, L(S_ABOUT_BATTERY), v);
+        }
+        if (a.mv > 0) {
+            snprintf(v, sizeof(v), "%d.%02d V", a.mv / 1000, (a.mv % 1000) / 10);
+            info(c, L(S_ABOUT_VOLTAGE), v);
+        }
+        if (a.celsius >= 0) {
+            snprintf(v, sizeof(v), "%d °C", a.celsius);
+            info(c, L(S_ABOUT_TEMP), v);
+        }
+        if (a.mah_full > 0 && a.mah_left >= 0) {
+            snprintf(v, sizeof(v), "%d / %d mAh", a.mah_left, a.mah_full);
+            info(c, L(S_ABOUT_CAPACITY), v);
+        }
+    }
+}
+
 /* "ARK-5 · PSP-2000" – vilken CFW och modell psp5 upptäckte */
 static const char *system_name(void)
 {
     static char buf[40];
-    int m = sys_model();
-    const char *model = m == 0 ? "PSP-1000" : m == 1 ? "PSP-2000"
-                      : (m == 2 || m == 3 || m == 5 || m == 6 || m == 7 || m == 8) ? "PSP-3000"
-                      : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
     if (sys_ark_version())
-        snprintf(buf, sizeof(buf), "ARK-%d  ·  %s", sys_ark_version(), model);
+        snprintf(buf, sizeof(buf), "ARK-%d  ·  %s", sys_ark_version(), model_name());
     else
         snprintf(buf, sizeof(buf), "-");
     return buf;
@@ -247,7 +393,7 @@ static void build(int rebuild)
     Category *c;
 
     c = &s_cats[CAT_PSP5];
-    c->name = "psp5";
+    c->name = "PSP5 REMAKE"; /* [medhatk] Renamed project/fork category in Settings sidebar */
     c->desc = L(S_DESC_PSP5);
     toggle(c, L(S_BOOT_PSP5), &g_cfw.launcher);
     toggle(c, L(S_SOUNDS), &g_sound_on);
@@ -269,9 +415,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "2.1.3 (ARK-4)");
+    info(c, L(S_VERSION), "1.0.2 (ARK-4)"); /* [medhatk] PSP5 REMAKE release version */
 #else
-    info(c, L(S_VERSION), "2.1.3 (ARK-5)");
+    info(c, L(S_VERSION), "1.0.2 (ARK-5)"); /* [medhatk] PSP5 REMAKE release version */
 #endif
     info(c, "CFW", system_name());
 
@@ -301,8 +447,8 @@ static void build(int rebuild)
         if (g_cfw.mscache > 1) g_cfw.mscache = 1;
     }
     int nclock = ark4 ? CLOCK_333 + 1 : N(OPT_CLOCK);
-    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, (const char **)OPT_CLOCK, nclock);
-    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, (const char **)OPT_CLOCK, nclock);
+    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, OPT_CLOCK, nclock);
+    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, OPT_CLOCK, nclock);
     if (!psp1000) {
         if (ark4)
             toggle(c, L(S_EXTRA_MEM), &g_cfw.highmem);
@@ -317,6 +463,37 @@ static void build(int rebuild)
 
     c = &s_cats[CAT_SYSTEM];
     c->name = L(S_CAT_SYSTEM);
+    s_br_item = NULL;
+    {
+        int br = sys_brightness(), vol = sys_volume();
+        if (br >= 0 && br <= BRIGHT_MAX) {
+            br_build(br);
+            choice(c, L(S_BRIGHTNESS), &s_bright, s_br_opts, s_br_n);
+            Item *it = &c->items[c->count - 1];
+            it->set = set_brightness;
+            it->immediate = 1;
+            s_br_item = it;
+        }
+        if (vol >= 0 && vol <= VOLUME_MAX) {
+            for (int i = 0; i <= VOLUME_MAX; i++) {
+                snprintf(s_vol_text[i], sizeof(s_vol_text[i]), "%d", i);
+                s_vol_opts[i] = s_vol_text[i];
+            }
+            s_volume = vol;
+            choice(c, L(S_VOLUME), &s_volume, s_vol_opts, VOLUME_MAX + 1);
+            Item *it = &c->items[c->count - 1];
+            it->set = set_volume;
+            it->immediate = 1;
+        }
+    }
+    s_psp_circle = sys_confirm_is_circle() ? 1 : 0;
+    s_confirm_circle = s_psp_circle;
+    choice(c, L(S_BUTTON_ASSIGN), &s_psp_circle, OPT_PSP_CONFIRM, N(OPT_PSP_CONFIRM));
+    c->items[c->count - 1].set = set_button_assign;
+    c->items[c->count - 1].immediate = 1;
+    action(c, L(S_USB_MODE), SA_USB, 0);
+    subpage(c, L(S_DATETIME), SUB_DATETIME, NULL);
+    subpage(c, L(S_CAT_INFO), SUB_INFO, model_name());
     if (!psp1000)
         toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
@@ -373,6 +550,21 @@ static void build(int rebuild)
     action(c, L(S_RESTART), SA_RESTART, 1);
     action(c, L(S_SHUTDOWN), SA_SHUTDOWN, 1);
     action(c, L(S_RECOVERY), SA_RECOVERY, 1);
+
+    memset(s_sub, 0, sizeof(s_sub));
+    c = &s_sub[SUB_DATETIME - 1];
+    c->name = L(S_DATETIME);
+    add(c, L(S_DT_CURRENT), IT_DATETIME);
+    choice(c, L(S_DT_DST), &g_dt_dst, OPT_DST, N(OPT_DST));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_DATE_FORMAT), &g_dt_date, OPT_DATEFMT, N(OPT_DATEFMT));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_TIME_FORMAT), &g_dt_time, OPT_TIMEFMT, N(OPT_TIMEFMT));
+    c->items[c->count - 1].own = 1;
+
+    c = &s_sub[SUB_INFO - 1];
+    c->name = L(S_CAT_INFO);
+    fill_about(c);
 }
 
 void settings_open(void)
@@ -442,6 +634,8 @@ static int vertical(const UiInput *in, float dt)
 
 static void mark_dirty(const Item *it)
 {
+    if (it->immediate)
+        return;
     if (it->own) {
         S.own_dirty = 1;
     } else if (it->plugin) {
@@ -452,6 +646,16 @@ static void mark_dirty(const Item *it)
         S.toast_pending = 1;
     }
     S.save_timer = 0.35f; /* spara strax efter ändringen så att inget tappas vid direkt omstart (issue #23) */
+}
+
+static Category *active_cat(void)
+{
+    return S.subpage ? &s_sub[S.subpage - 1] : &s_cats[S.cat];
+}
+
+static int *active_sel(void)
+{
+    return S.subpage ? &S.sub_item[S.subpage - 1] : &S.item[S.cat];
 }
 
 /* Övre kanten för rad i i den högra listan (innan scroll). */
@@ -468,10 +672,12 @@ int settings_update(const UiInput *in, float dt)
     if (S.save_timer > 0 && (S.save_timer -= dt) <= 0)
         flush_dirty();
 
-    Category *c = &s_cats[S.cat];
-    int *sel = &S.item[S.cat];
+    Category *c = active_cat();
+    int *sel = active_sel();
     u32 p = in->pressed;
     int move = vertical(in, dt);
+    u32 ok_btn = s_confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
+    u32 back_btn = s_confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
 
     if (S.focus == 0) {
         if (move) {
@@ -481,11 +687,11 @@ int settings_update(const UiInput *in, float dt)
             S.cat = cat;
             S.confirm_item = -1;
         }
-        if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {
+        if ((p & (ok_btn | PSP_CTRL_RIGHT)) && c->count) {
             S.focus = 1;
             sound_play(SND_SELECT);
         }
-        if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
+        if (p & (back_btn | PSP_CTRL_TRIANGLE)) {
             sound_play(SND_BACK);
             return SA_CLOSE;
         }
@@ -501,11 +707,15 @@ int settings_update(const UiInput *in, float dt)
         }
         int change = 0;
         if (it->type == IT_CHOICE) {
-            if (p & (PSP_CTRL_RIGHT | PSP_CTRL_CROSS)) change = 1;
+            if (p & (PSP_CTRL_RIGHT | ok_btn)) change = 1;
             if (p & PSP_CTRL_LEFT) change = -1;
         }
         if (change) {
-            *it->value = (*it->value + change + it->nopts) % it->nopts;
+            int nv = (*it->value + change + it->nopts) % it->nopts;
+            if (it->set)
+                it->set(nv);
+            else
+                *it->value = nv;
             mark_dirty(it);
             sound_play(SND_TOGGLE);
             if (it->value == &g_lang_setting) {
@@ -514,17 +724,25 @@ int settings_update(const UiInput *in, float dt)
                     font_ensure_cjk();
                 build(1);
             }
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
+        } else if ((p & ok_btn) && it->type == IT_THEME) {
             if (g_theme != it->action) {
                 g_theme = it->action;
                 mark_dirty(it);
             }
             sound_play(SND_TOGGLE);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
+        } else if ((p & ok_btn) && it->type == IT_TOGGLE) {
             *it->value = !*it->value;
             mark_dirty(it);
             sound_play(SND_TOGGLE);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
+        } else if ((p & ok_btn) && it->type == IT_SUBPAGE) {
+            if (it->action == SUB_INFO)
+                fill_about(&s_sub[SUB_INFO - 1]);
+            S.subpage = it->action;
+            S.sub_item[S.subpage - 1] = 0;
+            S.sub_scroll = 0;
+            S.confirm_item = -1;
+            sound_play(SND_SELECT);
+        } else if ((p & ok_btn) && it->type == IT_ACTION) {
             if (it->action == SA_USBNET) {
                 int r = sys_usbnet_probe(1200);
                 int st = sys_usbnet_state();
@@ -545,8 +763,14 @@ int settings_update(const UiInput *in, float dt)
                 sound_wait(400); /* låt ljudet höras innan något stängs */
                 return it->action;
             }
-        } else if ((p & PSP_CTRL_CIRCLE) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
-            S.focus = 0;
+        } else if ((p & back_btn) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
+            if (S.subpage) {
+                S.subpage = SUB_NONE;
+                c = active_cat();
+                sel = active_sel();
+            } else {
+                S.focus = 0;
+            }
             S.confirm_item = -1;
             sound_play(SND_BACK);
         } else if (p & PSP_CTRL_TRIANGLE) {
@@ -563,7 +787,10 @@ int settings_update(const UiInput *in, float dt)
         if (y > visible)
             target = y - visible;
     }
-    S.scroll = approach(S.scroll, target, 14.0f, dt);
+    if (S.subpage)
+        S.sub_scroll = approach(S.sub_scroll, target, 14.0f, dt);
+    else
+        S.scroll = approach(S.scroll, target, 14.0f, dt);
     return SA_NONE;
 }
 
@@ -584,7 +811,7 @@ static int utf8_len(const char *p)
  * mellan enskilda tecken när ett "ord" inte får plats (japanska har inga mellanslag). */
 static int wrap_desc_now(const char *text)
 {
-    const float max_w = RIGHT_W - 8;
+    const float max_w = RIGHT_W - 38.0f;
     int lines = 0;
     char line[sizeof(s_desc[0])] = "";
     const char *p = text;
@@ -599,7 +826,7 @@ static int wrap_desc_now(const char *text)
             end += utf8_len(end);
         char test[sizeof(line) * 2];
         snprintf(test, sizeof(test), "%s%s%.*s", line, line[0] ? " " : "", (int)(end - p), p);
-        if (text_width(0.56f, 0, test) <= max_w && strlen(test) < sizeof(line)) {
+        if (text_width(0.50f, 0, test) <= max_w && strlen(test) < sizeof(line)) {
             snprintf(line, sizeof(line), "%s", test);
             p = end;
             continue;
@@ -614,7 +841,7 @@ static int wrap_desc_now(const char *text)
         while (p + n < end) {
             int l = utf8_len(p + n);
             snprintf(test, sizeof(test), "%.*s", n + l, p);
-            if (n && (text_width(0.56f, 0, test) > max_w || n + l >= (int)sizeof(line)))
+            if (n && (text_width(0.50f, 0, test) > max_w || n + l >= (int)sizeof(line)))
                 break;
             n += l;
         }
@@ -637,12 +864,17 @@ static int wrap_desc(const char *text)
 
 static float desc_line_h(void)
 {
-    return lang_needs_cjk() ? 15.0f : 13.0f;
+    return lang_needs_cjk() ? 14.0f : 12.0f;
+}
+
+static float desc_box_h(const Category *c)
+{
+    return c->desc ? fmaxf(32.0f, wrap_desc(c->desc) * desc_line_h() + 10.0f) : 0.0f;
 }
 
 static float desc_height(const Category *c)
 {
-    return c->desc ? wrap_desc(c->desc) * desc_line_h() + 10 : 0;
+    return c->desc ? desc_box_h(c) + 6.0f : 0.0f;
 }
 
 static float row_y(const Category *c, int i)
@@ -663,38 +895,57 @@ static const Theme *shown_theme(void)
 static void draw_background(const Theme *t)
 {
     static const float neutral[3] = { 120, 120, 120 };
-    theme_backdrop(t, S.time, neutral, 1, 1);
+    ui_draw_calm_backdrop(t, S.time, neutral, 0);
 }
 
-static void draw_toggle(float x, float y, int on, u32 on_color, float a)
+static void draw_info_icon(float cx, float cy, u32 col)
 {
-    gfx_round_rect(x, y, 26, 13, 6.5f, fade(on ? on_color : RGBA(74, 76, 84, 255), a));
-    gfx_circle(on ? x + 19.5f : x + 6.5f, y + 6.5f, 5, fade(on ? LIGHT : RGBA(196, 196, 202, 255), a));
+    gfx_ring(cx - 6.5f, cy - 6.5f, 13.0f, 13.0f, 6.5f, col);
+    gfx_circle(cx, cy - 2.6f, 0.95f, col);
+    gfx_rect(cx - 0.8f, cy - 0.7f, 1.6f, 4.3f, col);
 }
 
-static void draw_hints(float a)
+/* Kategoriikoner: förrenderade tunna konturer (tools/make_icons.ps1), samma stil som toppraden. */
+static void draw_cat_icon(int cat, float cx, float cy, u32 col)
+{
+    if (cat >= 0 && cat < CAT_COUNT)
+        ui_draw_mask_icon(UI_ICON_CAT_PSP5 + cat, cx, cy, col);
+}
+
+static void draw_toggle(float x, float y, int on, u32 on_color, const Theme *t, float a)
+{
+    u32 off_col = THEME_INK(t, toggle_off, RGBA(68, 79, 96, 245));
+    u32 knob_on = THEME_INK(t, knob, LIGHT);
+    u32 knob_off = THEME_INK(t, knob, RGBA(208, 214, 224, 255));
+    gfx_round_rect(x, y, 26.0f, 14.0f, 7.0f, fade(on ? on_color : off_col, a));
+    gfx_circle(on ? x + 19.0f : x + 7.0f, y + 7.0f, 5.0f, fade(on ? knob_on : knob_off, a));
+}
+
+static void draw_hints(const Theme *t, float a)
 {
     const char *sel = L(S_SELECT), *back = L(S_BACK);
-    float w = 13 + 5 + text_width(0.58f, 0, sel) + 14 + 13 + 5 + text_width(0.58f, 0, back);
-    float x = SCREEN_W - 24 - w, y = 246;
-    gfx_round_rect(x - 9, y - 11, w + 18, 22, 11, RGBA(0, 0, 0, (int)(120 * a)));
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CROSS, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
-    x += 18;
-    text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, sel);
-    x += text_width(0.58f, 0, sel) + 14;
-    gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
-    x += 18;
-    text_draw(x, y + 4.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, back);
+    float w = 13.0f + 5.0f + text_width(0.56f, 0, sel) + 14.0f + 13.0f + 5.0f + text_width(0.56f, 0, back);
+    float x = SCREEN_W - 16.0f - w, y = 257.0f;
+    u32 label_col = fade(THEME_INK(t, text, RGBA(218, 224, 235, 238)), a);
+    u32 dark_mark = fade(RGBA(18, 22, 30, 255), a);
+    theme_button(t, x + 6.5f, y, 6.5f, s_confirm_circle ? BTN_CIRCLE : BTN_CROSS, 0, fade(LIGHT, 0.96f * a), dark_mark);
+    x += 18.0f;
+    text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, sel);
+    x += text_width(0.56f, 0, sel) + 14.0f;
+    theme_button(t, x + 6.5f, y, 6.5f, s_confirm_circle ? BTN_CROSS : BTN_CIRCLE, 0, fade(LIGHT, 0.96f * a), dark_mark);
+    x += 18.0f;
+    text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, back);
 }
 
 static void draw_item(const Item *it, int index, float y, int selected, const Theme *shown, float a)
 {
-    float right = RIGHT_X + RIGHT_W - 8;
+    float right = RIGHT_X + RIGHT_W - 10.0f;
     char value[64] = "";
+    u32 on_col = shown == theme_get(0) ? RGBA(37, 99, 210, 255) : theme_toggle_on(shown);
     switch (it->type) {
     case IT_TOGGLE:
-        draw_toggle(right - 26, y + 6.5f, *it->value != 0, theme_toggle_on(shown), a);
-        right -= 34;
+        draw_toggle(right - 26.0f, y + 5.5f, *it->value != 0, on_col, shown, a);
+        right -= 34.0f;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
     case IT_CHOICE:
@@ -706,16 +957,26 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
     case IT_INFO:
         snprintf(value, sizeof(value), "%s", it->info);
         break;
+    case IT_DATETIME:
+        dt_text(value, sizeof(value), dt_now());
+        break;
+    case IT_SUBPAGE:
+        if (it->action == SUB_DATETIME)
+            dt_text(value, sizeof(value), dt_now());
+        else if (it->info[0])
+            snprintf(value, sizeof(value), "%s", it->info);
+        break;
     case IT_THEME: {
         /* liten förhandsvisning, och en bock för temat som används */
-        theme_swatch(theme_get(it->action), right - 40, y + 5, 40, 16, a);
-        right -= 48;
+        theme_swatch(theme_get(it->action), right - 40.0f, y + 4.5f, 40.0f, 16.0f, a);
+        right -= 48.0f;
         if (it->action == g_theme) {
-            float cx = right - 6, cy = y + 13;
-            float xy[6] = { cx - 5, cy, cx - 1.5f, cy + 3.5f, cx + 5, cy - 4 };
-            u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
+            float cx = right - 6.0f, cy = y + 12.5f;
+            float xy[6] = { cx - 5.0f, cy, cx - 1.5f, cy + 3.5f, cx + 5.0f, cy - 4.0f };
+            u32 chk = THEME_INK(shown, graphite, LIGHT);
+            u32 col[3] = { fade(chk, a), fade(chk, a), fade(chk, a) };
             gfx_stroke(xy, col, 3, 1.8f);
-            right -= 16;
+            right -= 16.0f;
         }
         break;
     }
@@ -728,79 +989,139 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
     }
     float value_w = 0;
     if (value[0]) {
-        float vs = text_fit(0.58f, 0.46f, 0, RIGHT_W * 0.55f, value);
-        value_w = text_width(vs, 0, value) + 12;
-        u32 col = S.confirm_item == index ? RGBA(255, 190, 120, 255) : TEXT_DIM;
-        text_draw(right, y + 17, vs, 0, fade(col, a), ALIGN_RIGHT, value);
+        float vs = text_fit(0.56f, 0.44f, 0, RIGHT_W * 0.55f, value);
+        value_w = text_width(vs, 0, value) + 12.0f;
+        u32 col = S.confirm_item == index ? THEME_INK(shown, warn, RGBA(255, 190, 120, 255))
+                : selected                ? THEME_INK(shown, sel_ink, RGBA(240, 244, 252, 255))
+                                          : THEME_INK(shown, text_dim, RGBA(168, 180, 198, 235));
+        text_draw(right, y + 16.5f, vs, 0, fade(col, a), ALIGN_RIGHT, value);
     }
     /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
-    float ls = text_fit(0.62f, 0.48f, 0, right - value_w - (RIGHT_X + 8), it->label);
-    text_draw(RIGHT_X + 8, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+    float ls = text_fit(0.58f, 0.46f, 0, right - value_w - (RIGHT_X + 10.0f), it->label);
+    u32 lcol = selected ? THEME_INK(shown, sel_ink, TEXT_MAIN)
+                        : THEME_INK(shown, text, RGBA(226, 232, 240, 240));
+    text_draw(RIGHT_X + 10.0f, y + 16.5f, ls, 0, fade(lcol, a), ALIGN_LEFT, it->label);
 }
 
 void settings_draw(void)
 {
     float a = S.open;
-    float slide = (1 - a) * 10;
-    const Category *c = &s_cats[S.cat];
-
-    gfx_begin(RGBA(20, 20, 24, 255));
+    float slide = (1.0f - a) * 10.0f;
+    const Category *c = active_cat();
+    int cur_sel = *active_sel();
+    float cur_scroll = S.subpage ? S.sub_scroll : S.scroll;
     const Theme *shown = shown_theme();
-    draw_background(shown);
-    text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
 
-    /* kategorier */
+    gfx_begin(THEME_INK(shown, panel_alt, RGBA(9, 13, 19, 255)));
+    draw_background(shown);
+    ui_draw_top_bar_for(0, 1, a, S.time, shown, 0.0f);
+    text_draw(TITLE_X + slide, TITLE_Y, 0.90f, 1, fade(THEME_INK(shown, text, TEXT_MAIN), a), ALIGN_LEFT,
+              S.subpage ? c->name : L(S_SETTINGS));
+
+    /* vänster kategorilista */
     for (int i = 0; i < CAT_COUNT; i++) {
-        float y = LIST_TOP + i * 30;
+        float y = LIST_TOP + i * CAT_STEP;
         int selected = i == S.cat;
-        float ta = selected ? 1.0f : S.focus ? 0.42f : 0.8f;
-        if (selected && S.focus == 0) {
-            gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
-            gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), a));
+        if (selected) {
+            float pa = S.focus == 0 ? 0.96f : 0.90f;
+            u32 dark_col;
+            if (shown->ink) {
+                if (S.focus == 0) {
+                    theme_sel_box(shown, LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(LIGHT, a));
+                    dark_col = fade(shown->ink->sel_ink, a);
+                } else {
+                    gfx_round_rect(LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(shown->ink->border, 0.92f * a));
+                    gfx_round_rect(LEFT_X + 1.0f, y + 1.0f, LEFT_W - 2.0f, CAT_H - 2.0f, 6.2f,
+                                   fade(shown->ink->panel, 0.92f * a));
+                    dark_col = fade(shown->ink->text, a);
+                }
+            } else {
+                gfx_round_rect(LEFT_X, y, LEFT_W, CAT_H, 7.0f, fade(LIGHT, pa * a));
+                dark_col = fade(RGBA(18, 22, 30, 255), a);
+            }
+            draw_cat_icon(i, LEFT_X + 14.0f, y + CAT_H * 0.5f, dark_col);
+            float cs = text_fit(0.60f, 0.48f, S.focus == 0, LEFT_W - 34.0f, s_cats[i].name);
+            text_draw(LEFT_X + 26.0f + slide, y + 16.5f, cs, S.focus == 0, dark_col, ALIGN_LEFT, s_cats[i].name);
+        } else {
+            float dim_a = S.focus ? (shown->ink ? 0.72f : 0.58f) : (shown->ink ? 0.95f : 0.88f);
+            u32 dim_col = fade(THEME_INK(shown, text_dim, RGBA(154, 166, 186, 235)), a * dim_a);
+            draw_cat_icon(i, LEFT_X + 14.0f, y + CAT_H * 0.5f, dim_col);
+            float cs = text_fit(0.60f, 0.48f, 0, LEFT_W - 34.0f, s_cats[i].name);
+            text_draw(LEFT_X + 26.0f + slide, y + 16.5f, cs, 0, dim_col, ALIGN_LEFT, s_cats[i].name);
         }
-        float cs = text_fit(0.66f, 0.5f, 0, LEFT_W - 16, s_cats[i].name);
-        text_draw(LEFT_X + 10 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, a * ta), ALIGN_LEFT, s_cats[i].name);
     }
 
-    /* alternativ */
-    float top = LIST_TOP - S.scroll;
+    /* höger inställningskort */
+    int def_theme = shown == theme_get(0);
+    u32 card_bg = shown->ink ? COLOR_ALPHA(shown->ink->panel, (int)(242 * a))
+                : def_theme  ? RGBA(16, 22, 32, (int)(232 * a))
+                             : RGBA(14, 18, 26, (int)(208 * a));
+    u32 card_border = shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(235 * a))
+                    : def_theme  ? RGBA(56, 72, 98, (int)(195 * a))
+                                 : COLOR_ALPHA(shown->accent, (int)(135 * a));
+    gfx_round_rect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 10.0f, card_bg);
+    gfx_ring(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 10.0f, card_border);
+
+    gfx_clip(PANEL_X + 2.0f, LIST_TOP - 2.0f, PANEL_W - 4.0f, LIST_BOTTOM - LIST_TOP + 4.0f);
+    float top = LIST_TOP - cur_scroll;
     if (c->desc) {
         int n = wrap_desc(c->desc);
-        for (int l = 0; l < n; l++) {
-            float y = top + l * desc_line_h() + 9;
-            if (y > LIST_TOP - 4 && y < LIST_BOTTOM)
-                text_draw(RIGHT_X + 8 + slide, y, 0.56f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s_desc[l]);
+        float bh = desc_box_h(c);
+        float edge = clampf((top + bh - LIST_TOP) / (bh * 0.65f), 0.0f, 1.0f);
+        float ba = a * edge;
+        if (ba > 0.02f) {
+            gfx_round_rect(RIGHT_X, top, RIGHT_W, bh, 7.0f,
+                           shown->ink ? COLOR_ALPHA(shown->ink->panel_alt, (int)(225 * ba)) : RGBA(24, 34, 48, (int)(200 * ba)));
+            gfx_ring(RIGHT_X, top, RIGHT_W, bh, 7.0f,
+                     shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(200 * ba)) : RGBA(70, 92, 124, (int)(125 * ba)));
+            draw_info_icon(RIGHT_X + 15.0f, top + bh * 0.5f,
+                           shown->ink ? COLOR_ALPHA(shown->ink->graphite_soft, (int)(235 * ba)) : RGBA(168, 182, 204, (int)(235 * ba)));
+            float text_top = top + (bh - n * desc_line_h()) * 0.5f + 9.0f;
+            u32 desc_col = shown->ink ? COLOR_ALPHA(shown->ink->text_dim, (int)(250 * ba)) : RGBA(178, 190, 208, (int)(238 * ba));
+            for (int l = 0; l < n; l++)
+                text_draw(RIGHT_X + 29.0f + slide, text_top + l * desc_line_h(), 0.50f, 0,
+                          desc_col, ALIGN_LEFT, s_desc[l]);
         }
     }
     for (int i = 0; i < c->count; i++) {
         float y = top + row_y(c, i);
         if (y < LIST_TOP - ROW_H || y > LIST_BOTTOM)
             continue;
-        /* tona ut rader som glider ut ur listan */
-        float edge = clampf((y - (LIST_TOP - ROW_H * 0.6f)) / (ROW_H * 0.6f), 0, 1) *
-                     clampf((LIST_BOTTOM - y) / (ROW_H * 0.6f), 0, 1);
+        /* tona ut rader som glider ut ur kortet */
+        float edge = clampf((y - (LIST_TOP - ROW_H * 0.5f)) / (ROW_H * 0.55f), 0.0f, 1.0f) *
+                     clampf((LIST_BOTTOM - y) / (ROW_H * 0.55f), 0.0f, 1.0f);
         float ra = a * edge;
-        int selected = S.focus == 1 && i == S.item[S.cat];
+        int selected = S.focus == 1 && i == cur_sel;
         if (selected) {
-            gfx_rect(RIGHT_X, y, RIGHT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ra)));
-            gfx_frame(RIGHT_X, y, RIGHT_W, ROW_H, 1.3f, fade(RGBA(232, 232, 236, 230), ra));
-        } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
-            gfx_rect(RIGHT_X + 4, y + ROW_H - 0.5f, RIGHT_W - 8, 1, RGBA(255, 255, 255, (int)(26 * ra)));
+            if (shown->ink) {
+                theme_sel_box(shown, RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(LIGHT, ra));
+            } else {
+                gfx_round_rect(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, RGBA(30, 44, 66, (int)(175 * ra)));
+                gfx_ring(RIGHT_X, y, RIGHT_W, ROW_H, 7.0f, fade(RGBA(236, 240, 246, 245), ra));
+            }
+        } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == cur_sel)) {
+            u32 sep = shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(160 * ra)) : RGBA(44, 56, 74, (int)(190 * ra));
+            gfx_rect(RIGHT_X + 6.0f, y + ROW_H - 0.5f, RIGHT_W - 12.0f, 1.0f, sep);
         }
         draw_item(&c->items[i], i, y, selected, shown, ra);
     }
+    gfx_clip_reset();
 
-    draw_hints(a);
+    /* Figma: inställningarna har ingen dockad fotlist, bara fria knapptips */
+    draw_hints(shown, a);
 
     if (S.toast_time > 0) {
-        float ta = clampf(S.toast_time / 0.4f, 0, 1);
-        float w = text_width(0.6f, 0, S.toast) + 30;
-        gfx_round_rect((SCREEN_W - w) / 2, 128, w, 26, 7, RGBA(44, 45, 52, (int)(245 * ta)));
-        text_draw(SCREEN_W / 2, 145, 0.6f, 0, RGBA(240, 240, 245, (int)(255 * ta)), ALIGN_CENTER, S.toast);
+        float ta = clampf(S.toast_time / 0.4f, 0.0f, 1.0f);
+        float w = text_width(0.6f, 0, S.toast) + 30.0f;
+        gfx_round_rect((SCREEN_W - w) / 2.0f, 128.0f, w, 26.0f, 7.0f,
+                       COLOR_ALPHA(THEME_INK(shown, graphite, RGBA(44, 45, 52, 255)), (int)(245 * ta)));
+        text_draw(SCREEN_W / 2.0f, 145.0f, 0.6f, 0,
+                  COLOR_ALPHA(THEME_INK(shown, text_inverse, RGBA(240, 240, 245, 255)), (int)(255 * ta)),
+                  ALIGN_CENTER, S.toast);
     }
     osd_draw();
     /* in-toning */
-    if (a < 1)
-        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));
+    if (a < 1.0f)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1.0f - a))));
     gfx_end();
 }

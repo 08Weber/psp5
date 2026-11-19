@@ -6,6 +6,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "theme.h"
+#include "datetime.h"
 
 unsigned char g_boot_anim = 1;
 unsigned char g_control_center = 1;
@@ -20,7 +21,7 @@ char g_wallpaper[192];
 
 void config_load(const char *data_dir)
 {
-    char path[200], buf[640] = "";
+    char path[200], buf[768] = "";
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     if (fd >= 0) {
@@ -54,6 +55,12 @@ void config_load(const char *data_dir)
             g_auto_sleep = p[10] - '0';
         if ((p = strstr(buf, "control_center=")))
             g_control_center = p[15] != '0';
+        if ((p = strstr(buf, "dst=")) && p[4] >= '0' && p[4] <= '2')
+            g_dt_dst = p[4] - '0';
+        if ((p = strstr(buf, "datefmt=")) && p[8] >= '0' && p[8] <= '2')
+            g_dt_date = p[8] - '0';
+        if ((p = strstr(buf, "timefmt=")) && p[8] >= '0' && p[8] <= '1')
+            g_dt_time = p[8] - '0';
         if ((p = strstr(buf, "wallpaper="))) {
             p += 10;
             int len = strcspn(p, "\r\n");
@@ -65,14 +72,17 @@ void config_load(const char *data_dir)
 
 void config_save(const char *data_dir)
 {
-    char path[200], buf[640];
+    char path[200], buf[768];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
     int n = snprintf(buf, sizeof(buf),
                      "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nhidedupes=%d\nallgames=%d\nbattery=%d\n"
-                     "previews=%d\nshuffle=%d\nscreenoff=%d\nautosleep=%d\ncontrol_center=%d\nwallpaper=%s\n",
+                     "previews=%d\nshuffle=%d\nscreenoff=%d\nautosleep=%d\ncontrol_center=%d\ndst=%d\ndatefmt=%d\ntimefmt=%d\nwallpaper=%s\n",
                      g_sound_on ? 1 : 0, g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code,
                      g_theme_art ? 1 : 0, g_hide_dupes ? 1 : 0, g_all_games ? 1 : 0, g_battery, g_previews ? 1 : 0,
                      g_shuffle ? 1 : 0, g_screen_off, g_auto_sleep, g_control_center ? 1 : 0,
+                     g_dt_dst <= DT_DST_ADD ? g_dt_dst : DT_DST_KEEP,
+                     g_dt_date <= DT_DATE_DMY ? g_dt_date : DT_DATE_YMD,
+                     g_dt_time <= DT_TIME_12 ? g_dt_time : DT_TIME_24,
                      g_wallpaper);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {

@@ -12,6 +12,8 @@
 #include "gfx.h"
 #include "osd.h"
 #include "testrun.h"
+#define ICONS_ONLY_BUTTONS
+#include "icons.h"
 
 #define BUF_W 512
 #define FB_SIZE (BUF_W * SCREEN_H * 4)
@@ -24,6 +26,7 @@ static u32 __attribute__((aligned(64))) s_list[0x20000 / 4];
 static Texture *s_disc; /* skarp cirkel (rundade hörn) */
 static Texture *s_soft; /* mjuk radiell gradient (skugga/glöd) */
 static Texture *s_ring; /* tunn cirkelring (markeringsram) */
+static Texture *s_btn_sym[4]; /* kantutjämnade knappsymboler från icons.h */
 static intraFont *s_font, *s_bold, *s_jpn;
 static void *s_draw; /* bufferten som ritas just nu (relativ VRAM) */
 /* Senast bundna textur: många former i rad (rundade rutor, prickar) använder samma, och då
@@ -151,6 +154,10 @@ void gfx_term(void)
     tex_free(s_soft);
     tex_free(s_ring);
     s_disc = s_soft = s_ring = NULL;
+    for (int i = 0; i < 4; i++) {
+        tex_free(s_btn_sym[i]);
+        s_btn_sym[i] = NULL;
+    }
     sceGuDisplay(GU_FALSE);
     sceGuTerm();
 }
@@ -233,23 +240,52 @@ void gfx_line(float x0, float y0, float x1, float y1, u32 color)
     sceGuDrawArray(GU_LINES, CVERT_FMT, 2, 0, v);
 }
 
-void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
+void gfx_tex_sub(const Texture *t, float sx, float sy, float sw, float sh, float x, float y, float w, float h, u32 tint)
 {
-    if (!t || t->w < 2)
+    if (!t || t->w < 2 || t->h < 2 || sw < 2.0f || sh < 2.0f)
         return;
+    if (sx < 0.0f) {
+        sw += sx;
+        sx = 0.0f;
+    }
+    if (sy < 0.0f) {
+        sh += sy;
+        sy = 0.0f;
+    }
+    if (sx + sw > t->w)
+        sw = t->w - sx;
+    if (sy + sh > t->h)
+        sh = t->h - sy;
+    if (sw < 2.0f || sh < 2.0f)
+        return;
+
     /* Lodräta remsor om 64 texlar: en enda stor sprite (t.ex. bakgrunden över hela skärmen)
      * räcker inte texturcachen till och sänker bildfrekvensen (issue #9).
-     * En halv texel in så att filtreringen aldrig läser utanför bilden. */
-    int n = (t->w + 63) / 64;
-    float scale = w / (t->w - 1); /* skärmpixlar per texel */
+     * En halv texel in så att filtreringen aldrig läser utanför delområdet. */
+    float u_min = sx + 0.5f, u_max = sx + sw - 0.5f;
+    float v_min = sy + 0.5f, v_max = sy + sh - 0.5f;
+    int b0 = ((int)floorf(u_min) / 64) * 64;
+    int b1 = (((int)ceilf(u_max) + 63) / 64) * 64;
+    int n = (b1 - b0) / 64;
+    if (n < 1)
+        n = 1;
+    float scale = w / (u_max - u_min); /* skärmpixlar per texel */
     TVert *v = sceGuGetMemory(2 * n * sizeof(TVert));
     for (int k = 0; k < n; k++) {
-        float u0 = k ? k * 64 : 0.5f, u1 = k < n - 1 ? (k + 1) * 64 : t->w - 0.5f;
-        v[k * 2] = (TVert){ u0, 0.5f, tint, x + (u0 - 0.5f) * scale, y, 0 };
-        v[k * 2 + 1] = (TVert){ u1, t->h - 0.5f, tint, x + (u1 - 0.5f) * scale, y + h, 0 };
+        float u0 = k == 0 ? u_min : (float)(b0 + k * 64);
+        float u1 = k == n - 1 ? u_max : (float)(b0 + (k + 1) * 64);
+        v[k * 2] = (TVert){ u0, v_min, tint, x + (u0 - u_min) * scale, y, 0 };
+        v[k * 2 + 1] = (TVert){ u1, v_max, tint, x + (u1 - u_min) * scale, y + h, 0 };
     }
     bind(t);
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+}
+
+void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
+{
+    if (!t)
+        return;
+    gfx_tex_sub(t, 0, 0, (float)t->w, (float)t->h, x, y, w, h, tint);
 }
 
 /* Bilden pixel för pixel (1:1, närmaste texel) – förrenderade ikoner och loggan blir skarpa */
@@ -330,32 +366,33 @@ void gfx_fan(float cx, float cy, const float *xy, int n, u32 color)
     sceGuDrawArray(GU_TRIANGLE_FAN, CVERT_FMT, n + 2, 0, v);
 }
 
+static Texture *btn_sym_tex(int kind)
+{
+    static const unsigned char *const masks[4] = {
+        [BTN_CROSS] = ICON_SYM_CROSS,
+        [BTN_CIRCLE] = ICON_SYM_CIRCLE,
+        [BTN_TRIANGLE] = ICON_SYM_TRIANGLE,
+        [BTN_SQUARE] = ICON_SYM_SQUARE,
+    };
+    if (kind < 0 || kind >= 4)
+        return NULL;
+    if (!s_btn_sym[kind] && (s_btn_sym[kind] = tex_create(ICON_SYM_N, ICON_SYM_N, GU_PSM_8888))) {
+        u32 *px = s_btn_sym[kind]->data;
+        const unsigned char *alpha = masks[kind];
+        for (int y = 0; y < ICON_SYM_N; y++)
+            for (int x = 0; x < ICON_SYM_N; x++)
+                px[y * s_btn_sym[kind]->stride + x] = RGBA(255, 255, 255, alpha[y * ICON_SYM_N + x]);
+        tex_flush(s_btn_sym[kind]);
+    }
+    return s_btn_sym[kind];
+}
+
 void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)
 {
     gfx_circle(cx, cy, r, plate);
-    float s = r * 0.45f;
-    switch (kind) {
-    case BTN_CIRCLE:
-        gfx_circle(cx, cy, r * 0.56f, mark);
-        gfx_circle(cx, cy, r * 0.34f, plate);
-        break;
-    case BTN_CROSS:
-        for (float o = -0.5f; o <= 0.5f; o += 0.5f) {
-            gfx_line(cx - s + o, cy - s, cx + s + o, cy + s, mark);
-            gfx_line(cx + s + o, cy - s, cx - s + o, cy + s, mark);
-        }
-        break;
-    case BTN_TRIANGLE:
-        for (float o = -0.4f; o <= 0.4f; o += 0.4f) {
-            gfx_line(cx + o, cy - s - 0.5f, cx - s - 0.5f + o, cy + s * 0.8f, mark);
-            gfx_line(cx - s - 0.5f + o, cy + s * 0.8f + o, cx + s + 0.5f, cy + s * 0.8f + o, mark);
-            gfx_line(cx + s + 0.5f + o, cy + s * 0.8f, cx + o, cy - s - 0.5f, mark);
-        }
-        break;
-    case BTN_SQUARE:
-        gfx_frame(cx - s, cy - s, s * 2, s * 2, 1.2f, mark);
-        break;
-    }
+    Texture *sym = btn_sym_tex(kind);
+    if (sym)
+        gfx_tex(sym, cx - r, cy - r, r * 2.0f, r * 2.0f, mark);
 }
 
 /* --- text --- */

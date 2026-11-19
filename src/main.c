@@ -28,7 +28,7 @@
 #include "files.h"
 #include "preview.h"
 
-PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
+PSP_MODULE_INFO("PSP5_REMAKE", PSP_MODULE_USER, 0, 1); /* [medhatk] Renamed module info for PSP5 REMAKE */
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 /* Lämna 7 MB fritt: ARK:s RECOVERY.PRX (4 MB egen heap), MP3-avkodarens moduler och
  * trådarnas stackar. Resten (~17 MB på PSP-1000) räcker gott – psp5 använder under 10 MB. */
@@ -103,14 +103,6 @@ static int has_non_ascii(const EntryList *list)
             if ((u8)*p >= 0x80)
                 return 1;
     return 0;
-}
-
-static int confirm_is_circle(void)
-{
-    int v = 1;
-    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &v) < 0)
-        return 0;
-    return v == 0; /* 0 = ○ bekräftar (japansk inställning) */
 }
 
 static int take_ingame_mark(void)
@@ -188,7 +180,7 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     loader_start(list);
     if (!s_safe)
         music_init(); /* läser in ms0:/MUSIC i bakgrunden */
-    ui_init(ui, list, confirm_is_circle(), launch_supported());
+    ui_init(ui, list, sys_confirm_is_circle(), launch_supported());
     if (s_pending_music[0]) {
         music_play_path(s_pending_music);
         s_pending_music[0] = 0;
@@ -323,19 +315,25 @@ static void usb_mode(void)
         osd_update(1 / 60.0f);
 
         int state = sys_usb_state();
-        gfx_begin(RGBA(20, 20, 24, 255));
+        const Theme *th = theme_cur();
+        gfx_begin(THEME_INK(th, panel_alt, RGBA(20, 20, 24, 255)));
         static const float neutral[3] = { 120, 120, 120 };
-        theme_backdrop(theme_cur(), t, neutral, 1, 1); /* som inställningarna */
-        text_draw(28, 34, 0.95f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_MODE));
+        theme_backdrop(th, t, neutral, 1, 1); /* som inställningarna */
+        u32 usb_main = THEME_INK(th, text, RGBA(238, 238, 242, 255));
+        u32 usb_dim = THEME_INK(th, text_dim, RGBA(160, 162, 172, 255));
+        text_draw(28, 34, 0.95f, 0, usb_main, ALIGN_LEFT, L(S_USB_MODE));
         float pulse = 0.6f + 0.4f * sinf(t * 3);
-        gfx_circle(SCREEN_W / 2, 120, 26, RGBA(255, 255, 255, state == 2 ? 40 : (int)(30 * pulse)));
-        gfx_circle(SCREEN_W / 2, 120, 9, state == 2 ? RGBA(120, 220, 150, 255) : RGBA(236, 236, 240, (int)(255 * pulse)));
-        text_draw(SCREEN_W / 2, 176, 0.75f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER,
+        u32 ring_base = THEME_INK(th, shadow, RGBA(255, 255, 255, 255));
+        gfx_circle(SCREEN_W / 2, 120, 26, COLOR_ALPHA(ring_base, state == 2 ? (th->ink ? 70 : 40) : (int)((th->ink ? 55 : 30) * pulse)));
+        u32 ok_col = THEME_INK(th, ok, RGBA(120, 220, 150, 255));
+        u32 wait_col = THEME_INK(th, graphite, RGBA(236, 236, 240, 255));
+        gfx_circle(SCREEN_W / 2, 120, 9, state == 2 ? ok_col : COLOR_ALPHA(wait_col, (int)(255 * pulse)));
+        text_draw(SCREEN_W / 2, 176, 0.75f, 0, usb_main, ALIGN_CENTER,
                   L(state == 2 ? S_USB_CONNECTED : S_USB_WAITING));
-        text_draw(SCREEN_W / 2, 196, 0.56f, 0, RGBA(160, 162, 172, 255), ALIGN_CENTER,
+        text_draw(SCREEN_W / 2, 196, 0.56f, 0, usb_dim, ALIGN_CENTER,
                   L(S_USB_EJECT));
-        gfx_button(SCREEN_W / 2 - 40, 246, 6.5f, BTN_CIRCLE, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
-        text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
+        theme_button(th, SCREEN_W / 2 - 40, 246, 6.5f, BTN_CIRCLE, 0, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+        text_draw(SCREEN_W / 2 - 28, 250.5f, 0.58f, 0, usb_main, ALIGN_LEFT, L(S_USB_EXIT));
         osd_draw();
         if (t < 0.25f) /* tonas in från svart, som filhanteraren */
             gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - t / 0.25f))));
@@ -463,6 +461,73 @@ static int run_action(int action, EntryList *list, Ui *ui)
         sceKernelDelayThread(100000); /* systemet tar över */
 }
 
+/* [medhatk] Standby Screen event loop:
+ * - Preserves the current system/user display brightness (no brightness or CPU clock changes).
+ * - Feeds sys_keep_awake() every ~1s and bypasses psp5's idle/sleep timers while open.
+ * - Keeps read_pad() running so hardware HOME handling & watchdog stay active.
+ * - Renders continuously using the normal launcher vblank cadence. */
+static int standby_mode(EntryList *list, Ui *ui, u32 *old)
+{
+    (void)list;
+    ui_standby_open(ui);
+    preview_pause(1);
+    sys_keep_awake();
+
+    int result = SB_NONE;
+    int leaving = 0;
+    u64 last = sceKernelGetSystemTimeWide();
+    u64 last_awake = last;
+    UiInput in = { 0, *old, 128, 128 };
+
+    while (s_running) {
+        if (testrun_take_sleep())
+            s_sleeping = 1;
+        if (s_sleeping) {
+            result = SB_NONE;
+            break;
+        }
+        read_pad(&in, old, g_control_center);
+
+        u64 now = sceKernelGetSystemTimeWide();
+        float dt = (now - last) / 1000000.0f;
+        last = now;
+        if (dt > 0.05f)
+            dt = 0.05f;
+        osd_update(dt);
+        if (now - last_awake >= 1000000ULL) {
+            sys_keep_awake();
+            last_awake = now;
+        }
+
+        /* [medhatk] Smooth 0.20s fade-to-black before exiting back to launcher or triggering Sleep/Shut down */
+        if (leaving) {
+            ui->time += dt;
+            ui->sb_leave += dt / 0.20f;
+            if (ui->sb_leave > 1.0f)
+                ui->sb_leave = 1.0f;
+            ui_draw_standby(ui);
+            if (ui->sb_leave >= 1.0f)
+                break;
+            continue;
+        }
+
+        int r = ui_standby_update(ui, &in, dt);
+        if (r != SB_NONE) {
+            result = r;
+            leaving = 1;
+            ui->sb_leave = 0.001f;
+            ui_draw_standby(ui);
+            continue;
+        }
+
+        ui_draw_standby(ui);
+    }
+
+    preview_pause(0);
+    *old = in.held;
+    return result;
+}
+
 int main(int argc, char *argv[])
 {
     setup_callbacks();
@@ -581,7 +646,7 @@ int main(int argc, char *argv[])
 
         if (in_settings) {
             /* HOME eller SELECT stänger inställningarna och öppnar Control Center;
-             * L och R stegar vidare längs toppraden (← Sök, → Spel) */
+             * L och R stegar vidare längs toppraden (← Musik, → Spel) */
             int home = (in.pressed & (PSP_CTRL_HOME | PSP_CTRL_SELECT)) != 0;
             int lr = (in.pressed & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER));
             int action = (home || lr) ? SA_CLOSE : settings_update(&in, dt);
@@ -590,16 +655,18 @@ int main(int argc, char *argv[])
                 preview_pause(0);
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
+                ui.confirm_circle = sys_confirm_is_circle();
                 if (g_hide_dupes != hide_dupes || g_all_games != all_games)
                     ui_relist(&ui, 0, 0); /* bygg om Spel och Spelbiblioteket */
                 if (home) {
                     ui_open_cc(&ui);
                 } else if (lr) {
                     sound_play(SND_SWIPE);
-                    ui_set_tab(&ui, (lr & PSP_CTRL_LTRIGGER) ? TAB_SEARCH : TAB_GAMES);
+                    ui_set_tab(&ui, (lr & PSP_CTRL_LTRIGGER) ? TAB_MUSIC : TAB_GAMES);
                 }
             } else if (action != SA_NONE) {
                 settings_commit();
+                ui.confirm_circle = sys_confirm_is_circle();
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
                     in_settings = 0;
@@ -633,6 +700,24 @@ int main(int argc, char *argv[])
              * spelade gav ett skrapande ljud i ~0,1 s (issue #2) */
             sound_play(SND_OPEN);
             in_settings = 1;
+            continue;
+        }
+        /* [medhatk] Launch Standby Screen from Control Center and reset idle/dim timers upon unlock */
+        if (action == UI_STANDBY) {
+            start_confirmed();
+            int r = standby_mode(&list, &ui, &old);
+            last = sceKernelGetSystemTimeWide();
+            idle = 0;
+            dark = 0;
+            if (r == SB_SLEEP) {
+                sys_suspend();
+                for (int k = 0; k < 120 && !s_sleeping && s_running; k++) {
+                    gfx_begin(RGBA(0, 0, 0, 255));
+                    gfx_end();
+                }
+            } else if (r == SB_SHUTDOWN) {
+                run_action(SA_SHUTDOWN, &list, &ui);
+            }
             continue;
         }
         if (action == UI_ACTION) { /* Control Center: viloläge, USB, filer, XMB, omstart, stäng av */
