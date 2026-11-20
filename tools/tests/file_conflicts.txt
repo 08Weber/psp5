@@ -1,0 +1,201 @@
+# Automated PPSSPP test for Feature #9 — File Conflict Handling (Run 1)
+# Boot skip & open Settings -> Power & USB -> Files
+wait 30
+press circle
+wait 150
+press triangle
+wait 30
+press down
+wait 6
+press down
+wait 6
+press down
+wait 6
+press down
+wait 6
+press down
+wait 10
+press cross
+wait 10
+press down
+wait 10
+press cross
+wait 35
+shot 01-files-root
+
+# Enter AA_CONFTEST (row 0)
+press cross
+wait 20
+shot 02-conftest-dir
+
+# --- Test 1: 01_SAME (Copy in same folder -> immediate auto-rename without dialog) ---
+press cross
+wait 15
+press triangle
+wait 12
+press cross
+wait 12
+press triangle
+wait 12
+press cross
+wait 25
+shot 03-same-folder-copy
+press circle
+wait 15
+
+# --- Test 2: 02_FF_SRC -> 03_FF_DST (File-File: Replace a.txt, Skip b.txt, Rename c.txt) ---
+press down
+wait 8
+press cross
+wait 15
+# Mark a.txt, b.txt, c.txt
+press square
+wait 6
+press square
+wait 6
+press square
+wait 10
+press triangle
+wait 12
+# Copy is index 0 because clip had 1 item? Wait! s_clip_n is 1 from Test 1!
+# When s_clip_n > 0, menu is: 0:Paste, 1:Copy, 2:Move, 3:Delete, 4:New folder
+press down
+wait 6
+press cross
+wait 12
+press circle
+wait 15
+# Go down to 03_FF_DST
+press down
+wait 8
+press cross
+wait 15
+press triangle
+wait 12
+# Paste is index 0
+press cross
+wait 20
+# Conflict 1: a.txt (File-File) -> Replace (index 0)
+shot 04-ff-conflict-a
+press cross
+wait 20
+# Conflict 2: b.txt (File-File) -> Skip (index 1)
+press down
+wait 8
+shot 05-ff-conflict-b-skip
+press cross
+wait 20
+# Conflict 3: c.txt (File-File) -> Rename (keep both) (index 2)
+press down
+wait 6
+press down
+wait 8
+shot 06-ff-conflict-c-ren
+press cross
+wait 25
+shot 07-ff-result
+press circle
+wait 15
+
+# --- Test 3: 04_MERGE_SRC -> 05_MERGE_DST (Move PKG -> Merge with Apply to All, then File-File inside) ---
+press down
+wait 8
+press cross
+wait 15
+# PKG is selected (only 1 item), open menu: 0:Paste, 1:Copy, 2:Move
+press triangle
+wait 12
+press down
+wait 6
+press down
+wait 8
+press cross
+wait 12
+press circle
+wait 15
+# Enter 05_MERGE_DST
+press down
+wait 8
+press cross
+wait 15
+press triangle
+wait 12
+# Paste (Move) is index 0
+press cross
+wait 20
+# Folder-Folder conflict on PKG! Toggle Apply to All (square) and choose Merge (index 0)
+press square
+wait 10
+shot 08-dir-merge-dialog
+press cross
+wait 20
+# Verify Apply to All on Folder-Folder did NOT auto-resolve File-File inside PKG!
+# First internal file conflict (conflict1.txt): choose Skip (index 1)
+shot 09-merge-inner-conf1
+press down
+wait 8
+press cross
+wait 20
+# Second internal file conflict (conflict2.txt): choose Replace (index 0)
+press cross
+wait 25
+# Enter PKG in 05_MERGE_DST to see merged result
+press cross
+wait 15
+shot 10-merge-dst-files
+press circle
+wait 12
+press circle
+wait 12
+# Go up to 04_MERGE_SRC and enter PKG to verify skipped conflict1.txt stayed in source!
+press up
+wait 8
+press cross
+wait 12
+press cross
+wait 15
+shot 11-merge-src-kept
+press circle
+wait 12
+press circle
+wait 12
+
+# --- Test 4: 06_TYPE_SRC -> 07_TYPE_DST (File <-> Folder & Folder <-> File) ---
+press down
+wait 6
+press down
+wait 8
+press cross
+wait 15
+# Mark beta (dir, row 0) and alpha (file, row 1)
+press square
+wait 6
+press square
+wait 10
+press triangle
+wait 12
+# Note: s_clip was NOT cleared after Move because conflict1.txt was skipped! So 0:Paste, 1:Copy
+press down
+wait 8
+press cross
+wait 12
+press circle
+wait 15
+# Enter 07_TYPE_DST
+press down
+wait 8
+press cross
+wait 15
+press triangle
+wait 12
+press cross
+wait 20
+# First type conflict: beta (Folder in SRC vs File in DST) -> only Rename (keep both), Skip, Cancel
+shot 12-type-mismatch-dlg
+# Choose Rename (keep both) (index 0) for beta
+press cross
+wait 20
+# Second type conflict: alpha (File in SRC vs Folder in DST) -> choose Rename (keep both) (index 0)
+press cross
+wait 25
+shot 13-type-mismatch-res
