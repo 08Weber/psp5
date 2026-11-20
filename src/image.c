@@ -13,6 +13,8 @@
 #define MAX_PNG_PIXELS (512 * 512)
 #define MAX_COVER_PIXELS (1024 * 1024) /* omslag är ofta större än ikoner */
 #define MAX_PROGRESSIVE_PIXELS (1600 * 1600) /* progressiv JPEG avkodas i sin helhet */
+#define MAX_IMAGE_RAW_PIXELS (4000000ULL) /* 4 MP max källa för att skydda PSP-1000 minne */
+#define MAX_IMAGE_DIM 4096 /* max bredd eller höjd */
 
 typedef struct {
     u32 magic;
@@ -59,7 +61,8 @@ static int decode_png_scaled(const void *data, u32 size, Image *out, u32 max_pix
     png_set_read_fn(png, &mem, png_read_mem);
     png_read_info(png, info);
     u32 w = png_get_image_width(png, info), h = png_get_image_height(png, info);
-    if (!w || !h || w > 8192 || h > 8192 || png_get_interlace_type(png, info) != PNG_INTERLACE_NONE)
+    if (!w || !h || w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM || (u64)w * (u64)h > MAX_IMAGE_RAW_PIXELS ||
+        png_get_interlace_type(png, info) != PNG_INTERLACE_NONE)
         longjmp(png_jmpbuf(png), 1);
     png_set_expand(png);
     png_set_strip_16(png);
@@ -68,10 +71,10 @@ static int decode_png_scaled(const void *data, u32 size, Image *out, u32 max_pix
     png_read_update_info(png, info);
 
     int step = 1;
-    while ((w / step) * (h / step) > max_pixels)
+    while ((u64)(w / step) * (u64)(h / step) > max_pixels)
         step *= 2;
     int dw = w / step, dh = h / step;
-    if (dw < 1 || dh < 1)
+    if (dw < 1 || dh < 1 || (u64)dw * (u64)dh > max_pixels)
         longjmp(png_jmpbuf(png), 1);
     out->w = dw;
     out->h = dh;
@@ -100,7 +103,12 @@ static int decode_png(const void *data, u32 size, Image *out, u32 max_pixels)
     png.version = PNG_IMAGE_VERSION;
     if (!png_image_begin_read_from_memory(&png, data, size))
         return 0;
-    if (png.width * png.height > max_pixels) {
+    u32 pw = png.width, ph = png.height;
+    if (!pw || !ph || pw > MAX_IMAGE_DIM || ph > MAX_IMAGE_DIM || (u64)pw * (u64)ph > MAX_IMAGE_RAW_PIXELS) {
+        png_image_free(&png);
+        return 0;
+    }
+    if ((u64)pw * (u64)ph > max_pixels) {
         png_image_free(&png);
         return decode_png_scaled(data, size, out, max_pixels);
     }
@@ -154,8 +162,13 @@ static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
     }
     jpeg_create_decompress(&cinfo);
     jpeg_mem_src(&cinfo, (const unsigned char *)data, size);
-    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK ||
-        (cinfo.progressive_mode && cinfo.image_width * cinfo.image_height > MAX_PROGRESSIVE_PIXELS)) {
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
+        jpeg_destroy_decompress(&cinfo);
+        return 0;
+    }
+    u32 jw = cinfo.image_width, jh = cinfo.image_height;
+    if (!jw || !jh || jw > MAX_IMAGE_DIM || jh > MAX_IMAGE_DIM || (u64)jw * (u64)jh > MAX_IMAGE_RAW_PIXELS ||
+        (cinfo.progressive_mode && (u64)jw * (u64)jh > MAX_PROGRESSIVE_PIXELS)) {
         jpeg_destroy_decompress(&cinfo);
         return 0;
     }
@@ -168,7 +181,7 @@ static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
     cinfo.out_color_space = JCS_RGB;
     jpeg_start_decompress(&cinfo);
     int w = cinfo.output_width, h = cinfo.output_height;
-    if ((u32)(w * h) > MAX_COVER_PIXELS || cinfo.output_components != 3)
+    if (w <= 0 || h <= 0 || (u64)w * (u64)h > MAX_COVER_PIXELS || cinfo.output_components != 3)
         longjmp(err.jump, 1);
     out->w = w;
     out->h = h;
@@ -203,7 +216,8 @@ static int decode_bmp(const void *data, u32 size, Image *out, u32 max_pixels)
     int top_down = h_raw < 0, h = top_down ? -h_raw : h_raw;
     u16 planes = le16(b + 26), bpp = le16(b + 28);
     u32 comp = le32(b + 30);
-    if (dib < 40 || planes != 1 || w <= 0 || h <= 0 || w > 8192 || h > 8192 || off >= size)
+    if (dib < 40 || planes != 1 || w <= 0 || h <= 0 || w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM ||
+        (u64)w * (u64)h > MAX_IMAGE_RAW_PIXELS || off >= size)
         return 0;
     if ((comp != 0 && comp != 3) || (bpp != 8 && bpp != 16 && bpp != 24 && bpp != 32))
         return 0;
@@ -216,10 +230,10 @@ static int decode_bmp(const void *data, u32 size, Image *out, u32 max_pixels)
         return 0;
 
     int step = 1;
-    while ((u32)(w / step) * (u32)(h / step) > max_pixels)
+    while ((u64)(w / step) * (u64)(h / step) > max_pixels)
         step *= 2;
     int dw = w / step, dh = h / step;
-    if (dw < 1 || dh < 1)
+    if (dw < 1 || dh < 1 || (u64)dw * (u64)dh > max_pixels)
         return 0;
     out->w = dw;
     out->h = dh;

@@ -7,6 +7,7 @@
 #include <intraFont.h>
 #include <malloc.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "gfx.h"
@@ -32,6 +33,8 @@ static void *s_draw; /* bufferten som ritas just nu (relativ VRAM) */
 /* Senast bundna textur: många former i rad (rundade rutor, prickar) använder samma, och då
  * behöver GU inte ställas om och texturcachen tömmas igen. intraFont binder sina egna. */
 static const Texture *s_bound;
+static int s_video_frame_pending;
+static int s_list_open;
 
 /* --- texturer --- */
 
@@ -118,8 +121,11 @@ static Texture *make_shape(int kind)
 
 void gfx_init(void)
 {
+    s_video_frame_pending = 0;
+    s_list_open = 0;
     sceGuInit();
     sceGuStart(GU_DIRECT, s_list);
+    s_list_open = 1;
     s_draw = (void *)0;
     sceGuDrawBuffer(GU_PSM_8888, s_draw, BUF_W);
     sceGuDispBuffer(SCREEN_W, SCREEN_H, (void *)FB_SIZE, BUF_W);
@@ -134,6 +140,7 @@ void gfx_init(void)
     sceGuShadeModel(GU_SMOOTH);
     sceGuFinish();
     sceGuSync(0, 0);
+    s_list_open = 0;
     /* båda bildbuffertarna svarta innan skärmen slås på – annars syns förra lägets sista
      * bild en kort stund (blinkade vid byte till USB-läge och filhanteraren) */
     for (int i = 0; i < 2; i++) {
@@ -150,6 +157,7 @@ void gfx_init(void)
 
 void gfx_term(void)
 {
+    gfx_abort();
     tex_free(s_disc);
     tex_free(s_soft);
     tex_free(s_ring);
@@ -164,7 +172,10 @@ void gfx_term(void)
 
 void gfx_begin(u32 clear_color)
 {
+    if (s_list_open)
+        gfx_abort();
     sceGuStart(GU_DIRECT, s_list);
+    s_list_open = 1;
     s_bound = NULL;
     sceGuClearColor(clear_color);
     sceGuClear(GU_COLOR_BUFFER_BIT);
@@ -177,14 +188,31 @@ void gfx_end(void)
 
 void gfx_end_with(void (*after_draw)(void))
 {
+    if (!s_list_open)
+        return;
     sceGuFinish();
     sceGuSync(0, 0);
+    s_list_open = 0;
+    /* A decoder-owned video buffer may be recycled only after this list is done. */
+    s_video_frame_pending = 0;
     if (after_draw)
         after_draw();
     osd_capture((const u32 *)(0x44000000 + (u32)s_draw), BUF_W);
     testrun_frame((const void *)(0x44000000 + (u32)s_draw)); /* bara i testbyggen */
     sceDisplayWaitVblankStart();
     s_draw = sceGuSwapBuffers();
+}
+
+void gfx_abort(void)
+{
+    if (!s_list_open)
+        return;
+    /* Submit and retire the current list so any decoder-owned texture it references is safe to reuse. */
+    sceGuFinish();
+    sceGuSync(0, 0);
+    s_list_open = 0;
+    s_video_frame_pending = 0;
+    s_bound = NULL;
 }
 
 static void bind(const Texture *t)
@@ -288,7 +316,64 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
     gfx_tex_sub(t, 0, 0, (float)t->w, (float)t->h, x, y, w, h, tint);
 }
 
-/* Bilden pixel för pixel (1:1, närmaste texel) – förrenderade ikoner och loggan blir skarpa */
+/* A decoder-owned view: no Texture wrapper or memory ownership is involved. */
+void gfx_video_frame(const void *data, int w, int h, int stride, int psm, int opaque,
+                     float x, float y, float draw_w, float draw_h)
+{
+    const unsigned cache_line = 64;
+    if (!s_list_open || !data || w < 2 || h < 2 || w > 512 || h > 512 || stride < w || stride > 512 ||
+        (stride & 7) || (psm != GU_PSM_5650 && psm != GU_PSM_8888) ||
+        ((uintptr_t)data & (cache_line - 1)) || draw_w <= 0 || draw_h <= 0)
+        return;
+
+    unsigned bpp = psm == GU_PSM_8888 ? 4 : 2;
+    unsigned bytes = (unsigned)stride * (unsigned)h * bpp;
+    bytes = (bytes + cache_line - 1) & ~(cache_line - 1);
+    sceKernelDcacheWritebackRange((void *)data, bytes);
+
+    /* Decoder storage may change in place while its address stays fixed. Force
+     * a GU bind for every video frame, then invalidate the regular texture cache. */
+    s_bound = NULL;
+    sceGuEnable(GU_TEXTURE_2D);
+    sceGuTexMode(psm, 0, 0, 0);
+    sceGuTexImage(0, pow2(w), pow2(h), stride, (void *)data);
+    sceGuTexFunc(GU_TFX_MODULATE, (opaque || psm == GU_PSM_5650) ? GU_TCC_RGB : GU_TCC_RGBA);
+    sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+    sceGuTexWrap(GU_CLAMP, GU_CLAMP);
+    sceGuTexFlush();
+
+    u32 white = RGBA(255, 255, 255, 255);
+    TVert *v = sceGuGetMemory(2 * sizeof(TVert));
+    v[0] = (TVert){ 0.5f, 0.5f, white, x, y, 0 };
+    v[1] = (TVert){ w - 0.5f, h - 0.5f, white, x + draw_w, y + draw_h, 0 };
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2, 0, v);
+    s_video_frame_pending = 1;
+
+    /* Match bind()'s default and force the next ordinary Texture to rebind. */
+    sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
+    s_bound = NULL;
+}
+
+int gfx_video_frame_update_ready(void)
+{
+    return !s_video_frame_pending;
+}
+
+void gfx_video_frame_quiesce(void)
+{
+    if (!s_video_frame_pending || !s_list_open)
+        return;
+    sceGuFinish();
+    sceGuSync(0, 0);
+    s_list_open = 0;
+    s_video_frame_pending = 0;
+    s_bound = NULL;
+    /* Continue the same draw buffer so the caller may finish the UI frame normally. */
+    sceGuStart(GU_DIRECT, s_list);
+    s_list_open = 1;
+}
+
+/* Pixel-exact drawing for pre-rendered icons and logos. */
 void gfx_tex_1to1(const Texture *t, float x, float y, u32 tint)
 {
     if (!t)

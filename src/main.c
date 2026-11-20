@@ -198,9 +198,12 @@ static void app_start(EntryList *list, Ui *ui, int boot)
 
 static void sleep_and_wake(Ui *ui, int in_settings)
 {
+    int wake_event = s_sleeping || s_resumed;
     int music = music_state() == MUSIC_PLAYING;
     if (music)
         music_toggle_pause();
+    if (ui->video_player && s_sleeping)
+        videoplay_sleep(ui->video_player, 1);
     sound_prepare_boot(); /* startljudet frigjordes efter förra startskärmen */
     preview_pause(1);
 
@@ -230,6 +233,8 @@ static void sleep_and_wake(Ui *ui, int in_settings)
     boot_run(&s_running);
     if (music)
         music_toggle_pause();
+    if (ui->video_player && wake_event)
+        videoplay_woke(ui->video_player);
     ui_replay_intro(ui);
     preview_pause(in_settings); /* i inställningarna förblir den pausad */
 }
@@ -238,6 +243,7 @@ static void sleep_and_wake(Ui *ui, int in_settings)
 static void app_stop(EntryList *list, Ui *ui)
 {
     sys_home_release(); /* spelet, XMB och USB-läget ska ha systemets HOME-dialog */
+    ui_video_player_close(ui); /* release its audio lease and drain video jobs before preview/music/graphics teardown */
     umd_stop();
     loader_stop(); /* före music_term: laddaren läser musiklistan (omslagen) */
     preview_stop(); /* före music_term: förhandsvisningen använder samma ljudmoduler */
@@ -626,6 +632,8 @@ int main(int argc, char *argv[])
          * Musiken spelar vidare med släckt skärm, och medan den spelar somnar PSP:n inte. */
         static const short SCREEN_OFF_S[] = { 0, 60, 180, 300, 600 }, SLEEP_S[] = { 0, 300, 600, 900, 1800 };
         int active = (in.held & ~PSP_CTRL_HOLD) || in.lx < 60 || in.lx > 196 || in.ly < 60 || in.ly > 196;
+        if (ui.video_player)
+            active = 1; /* keep the video visible; playback itself does not generate pad activity */
         idle = active ? 0 : idle + dt;
         if (dark && active) { /* knappen som tände skärmen gör inget annat */
             if (dark == 1)
@@ -672,11 +680,9 @@ int main(int argc, char *argv[])
             continue;
         }
         if (in_settings) {
-            /* HOME eller SELECT stänger inställningarna och öppnar Control Center;
-             * L och R stegar vidare längs toppraden (← Musik, → Spel) */
+            /* HOME eller SELECT stänger inställningarna och öppnar Control Center */
             int home = (in.pressed & (PSP_CTRL_HOME | PSP_CTRL_SELECT)) != 0;
-            int lr = (in.pressed & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER));
-            int action = (home || lr) ? SA_CLOSE : settings_update(&in, dt);
+            int action = home ? SA_CLOSE : settings_update(&in, dt);
             if (action == SA_CLOSE) {
                 in_settings = 0;
                 preview_pause(0);
@@ -689,9 +695,6 @@ int main(int argc, char *argv[])
                     ui_relist(&ui, 0, 0); /* bygg om Spel och Spelbiblioteket */
                 if (home) {
                     ui_open_cc(&ui);
-                } else if (lr) {
-                    sound_play(SND_SWIPE);
-                    ui_set_tab(&ui, (lr & PSP_CTRL_LTRIGGER) ? TAB_MUSIC : TAB_GAMES);
                 }
             } else if (action == SA_SAVEDATA) {
                 settings_commit();

@@ -30,6 +30,7 @@
 #include "icons.h"     /* sök- och inställningsikonerna */
 #include "iso.h"       /* UMD Video-ISO:er i Videor */
 #include "umd.h"
+#include "video/popup.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
@@ -510,6 +511,15 @@ static void switch_tab(Ui *ui, int tab)
         return;
     if (tab == TAB_SEARCH) /* ○ i sökningen går tillbaka hit */
         ui->search_from = ui->tab;
+    if (tab == TAB_MEDIA) {
+        if (ui->tab == TAB_MUSIC)
+            ui->sel[TAB_MEDIA] = 0;
+        else if (ui->tab == TAB_PICTURES)
+            ui->sel[TAB_MEDIA] = 1;
+        else if (ui->tab == TAB_VIDEO)
+            ui->sel[TAB_MEDIA] = 2;
+    }
+    ui->tab_prev = ui->tab;
     ui->tab = tab;
     ui->tab_anim = 0;
     sound_play(SND_SWIPE);
@@ -682,9 +692,10 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     char keys[TAB_MUSIC][80] = { "" };
     int had_last = last_load(ui, keys);
     build_views(ui);
-    if (!had_last || (ui->tab != TAB_GAMES && ui->tab != TAB_APPS && ui->tab != TAB_LIBRARY && ui->tab != TAB_MUSIC))
-        ui->tab = (had_last && (ui->tab == TAB_MEDIA || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO))
-                      ? TAB_MUSIC : TAB_GAMES;
+    if (!had_last || (ui->tab != TAB_GAMES && ui->tab != TAB_APPS && ui->tab != TAB_LIBRARY && ui->tab != TAB_MEDIA))
+        ui->tab = (had_last && (ui->tab == TAB_MUSIC || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO))
+                      ? TAB_MEDIA : TAB_GAMES;
+    ui->tab_prev = ui->tab;
     char key[80];
     for (int t = 0; t < TAB_MUSIC; t++)
         for (int p = 0; keys[t][0] && p < ui->views[t].count; p++) {
@@ -914,8 +925,26 @@ static void menu_choose(Ui *ui)
 
 static void media_free(void);
 
+void ui_video_player_close(Ui *ui)
+{
+    if (!ui)
+        return;
+    if (ui->video_player) {
+        videoplay_close(ui->video_player);
+        ui->video_player = NULL;
+        videoplay_flush();
+    }
+    free(ui->video_entries);
+    ui->video_entries = NULL;
+    ui->video_entry_count = 0;
+    ui->video_player_input_pending = 0;
+    ui->video_player_skip_input = 0;
+    ui->vid_viewing = 0;
+}
+
 void ui_free(Ui *ui)
 {
+    ui_video_player_close(ui);
     if (ui->list) {
         stop_arrange(ui); /* en påbörjad flytt sparas */
         last_save(ui);
@@ -1141,7 +1170,7 @@ static void update_music(Ui *ui, const UiInput *in, float dt)
             ui->music_view = 1;
             ui->album_sel = ui->music_album;
         } else {
-            switch_tab(ui, TAB_GAMES);
+            switch_tab(ui, TAB_MEDIA);
         }
         sound_play(SND_BACK);
         return;
@@ -1387,11 +1416,21 @@ static void update_pictures(Ui *ui, const UiInput *in, float dt)
         if (ui->intro >= 1) {
             u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
             if (in->pressed & confirm) {
-                ui->pic_viewing = 1;
-                ui->pic_still = 1.0f;
-                sound_play(SND_OPEN);
+                if (ui->pic_tex_for == ui->pic_sel && !ui->pic_tex) {
+                    ui_toast(ui, L(S_PIC_TOO_LARGE));
+                    sound_play(SND_ERROR);
+                } else {
+                    ui->pic_viewing = 1;
+                    ui->pic_still = 1.0f;
+                    sound_play(SND_OPEN);
+                }
             } else if (in->pressed & PSP_CTRL_SQUARE) {
-                set_pic_wallpaper(ui, s_pics[ui->pic_sel].path);
+                if (ui->pic_tex_for == ui->pic_sel && !ui->pic_tex) {
+                    ui_toast(ui, L(S_PIC_TOO_LARGE));
+                    sound_play(SND_ERROR);
+                } else {
+                    set_pic_wallpaper(ui, s_pics[ui->pic_sel].path);
+                }
             }
         }
     }
@@ -1408,6 +1447,11 @@ static void update_pictures(Ui *ui, const UiInput *in, float dt)
         ui->pic_tex = art_load_wallpaper(s_pics[ui->pic_sel].path);
         ui->pic_tex_for = ui->pic_sel;
         ui->pic_fade = 0;
+        if (!ui->pic_tex && ui->pic_viewing) {
+            ui->pic_viewing = 0;
+            ui_toast(ui, L(S_PIC_TOO_LARGE));
+            sound_play(SND_ERROR);
+        }
     }
     if (ui->pic_tex)
         ui->pic_fade = clampf(ui->pic_fade + dt * 5.0f, 0, 1);
@@ -1487,6 +1531,7 @@ static void scan_vid_dir(const char *dir, const char *folder, int depth)
     sceIoDclose(d);
 }
 
+#ifndef PSP5_ARK4
 /* UMD Video-ISO:er i <dev>/ISO/VIDEO (som ARK:s XMB-stöd, core/vshctrl/virtual_mp4.c: bara .iso).
  * Titeln och ikonen ur skivans UMD_VIDEO (eller UMD_AUDIO). ISO:er utan dem hoppas över. */
 static void scan_umd_video_isos(const char *dev)
@@ -1546,6 +1591,7 @@ static void scan_umd_video_isos(const char *dev)
     }
     sceIoDclose(d);
 }
+#endif
 
 static void scan_videos(void)
 {
@@ -1560,7 +1606,9 @@ static void scan_videos(void)
             snprintf(root, sizeof(root), "%s/%s", dev, dirs[k]);
             scan_vid_dir(root, "VIDEO", 0);
         }
+#ifndef PSP5_ARK4
         scan_umd_video_isos(dev);
+#endif
     }
     /* UMD Video-skivan i enheten (umd.c har redan läst titeln) */
     char title[128];
@@ -1656,6 +1704,48 @@ static void media_free(void)
 
 static int media_loading(void) { return !s_media_loaded; }
 
+static int video_player_open_media(Ui *ui)
+{
+    int count = 0, selected = -1;
+    for (int i = 0; i < s_nvids; i++) {
+        if (s_vids[i].kind == VID_MP4) {
+            if (i == ui->vid_sel)
+                selected = count;
+            count++;
+        }
+    }
+    if (count <= 0 || selected < 0)
+        return 0;
+
+    VideoEntry *entries = calloc((size_t)count, sizeof(*entries));
+    if (!entries) {
+        ui_toast(ui, L(S_VID_MEMORY));
+        return 0;
+    }
+    for (int i = 0, j = 0; i < s_nvids; i++) {
+        if (s_vids[i].kind != VID_MP4)
+            continue;
+        entries[j].name = s_vids[i].title;
+        entries[j].path = s_vids[i].entry.path;
+        j++;
+    }
+
+    /* The preview's MPEG and audio workers must be gone before the player starts. */
+    preview_stop();
+    VideoPlayer *player = videoplay_open_list(entries, count, selected);
+    if (!player) {
+        ui_toast(ui, videoplay_open_error());
+        free(entries);
+        return 0;
+    }
+    ui->video_entries = entries;
+    ui->video_entry_count = count;
+    ui->video_player = player;
+    ui->video_player_skip_input = 1;
+    ui->vid_viewing = 1;
+    return 1;
+}
+
 static void update_videos(Ui *ui, const UiInput *in, float dt)
 {
     int n = s_nvids;
@@ -1703,15 +1793,23 @@ static void update_videos(Ui *ui, const UiInput *in, float dt)
         u32 confirm = (ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS) | PSP_CTRL_START;
         if (ui->intro >= 1 && (in->pressed & confirm) && ui->cc_leave <= 0) {
             const VidItem *v = &s_vids[ui->vid_sel];
-            if (v->kind == VID_MP4) { /* psp5 kan inte spela MP4 – XMB kan */
-                ui_toast(ui, L(S_MP4_IN_XMB));
-                sound_play(SND_MSG_TOAST);
+            if (v->kind == VID_MP4) {
+                if (video_player_open_media(ui))
+                    sound_play(SND_OPEN);
+                else
+                    sound_play(SND_MSG_TOAST);
             } else if (v->kind == VID_UMD_ISO || v->kind == VID_UMD_DISC) {
                 /* spelas i XMB: ISO:n monteras först (main.c, SA_UMD_VIDEO), skivan sitter redan i */
                 snprintf(ui->umd_video_path, sizeof(ui->umd_video_path), "%s", v->entry.path);
-                ui->cc_action = v->kind == VID_UMD_ISO ? SA_UMD_VIDEO : SA_XMB;
-                ui->cc_leave = 0.001f; /* tona till svart, sedan UI_ACTION (update_cc) */
-                sound_play(SND_SELECT);
+                if (v->kind == VID_UMD_ISO) {
+                    ui->umd_video_confirm = 1;
+                    ui->umd_video_confirm_sel = 1; /* default to Cancel */
+                    sound_play(SND_OPEN);
+                } else {
+                    ui->cc_action = SA_XMB;
+                    ui->cc_leave = 0.001f; /* tona till svart, sedan UI_ACTION (update_cc) */
+                    sound_play(SND_SELECT);
+                }
             } else {
                 ui->vid_viewing = 1;
                 ui->vid_still = 1.0f;
@@ -1887,11 +1985,6 @@ static void open_categories(Ui *ui)
     for (int c = 0; c <= s_ncat; c++)
         if (!c || s_cat_n[ui->tab][c])
             s_pick[s_npick++] = c;
-    if (s_npick < 2) {
-        /* inga kategorimappar: SELECT öppnar Control Center direkt */
-        ui_open_cc(ui);
-        return;
-    }
     ui->cat_open = 1;
     ui->cat_sel = 0;
     for (int i = 0; i < s_npick; i++)
@@ -2012,9 +2105,10 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
     }
     if (!ui->cc_open)
         return UI_NONE;
-    int move = step_input(ui, in, dt, 0);
+    int move = step_input(ui, in, dt, 1);
     if (move) {
-        int next = (ui->cc_sel + move + CC_COUNT) % CC_COUNT;
+        int step = (move == -2 || move == -1) ? -1 : 1;
+        int next = (ui->cc_sel + step + CC_COUNT) % CC_COUNT;
         if (next != ui->cc_sel) {
             ui->cc_sel = next;
             ui->cc_confirm = 0;
@@ -2079,10 +2173,38 @@ static int update_cc(Ui *ui, const UiInput *in, float dt)
 int ui_update(Ui *ui, const UiInput *in, float dt)
 {
     ui->time += dt;
+    ui->video_player_input = *in;
+    ui->video_player_dt = dt;
+    ui->video_player_input_pending = 1;
     ui->intro = clampf(ui->intro + dt * 2.2f, 0, 1);
     ui->tab_anim = clampf(ui->tab_anim + dt * 4.0f, 0, 1);
     if (ui->toast_time > 0)
         ui->toast_time -= dt;
+    if (ui->video_player)
+        return UI_NONE; /* playback controls are consumed inside the active GU frame */
+    if (ui->umd_video_confirm) {
+        int move = step_input(ui, in, dt, 1);
+        if (move) {
+            ui->umd_video_confirm_sel = (ui->umd_video_confirm_sel + (move > 0 ? 1 : -1) + 2) % 2;
+            sound_play(SND_MOVE);
+        }
+        u32 confirm = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
+        u32 cancel = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
+        if (in->pressed & cancel) {
+            ui->umd_video_confirm = 0;
+            sound_play(SND_BACK);
+        } else if (in->pressed & (confirm | PSP_CTRL_START)) {
+            ui->umd_video_confirm = 0;
+            if (ui->umd_video_confirm_sel == 0) {
+                ui->cc_action = SA_UMD_VIDEO;
+                ui->cc_leave = 0.001f; /* keep the existing fade and mount action path */
+                sound_play(SND_SELECT);
+            } else {
+                sound_play(SND_BACK);
+            }
+        }
+        return UI_NONE; /* keep all other Media controls behind the modal */
+    }
     media_poll(ui);
 
     if (ui->launch >= 0) {
@@ -2148,11 +2270,9 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     update_categories(ui, in, dt);
     if (cat_was_open)
         in = &none;
-    if ((in->pressed & PSP_CTRL_SELECT) && ui->intro >= 1) {
-        if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY)
-            open_categories(ui);
-        else
-            ui_open_cc(ui);
+    if ((in->pressed & PSP_CTRL_SELECT) && ui->intro >= 1 &&
+        (ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY)) {
+        open_categories(ui);
         in = &none;
     }
     if (ui->tab == TAB_PICTURES && ui->pic_viewing && in != &none) {
@@ -2164,8 +2284,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         in = &none;
     }
 
-    /* L och R bläddrar direkt genom toppradens 5 val:
-     * Games (0) <-> Apps (1) <-> Library (2) <-> Music (3) <-> Settings (4) */
+    /* L och R bläddrar direkt genom toppradens 4 val:
+     * Games (0) <-> Apps (1) <-> Library (2) <-> Media (3) */
     if ((in->pressed & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) && in != &none && ui->intro >= 1) {
         int sec = 0;
         if (ui->tab == TAB_APPS)
@@ -2175,10 +2295,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         else if (ui->tab == TAB_MUSIC || ui->tab == TAB_MEDIA || ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO)
             sec = 3;
         int step = (in->pressed & PSP_CTRL_RTRIGGER) ? 1 : -1;
-        int next_sec = (sec + step + 5) % 5;
-        if (next_sec == 4)
-            return UI_SETTINGS;
-        static const int sec_tabs[4] = { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC };
+        int next_sec = (sec + step + 4) % 4;
+        static const int sec_tabs[4] = { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MEDIA };
         switch_tab(ui, sec_tabs[next_sec]);
     }
 
@@ -2305,7 +2423,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     int pv = -1;
     int pv_card = 0;
     const Entry *pv_entry = NULL;
-    if (ui->tab == TAB_VIDEO && s_nvids > 0 && ui->vid_still >= 0.14f && !ui->cc_open) {
+    if (!ui->video_player && ui->tab == TAB_VIDEO && s_nvids > 0 && ui->vid_still >= 0.14f && !ui->cc_open) {
         pv = VID_PREVIEW + ui->vid_sel;
         pv_entry = &s_vids[ui->vid_sel].entry;
     } else if (g_previews && is_row_tab && !overlay && ui->cat_anim <= 0 &&
@@ -2667,24 +2785,28 @@ static void draw_search_icon(float cx, float cy, u32 c)
     draw_icon(ICON_SEARCH, &t, cx, cy, c);
 }
 
-static void draw_gear_icon(float cx, float cy, u32 c)
-{
-    static Texture *t;
-    draw_icon(ICON_GEAR, &t, cx, cy, c);
-}
-
 /* Skarpa, kantutjämnade 16x16-ikoner från src/icons.h (genererade via tools/make_icons.ps1). */
-static void draw_tab_icon(int tab, float cx, float cy, u32 c)
+static void draw_tab_icon(int idx, float cx, float cy, u32 c)
 {
     static Texture *t[4];
     static const unsigned char *const icons[4] = {
         ICON_TAB_GAMES, ICON_TAB_APPS, ICON_TAB_LIBRARY, ICON_TAB_MUSIC
     };
-    if (tab >= 0 && tab < 4)
-        draw_icon(icons[tab], &t[tab], cx, cy, c);
+    if (idx >= 0 && idx < 4)
+        draw_icon(icons[idx], &t[idx], cx, cy, c);
 }
 
-void ui_draw_top_bar_for(int active_tab, int in_settings, float a, float anim_time, const Theme *t, float art_a)
+static int top_nav_group(int tab)
+{
+    if (tab == TAB_GAMES) return 0;
+    if (tab == TAB_APPS) return 1;
+    if (tab == TAB_LIBRARY) return 2;
+    if (tab == TAB_MEDIA || tab == TAB_MUSIC || tab == TAB_PICTURES || tab == TAB_VIDEO) return 3;
+    return -1;
+}
+
+static void ui_draw_top_bar_transition(int active_tab, int previous_tab, float progress, int in_settings,
+                                       float a, float anim_time, const Theme *t, float art_a)
 {
     if (!t)
         t = theme_cur();
@@ -2728,39 +2850,54 @@ void ui_draw_top_bar_for(int active_tab, int in_settings, float a, float anim_ti
     draw_battery(bx, 15.0f, level, charging, anim_time, a, iw, t, art_a);
     float status_left = bx - (charging ? 10 : 0) - iw;
 
-    /* Höger: Inställningar (⚙) till vänster om batteriet & klockan */
-    float gear_cx = status_left - (in_settings ? 22.0f : 18.0f), icon_cy = 20.0f;
-    if (in_settings)
-        theme_sel_box(t, gear_cx - 15.0f, 9.0f, 30.0f, 22.0f, 11.0f, pill_col);
-    u32 gear_idle = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->graphite : TEXT_MAIN, (int)(215 * a)),
-                                 RGBA(255, 255, 255, (int)(195 * a)), art_a);
-    u32 gear_act = with_alpha(THEME_INK(t, sel_ink, TEXT_MAIN), a);
-    draw_gear_icon(gear_cx, icon_cy, in_settings ? gear_act : gear_idle);
-    status_left = gear_cx - (in_settings ? 19.0f : 12.0f);
-
-    /* Enhetlig topprad för alla huvudflikar: Games, Apps, Library, Music */
-    static const int tabs[4] = { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MUSIC };
-    const char *names[4] = { L(S_TAB_GAMES), L(S_TAB_APPS), L(S_TAB_LIBRARY), L(S_TAB_MUSIC) };
-    u32 tab_idle_ic = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text_dim : TEXT_DIM, (int)(240 * a)),
-                                   RGBA(209, 213, 219, (int)(230 * a)), art_a);
-    u32 tab_idle_tx = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text : TEXT_MAIN, (int)(220 * a)),
-                                   RGBA(209, 213, 219, (int)(245 * a)), art_a);
+    /* Enhetlig topprad för alla huvudflikar: Games, Apps, Library, Media */
+    static const int tabs[4] = { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MEDIA };
+    const char *names[4] = { L(S_TAB_GAMES), L(S_TAB_APPS), L(S_TAB_LIBRARY), L(S_TAB_MEDIA) };
+    /* Inactive tabs show only icons; current and previous labels cross-fade
+     * during tab changes while fixed slots keep icon positions stable. */
+    const float icon_slot = 40.0f, gap = 8.0f;
+    float nav_fs = 0.62f, label_width[4], slot_x[4], label_total = 0.0f;
+    for (int k = 0; k < 4; k++) {
+        label_width[k] = text_width(nav_fs, 1, names[k]);
+        label_total += label_width[k];
+    }
+    float label_budget = 330.0f - 14.0f - 4.0f * icon_slot - 3.0f * gap;
+    if (label_total > label_budget && label_total > 0.0f) {
+        nav_fs *= fmaxf(0.0f, label_budget) / label_total;
+        label_total = 0.0f;
+        for (int k = 0; k < 4; k++) {
+            label_width[k] = text_width(nav_fs, 1, names[k]);
+            label_total += label_width[k];
+        }
+    }
     float x = 14.0f;
     for (int k = 0; k < 4; k++) {
-        int active = !in_settings && tabs[k] == active_tab;
-        float w = text_width(0.62f, active, names[k]);
-        float item_w = active ? 40.0f + w : 28.0f + w;
-        if (active) {
-            theme_sel_box(t, x, 9.0f, item_w, 22.0f, 11.0f, pill_col);
-            u32 act_ic = t->ink ? with_alpha(t->ink->sel_ink, a) : RGBA(255, 255, 255, (int)(255 * a));
-            u32 act_tx = with_alpha(THEME_INK(t, sel_ink, TEXT_MAIN), a);
-            draw_tab_icon(tabs[k], x + 17.0f, 20.0f, act_ic);
-            text_draw(x + 29.0f, 24.5f, 0.62f, 1, act_tx, ALIGN_LEFT, names[k]);
-        } else {
-            draw_tab_icon(tabs[k], x + 13.0f, 20.0f, tab_idle_ic);
-            text_draw(x + 24.0f, 24.5f, 0.62f, 0, tab_idle_tx, ALIGN_LEFT, names[k]);
+        slot_x[k] = x;
+        x += icon_slot + label_width[k] + gap;
+    }
+
+    int current_group = in_settings ? -1 : top_nav_group(active_tab);
+    int previous_group = in_settings ? -1 : top_nav_group(previous_tab);
+    float p = smooth(progress);
+    int direction = current_group >= 0 && previous_group >= 0 && current_group < previous_group ? -1 : 1;
+    u32 idle_ic = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text_dim : TEXT_DIM, 240),
+                               RGBA(209, 213, 219, 230), art_a);
+    u32 active_ic = t->ink ? t->ink->sel_ink : RGBA(255, 255, 255, 255);
+    u32 active_tx = THEME_INK(t, sel_ink, TEXT_MAIN);
+    for (int k = 0; k < 4; k++) {
+        float selected = current_group == k ? (previous_group == k ? 1.0f : p)
+                                             : previous_group == k ? 1.0f - p : 0.0f;
+        if (selected > 0.0f)
+            theme_sel_box(t, slot_x[k], 9.0f, icon_slot + label_width[k], 22.0f, 11.0f,
+                          with_alpha(pill_col, selected));
+        draw_tab_icon(k, slot_x[k] + 17.0f, 20.0f,
+                      with_alpha(mix(idle_ic, active_ic, selected), a));
+        if (selected > 0.0f) {
+            float slide = current_group == k && previous_group != k ? direction * (1.0f - p) * 5.0f
+                         : previous_group == k && current_group != k ? -direction * p * 5.0f : 0.0f;
+            text_draw(slot_x[k] + 29.0f + slide, 24.5f, nav_fs, 1,
+                      with_alpha(active_tx, selected * a), ALIGN_LEFT, names[k]);
         }
-        x += item_w + 8.0f;
     }
 
     /* musik som spelas syns som en liten not med titeln i de andra flikarna */
@@ -2787,6 +2924,11 @@ void ui_draw_top_bar_for(int active_tab, int in_settings, float a, float anim_ti
     }
 }
 
+void ui_draw_top_bar_for(int active_tab, int in_settings, float a, float anim_time, const Theme *t, float art_a)
+{
+    ui_draw_top_bar_transition(active_tab, active_tab, 1.0f, in_settings, a, anim_time, t, art_a);
+}
+
 void ui_draw_top_bar(int active_tab, int in_settings, float a, float anim_time)
 {
     ui_draw_top_bar_for(active_tab, in_settings, a, anim_time, theme_cur(), 0.0f);
@@ -2794,7 +2936,8 @@ void ui_draw_top_bar(int active_tab, int in_settings, float a, float anim_time)
 
 static void draw_top_bar(Ui *ui)
 {
-    ui_draw_top_bar_for(ui->tab, 0, ui->intro, ui->time, theme_cur(), ui_art_alpha(ui));
+    ui_draw_top_bar_transition(ui->tab, ui->tab_prev, ui->tab_anim, 0, ui->intro, ui->time, theme_cur(),
+                               ui_art_alpha(ui));
 }
 
 /* Placering för kortet på avståndet d från markeringen (0 = valt). */
@@ -3433,16 +3576,6 @@ static void draw_media_row(Ui *ui)
     else
         snprintf(cnt, sizeof(cnt), "%d", counts[sel]);
     text_draw(MARGIN + bw + 8, y + 11.5f, 0.62f, 0, with_alpha(dim_col, row_alpha), ALIGN_LEFT, cnt);
-
-    const char *open = L(S_F_OPEN);
-    float bx = MARGIN, by = 233, bh = 26;
-    float tw = text_width(0.66f, 0, open);
-    float w = 8 + 16 + 8 + tw + 14;
-    gfx_glow(bx, by + 2, w, bh, 6, RGBA(0, 0, 0, (int)(110 * row_alpha)));
-    gfx_round_rect(bx, by, w, bh, bh / 2, with_alpha(THEME_INK(th, graphite, LIGHT), 0.95f * row_alpha));
-    theme_button(th, bx + 16, by + bh / 2, 8, ui->confirm_circle ? BTN_CIRCLE : BTN_CROSS, 1,
-                 with_alpha(DARK, row_alpha), with_alpha(LIGHT, row_alpha));
-    text_draw(bx + 32, by + 17.5f, 0.66f, 0, with_alpha(THEME_INK(th, text_inverse, DARK), row_alpha), ALIGN_LEFT, open);
 }
 
 /* Alternativmenyn (□): en panel nere till vänster, över Starta-knappen, med kortets namn,
@@ -3551,6 +3684,8 @@ static float hints_width(void);
 
 static const char *hints_confirm_label(const Ui *ui)
 {
+    if (ui->tab == TAB_MEDIA)
+        return L(S_F_OPEN);
     int cnt = view(ui)->count;
     if (ui->tab == TAB_LIBRARY && cnt > 0)
         return L(S_F_OPEN);
@@ -3561,13 +3696,15 @@ static const char *hints_confirm_label(const Ui *ui)
 
 static float hints_total_width(const Ui *ui)
 {
-    int figma = ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC;
+    int figma = ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC;
     int show_settings = figma && ui->tab != TAB_MUSIC && !(ui->moving && (ui->tab == TAB_GAMES || ui->tab == TAB_APPS));
+    int show_categories = !ui->moving && (ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY);
     const char *conf = hints_confirm_label(ui);
     float base = figma ? hints_width_for(0.56f) : hints_width();
     float sw = show_settings ? 29.0f + text_width(0.56f, 0, L(S_SETTINGS)) : 0.0f;
     float cw = conf ? 29.0f + text_width(0.56f, 0, conf) : 0.0f;
-    return base + sw + cw;
+    float catw = show_categories ? 12.0f + key_cap_width("SELECT") + 5.0f + text_width(0.56f, 0, L(S_CATEGORIES)) : 0.0f;
+    return base + sw + catw + cw;
 }
 
 static void draw_hints(Ui *ui)
@@ -3576,8 +3713,9 @@ static void draw_hints(Ui *ui)
     float art_a = ui_art_alpha(ui);
     float a = ui->intro * (ui->launch < 0 ? 1 : 1 - smooth(ui->launch * 2));
     const char *tab = L(S_HINT_TAB);
-    int figma = ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC;
+    int figma = ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC;
     int show_settings = figma && ui->tab != TAB_MUSIC && !(ui->moving && (ui->tab == TAB_GAMES || ui->tab == TAB_APPS));
+    int show_categories = !ui->moving && (ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY);
     const char *conf = hints_confirm_label(ui);
     float tab_sz = figma ? 0.56f : 0.60f;
     float w = hints_total_width(ui);
@@ -3603,8 +3741,14 @@ static void draw_hints(Ui *ui)
                      with_alpha(LIGHT, 0.96f * a), with_alpha(DARK, a));
         text_draw(x + 17.0f, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, L(S_SETTINGS));
         x += 17.0f + text_width(0.56f, 0, L(S_SETTINGS));
-    } else if (conf) {
+    } else if (conf || show_categories) {
         x += text_width(tab_sz, 0, tab);
+    }
+    if (show_categories) {
+        x += 12.0f;
+        x += key_cap(x, y, "SELECT", a) + 5.0f;
+        text_draw(x, y + 4.5f, 0.56f, 0, label_col, ALIGN_LEFT, L(S_CATEGORIES));
+        x += text_width(0.56f, 0, L(S_CATEGORIES));
     }
     if (conf) {
         x += 12.0f;
@@ -3696,20 +3840,6 @@ static void draw_library(Ui *ui)
     u32 count_fg = t->ink ? COLOR_ALPHA(t->ink->text, (int)(245 * ui_a)) : RGBA(168, 182, 204, (int)(245 * ui_a));
     gfx_round_rect(cx, 37.5f, pw, 16.0f, 8.0f, count_bg);
     text_draw(cx + pw / 2.0f, 48.5f, 0.48f, 1, count_fg, ALIGN_CENTER, num);
-
-    if (s_ncat) {
-        float kx = cx + pw + 10.0f;
-        float cap_w = key_cap_width("SELECT") + 5.0f;
-        float avail = sort_x - 10.0f - (kx + cap_w);
-        if (avail > 28.0f) {
-            kx += key_cap(kx, 45.5f, "SELECT", ui_a) + 5.0f;
-            char cat_lbl[40];
-            text_ellipsis(cat_lbl, sizeof(cat_lbl), L(S_CATEGORIES), 0.50f, avail);
-            u32 cat_col = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text_dim : TEXT_DIM, (int)(235 * ui_a)),
-                                       RGBA(175, 188, 210, (int)(230 * ui_a)), art_a);
-            text_draw(kx, 49.0f, 0.50f, 0, cat_col, ALIGN_LEFT, cat_lbl);
-        }
-    }
 
     /* Korten – vertikalt balanserade vid få objekt och skrollbara vid fler än 2 rader. */
     int sel = ui->sel[TAB_LIBRARY];
@@ -4117,6 +4247,8 @@ static void draw_pictures(Ui *ui)
         snprintf(info, sizeof(info), "%d × %d  ·  %d / %d", tx->w, tx->h, ui->pic_sel + 1, n);
         text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(cap_col, a), ALIGN_CENTER, info);
     } else if (n > 0) {
+        if (ui->pic_tex_for == ui->pic_sel && !ui->pic_tex)
+            text_draw(bx + bw / 2, by + bh / 2, 0.52f, 0, with_alpha(dim_fg, a), ALIGN_CENTER, L(S_PIC_TOO_LARGE));
         char info[48];
         snprintf(info, sizeof(info), "%d / %d", ui->pic_sel + 1, n);
         text_draw(px + pw / 2, py + ph - 14, 0.48f, 0, with_alpha(cap_col, a), ALIGN_CENTER, info);
@@ -4638,53 +4770,66 @@ static void draw_cc_music(Ui *ui, float x, float y, float a, u32 bg)
     draw_play_glyph(x + w - 18, y + h / 2, 6, music_state() == MUSIC_PLAYING, with_alpha(inv, a));
 }
 
-/* Control Center: en panel som glider upp nerifrån med en rad ikoner, som PS5:s. Den vita
- * markeringen glider mellan ikonerna och namnet på valt alternativ står ovanför. */
+/* [medhatk] Control Center: Left sidebar overlay (Steam Deck Quick Access style).
+ * Slides in from the left side of the screen over the current view.
+ * Displays all options vertically as text only with smooth selection animation. */
 static void draw_cc(Ui *ui)
 {
     const Theme *th = theme_cur();
     float t = ui->cc_anim;
     if (t <= 0)
         return;
-    float e = 1 - (1 - t) * (1 - t) * (1 - t); /* mjuk inbromsning */
+    float e = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t); /* smooth cubic ease-out */
     u32 top, bottom;
     cc_colors(&top, &bottom);
-    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(110 * e)));
 
-    /* [medhatk] Narrow Control Center icon stride from 48 to 44 px when CC_COUNT > 9 so all 10 icons fit comfortably */
-    const float ph = 84, step = CC_COUNT > 9 ? 44 : 48;
-    float py = SCREEN_H - ph * e;
-    draw_cc_music(ui, MARGIN, py - 56, e, top);
-    gfx_glow(0, py, SCREEN_W, ph + 20, 12, RGBA(0, 0, 0, (int)(150 * e)));
-    gfx_round_rect(0, py, SCREEN_W, ph + 20, 16, with_alpha(top, 0.97f * e));
-    gfx_gradient_v(0, py + 16, SCREEN_W, ph - 16, with_alpha(top, 0.97f * e), with_alpha(bottom, 0.97f * e));
-    gfx_rect(16, py, SCREEN_W - 32, 1,
-             th->ink ? COLOR_ALPHA(th->ink->border, (int)(110 * e)) : RGBA(255, 255, 255, (int)(22 * e))); /* svag ljus kant upptill */
+    /* Dim overlay across the underlying screen */
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(125 * e)));
 
-    float x0 = SCREEN_W / 2 - (CC_COUNT - 1) * step / 2, cy = py + 52;
-    float hx = x0 + ui->cc_pos * step;
-    gfx_glow(hx - 20, cy - 18, 40, 40, 6, RGBA(0, 0, 0, (int)(90 * e)));
+    /* Sidebar dimensions & slide-in from left */
+    const float sw = 168.0f;
+    float sx = -sw * (1.0f - e);
+
+    /* Shadow / glow to the right of the sidebar */
+    gfx_glow(sx, 0, sw, SCREEN_H, 16, RGBA(0, 0, 0, (int)(160 * e)));
+
+    /* Sidebar background panel */
+    gfx_gradient_v(sx, 0, sw, SCREEN_H, with_alpha(top, 0.98f * e), with_alpha(bottom, 0.98f * e));
+
+    /* Vertical divider line on the right edge */
+    u32 border_col = th->ink ? COLOR_ALPHA(th->ink->border, (int)(140 * e)) : RGBA(255, 255, 255, (int)(32 * e));
+    gfx_rect(sx + sw - 1.0f, 0, 1.0f, SCREEN_H, border_col);
+
+    /* Vertical option list */
+    const float row_h = 24.0f;
+    const float list_y = (SCREEN_H - CC_COUNT * row_h) * 0.5f; /* 16.0f */
+    const float iw = sw - 16.0f; /* 152.0f */
+    const float ih = 22.0f;
+    float ix = sx + 8.0f;
+
+    /* Animated selection pill */
+    float hy = list_y + ui->cc_pos * row_h + (row_h - ih) * 0.5f;
+    gfx_glow(ix, hy + 1.0f, iw, ih, 6, RGBA(0, 0, 0, (int)(80 * e)));
     u32 sel_bg = THEME_INK(th, sel_fill, LIGHT);
+    theme_sel_box(th, ix, hy, iw, ih, 7.0f, with_alpha(sel_bg, e));
+
+    /* Option text labels */
     u32 sel_fg = THEME_INK(th, sel_ink, DARK);
     u32 idle_fg = THEME_INK(th, text_inverse, LIGHT);
-    gfx_round_rect(hx - 20, cy - 20, 40, 40, 10, with_alpha(sel_bg, e));
 
-    u32 hole = mix(top, bottom, 0.6f); /* panelens färg vid ikonerna – för "hålen" i ikonerna */
     for (int k = 0; k < CC_COUNT; k++) {
-        float f = clampf(1 - fabsf(k - ui->cc_pos), 0, 1); /* hur mycket markeringen täcker ikonen */
-        float ia = smooth(t * 1.7f - k * 0.08f);           /* ikonerna tonas in en i taget */
-        float iy = cy + (1 - ia) * 10;
-        draw_cc_glyph(k, x0 + k * step, iy, with_alpha(mix(idle_fg, sel_fg, f), ia * e),
-                      with_alpha(mix(hole, sel_bg, f), ia * e));
+        float ry = list_y + k * row_h;
+        const char *label = (k == ui->cc_sel && ui->cc_confirm) ? L(S_CONFIRM) : cc_label(k);
+        float f = clampf(1.0f - fabsf(k - ui->cc_pos), 0.0f, 1.0f);
+        u32 tc = with_alpha(mix(idle_fg, sel_fg, f), (0.72f + 0.28f * f) * e);
+        int bold = (k == ui->cc_sel);
+        float max_w = iw - 22.0f;
+        float sz = text_fit(0.58f, 0.44f, bold, max_w, label);
+        text_draw(ix + 11.0f, ry + 16.0f, sz, bold, tc, ALIGN_LEFT, label);
     }
 
-    /* namnet ovanför markeringen */
-    const char *label = ui->cc_confirm ? L(S_CONFIRM) : cc_label(ui->cc_sel);
-    float la = smooth(ui->cc_label) * e;
-    float lw = text_width(0.6f, 0, label);
-    float lx = clampf(x0 + ui->cc_sel * step, MARGIN + lw / 2, SCREEN_W - MARGIN - lw / 2);
-    text_draw(lx, py + 22 + (1 - la) * 4, 0.6f, 0,
-              with_alpha(THEME_INK(th, text_inverse, TEXT_MAIN), la), ALIGN_CENTER, label);
+    /* "Now playing" mini-card next to the sidebar when music is playing */
+    draw_cc_music(ui, sx + sw + 14.0f, SCREEN_H - 58.0f, e, top);
 }
 
 static void draw_empty(Ui *ui)
@@ -4704,6 +4849,24 @@ void ui_draw(Ui *ui)
 {
     const Theme *th = theme_cur();
     gfx_begin(THEME_INK(th, panel_alt, CLEAR_COLOR));
+    if (ui->video_player) {
+        static const UiInput none = { 0, 0, 128, 128 };
+        UiInput input = ui->video_player_input_pending ? ui->video_player_input : none;
+        float dt = ui->video_player_input_pending ? ui->video_player_dt : 1.0f / 60.0f;
+        ui->video_player_input_pending = 0;
+        if (ui->video_player_skip_input) {
+            input = none;
+            ui->video_player_skip_input = 0;
+        }
+        if (videoplay_update(ui->video_player, input.pressed, input.held, input.lx, input.ly, dt))
+            ui_video_player_close(ui);
+        if (ui->video_player) {
+            videoplay_draw(ui->video_player);
+            osd_draw();
+            gfx_end();
+            return;
+        }
+    }
     draw_background(ui);
     /* Dämpar bakgrundsbild i Bibliotek/Musik för läsbarhet ovanpå rutnät/låtlista. */
     if (ui->tab == TAB_LIBRARY && (g_wallpaper[0] || ui->bg_cur || ui->bg_old))
@@ -4713,7 +4876,7 @@ void ui_draw(Ui *ui)
     else if ((ui->tab == TAB_PICTURES || ui->tab == TAB_VIDEO || ui->tab == TAB_SEARCH) && (!th->ink || g_wallpaper[0]))
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, 150));
     draw_top_bar(ui);
-    if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC)
+    if (ui->tab == TAB_GAMES || ui->tab == TAB_APPS || ui->tab == TAB_LIBRARY || ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC)
         ui_draw_footer_bar(ui->intro * (ui->launch < 0 ? 1.0f : 1.0f - smooth(ui->launch * 2.0f)));
     if (ui->tab == TAB_MEDIA) {
         draw_media_row(ui);
@@ -4747,6 +4910,15 @@ void ui_draw(Ui *ui)
     draw_categories(ui);
     draw_cc(ui);
     draw_toast(ui);
+    if (ui->umd_video_confirm) {
+        char lines[7][96] = {{0}};
+        int n = text_wrap(L(S_UMD_VIDEO_CONFIRM), 0.5f, 226.0f, lines, 7);
+        const char *labels[2] = { L(S_UMD_VIDEO_CONTINUE), L(S_UMD_VIDEO_CANCEL) };
+        const u32 colors[2] = { POPUP_TEXT, POPUP_TEXT };
+        popup_dim(1.0f);
+        popup_ask((const char (*)[96])lines, n, 15.0f, NULL, labels, colors, 2,
+                  ui->umd_video_confirm_sel, 1.0f);
+    }
     osd_draw();
 
     /* in- och uttoning från/till svart */
@@ -4908,18 +5080,35 @@ void ui_draw_standby(Ui *ui)
     /* [medhatk] Large centered digital clock (with blinking colon) + date; shifts slightly up when music card is shown */
     ScePspDateTime now;
     if (read_clock(&now)) {
+        int tot_mins = (now.hour % 24) * 60 + (now.minute % 60) + dt_shift_minutes();
+        tot_mins %= 1440;
+        if (tot_mins < 0)
+            tot_mins += 1440;
+        int hour = tot_mins / 60, minute = tot_mins % 60;
+        int is_12h = (g_dt_time == DT_TIME_12);
+
         char hh[4], mm[4], date[20];
-        snprintf(hh, sizeof(hh), "%02d", now.hour);
-        snprintf(mm, sizeof(mm), "%02d", now.minute);
-        const float clk_sz = 1.8f;
+        const char *ampm = is_12h ? (hour < 12 ? "AM" : "PM") : "";
+        if (is_12h)
+            snprintf(hh, sizeof(hh), "%d", hour % 12 ? hour % 12 : 12);
+        else
+            snprintf(hh, sizeof(hh), "%02d", hour);
+        snprintf(mm, sizeof(mm), "%02d", minute);
+
+        const float clk_sz = 1.8f, ampm_sz = 0.70f, ampm_gap = 6.0f;
         float hw = text_width(clk_sz, 0, hh);
         float cw = text_width(clk_sz, 0, ":");
         float mw = text_width(clk_sz, 0, mm);
-        float tx = SCREEN_W * 0.5f - (hw + cw + mw) * 0.5f;
+        float aw = is_12h ? text_width(ampm_sz, 0, ampm) : 0.0f;
+        float total_w = hw + cw + mw + (is_12h ? (ampm_gap + aw) : 0.0f);
+        float tx = SCREEN_W * 0.5f - total_w * 0.5f;
         float cy = has_music ? 60.0f : 96.0f;
+
         text_draw(tx, cy, clk_sz, 0, clk_col, ALIGN_LEFT, hh);
         text_draw(tx + hw, cy, clk_sz, 0, with_alpha(clk_col, (now.second & 1) ? 0.45f : 1.0f), ALIGN_LEFT, ":");
         text_draw(tx + hw + cw, cy, clk_sz, 0, clk_col, ALIGN_LEFT, mm);
+        if (is_12h)
+            text_draw(tx + hw + cw + mw + ampm_gap, cy, ampm_sz, 0, with_alpha(clk_col, 0.80f), ALIGN_LEFT, ampm);
 
         snprintf(date, sizeof(date), "%02d/%02d/%04d", now.day, now.month, now.year);
         text_draw(SCREEN_W * 0.5f, cy + 21.0f, 0.60f, 0, dim_col, ALIGN_CENTER, date);

@@ -6,6 +6,7 @@
 #include "scan.h"
 #include "loader.h"
 #include "theme.h"
+#include "video/videoplay.h"
 
 /* [medhatk] UI_STANDBY returned by Control Center triggers standby_mode() in main.c */
 enum { UI_NONE, UI_LAUNCH, UI_EXIT, UI_SETTINGS, UI_ACTION /* Control Center: ui->cc_action (SA_*) */, UI_STANDBY,
@@ -23,6 +24,7 @@ typedef struct {
     const EntryList *list;
     LoaderView views[TAB_COUNT]; /* Spel / Appar / Bibliotek (Musik har egen lista, se music.h) */
     int tab;
+    int tab_prev;        /* previous tab, used by the top navigation transition */
     int sel[TAB_COUNT];  /* position i respektive flik */
     float pos;           /* animerad scrollposition i aktiv flik */
     float tab_anim;      /* 0→1 efter flikbyte */
@@ -88,6 +90,13 @@ typedef struct {
 
     /* videor (TAB_VIDEO) */
     int vid_sel;
+    VideoPlayer *video_player;
+    VideoEntry *video_entries; /* borrowed strings from s_vids; retained until loader flush */
+    int video_entry_count;
+    UiInput video_player_input;
+    float video_player_dt;
+    int video_player_input_pending, video_player_skip_input;
+    int umd_video_confirm, umd_video_confirm_sel;
     float vid_scroll;
     int vid_target;
     float vid_still;
@@ -159,6 +168,7 @@ typedef struct {
 void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch);
 /* Sparar flik, kategori och markering (<data>/last.txt), så att psp5 öppnar där man var. */
 void ui_free(Ui *ui);
+void ui_video_player_close(Ui *ui);
 /* Spellistan har ändrats först (UMD-skivan togs ut och/eller sattes i).
  * Bygger om flikarna och behåller markeringen. Laddaren ska redan vara omstartad. */
 void ui_relist(Ui *ui, int removed_front, int added_front);

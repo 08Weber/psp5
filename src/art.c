@@ -636,6 +636,10 @@ Texture *art_load_wallpaper(const char *file)
         ch = img.h;
         cw = img.h * SCREEN_W / SCREEN_H;
     }
+    if (cw <= 0 || ch <= 0 || (u64)cw * (u64)ch > (1024ULL * 1024ULL)) {
+        img_free(&img);
+        return NULL;
+    }
     Image crop = { cw, ch, malloc(cw * ch * 4) };
     if (crop.px) {
         int x0 = (img.w - cw) / 2, y0 = (img.h - ch) / 2;

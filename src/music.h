@@ -36,6 +36,9 @@ void music_play(int index);   /* börjar om från början */
 void music_play_path(const char *path); /* spelar en viss MP3-/M4A-fil (t.ex. öppnad från filhanteraren) */
 void music_toggle_pause(void);
 void music_stop(void);
+/* Reserves the shared SRC channel for video and rejects new music playback until released. */
+int music_video_audio_acquire(void);
+void music_video_audio_release(void);
 void music_next(void);
 void music_prev(void);        /* från början om > 3 s spelats, annars föregående */
 void music_seek(float sec);   /* hoppar i aktuell låt (pausad förblir pausad) */

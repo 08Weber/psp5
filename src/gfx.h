@@ -28,6 +28,8 @@ void gfx_begin(u32 clear_color);
 void gfx_end(void); /* väntar på vblank och byter buffert */
 /* Som gfx_end, men anropar after_draw när bilden är ritad (t.ex. systemets tangentbord) */
 void gfx_end_with(void (*after_draw)(void));
+/* Finish and synchronize an open list without presenting it (for cancellation/teardown). */
+void gfx_abort(void);
 
 void gfx_rect(float x, float y, float w, float h, u32 color);
 void gfx_gradient_v(float x, float y, float w, float h, u32 top, u32 bottom);
@@ -35,6 +37,16 @@ void gfx_gradient_h(float x, float y, float w, float h, u32 left, u32 right);
 void gfx_line(float x0, float y0, float x1, float y1, u32 color);
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint);
 void gfx_tex_sub(const Texture *t, float sx, float sy, float sw, float sh, float x, float y, float w, float h, u32 tint);
+/* Draw a decoder-owned RGB frame without taking or freeing its memory. `data`
+ * must be 64-byte aligned with at least ALIGN64(stride * h * bytes_per_pixel)
+ * bytes available; psm must be GU_PSM_5650 or GU_PSM_8888. `opaque` makes the
+ * renderer ignore source alpha. */
+void gfx_video_frame(const void *data, int w, int h, int stride, int psm, int opaque,
+                     float x, float y, float draw_w, float draw_h);
+/* False while a video frame is queued in the current GU list; callers must not advance its decoder yet. */
+int gfx_video_frame_update_ready(void);
+/* Finish the current list that references a video frame, then continue drawing into the same buffer. */
+void gfx_video_frame_quiesce(void);
 /* Bilden i sin egen storlek, pixel för pixel utan filtrering (övre vänstra hörnet i hela pixlar) */
 void gfx_tex_1to1(const Texture *t, float x, float y, u32 tint);
 /* Rundad rektangel med kantutjämning */

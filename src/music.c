@@ -57,6 +57,8 @@ static int s_scan_count, s_scan_cap;
 
 enum { CMD_PLAY, CMD_PAUSE, CMD_STOP, CMD_NEXT, CMD_PREV, CMD_SEEK };
 #define QUEUE 16
+static volatile int s_video_audio_lease;
+static volatile int s_control_lock;
 static volatile int s_q_cmd[QUEUE], s_q_arg[QUEUE];
 static volatile int s_q_head, s_q_tail; /* head skrivs bara av UI, tail bara av tråden */
 
@@ -73,6 +75,23 @@ static SceUID s_thread = -1;
 static volatile int s_quit;
 static int s_ready;                      /* moduler + resurs laddade */
 static int s_loaded_avcodec, s_loaded_mp3;
+
+static void control_lock(void)
+{
+    while (__sync_lock_test_and_set(&s_control_lock, 1))
+        sceKernelDelayThread(1000);
+    __sync_synchronize();
+}
+
+static void control_unlock(void)
+{
+    __sync_lock_release(&s_control_lock);
+}
+
+static int video_audio_reserved(void)
+{
+    return __sync_val_compare_and_swap(&s_video_audio_lease, 0, 0);
+}
 
 static unsigned char __attribute__((aligned(64))) s_mp3buf[MP3_BUF];
 static unsigned char __attribute__((aligned(64))) s_pcmbuf[PCM_BUF];
@@ -994,6 +1013,8 @@ static int play_frame(void)
 /* Startar låten index (och hoppar över trasiga filer framåt). */
 static void start_at(int index)
 {
+    if (video_audio_reserved())
+        return;
     for (int tries = 0; tries < s_count && index >= 0 && index < s_count; tries++) {
         if (s_quit || (tries > 0 && s_q_head != s_q_tail))
             break; /* psp5 stänger, eller användaren valde något annat */
@@ -1083,7 +1104,9 @@ static int player_thread(SceSize args, void *argp)
     scan_library();
     s_scanning = 0;
     sceKernelChangeThreadPriority(0, 0x14);
+    control_lock();
     s_q_tail = s_q_head; /* kommandon från innan listan fanns gäller inte */
+    control_unlock();
     if (s_want_path[0]) {
         for (int i = 0; i < s_count; i++)
             if (!strcasecmp(s_items[i].t.path, s_want_path)) {
@@ -1095,8 +1118,10 @@ static int player_thread(SceSize args, void *argp)
     int failures = 0;
     while (!s_quit) {
         while (s_q_tail != s_q_head) {
+            __sync_synchronize();
             int t = s_q_tail;
             handle_command(s_q_cmd[t], s_q_arg[t]);
+            __sync_synchronize();
             s_q_tail = (t + 1) % QUEUE;
             failures = 0;
         }
@@ -1123,14 +1148,25 @@ static int player_thread(SceSize args, void *argp)
 
 static void push(int cmd, int arg)
 {
-    if (s_thread < 0)
+    control_lock();
+    if (s_video_audio_lease && cmd != CMD_STOP) {
+        control_unlock();
         return;
+    }
+    if (s_thread < 0) {
+        control_unlock();
+        return;
+    }
     int h = s_q_head, n = (h + 1) % QUEUE;
-    if (n == s_q_tail)
-        return; /* kön full – kommandot släpps */
+    if (n == s_q_tail) {
+        control_unlock();
+        return;
+    }
     s_q_cmd[h] = cmd;
     s_q_arg[h] = arg;
+    __sync_synchronize();
     s_q_head = n;
+    control_unlock();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1167,7 +1203,9 @@ void music_init(void)
     }
     s_ready = 1;
     s_quit = 0;
+    control_lock();
     s_q_head = s_q_tail = 0;
+    control_unlock();
     s_state = MUSIC_STOPPED;
     s_current = -1;
     s_elapsed = s_duration = 0;
@@ -1223,16 +1261,38 @@ void music_play_path(const char *path)
 {
     if (!path || !path[0])
         return;
+    if (video_audio_reserved())
+        return;
     for (int i = 0; !s_scanning && i < s_count; i++)
         if (!strcasecmp(s_items[i].t.path, path)) {
             push(CMD_PLAY, i);
             return;
         }
-    snprintf(s_want_path, sizeof(s_want_path), "%s", path);
+    control_lock();
+    if (!s_video_audio_lease)
+        snprintf(s_want_path, sizeof(s_want_path), "%s", path);
+    control_unlock();
 }
 
 void music_toggle_pause(void) { push(CMD_PAUSE, 0); }
 void music_stop(void)         { push(CMD_STOP, 0); }
+int music_video_audio_acquire(void)
+{
+    control_lock();
+    if (s_video_audio_lease) {
+        control_unlock();
+        return 0;
+    }
+    s_video_audio_lease = 1;
+    control_unlock();
+    return 1;
+}
+void music_video_audio_release(void)
+{
+    control_lock();
+    s_video_audio_lease = 0;
+    control_unlock();
+}
 void music_next(void)         { push(CMD_NEXT, 0); }
 void music_prev(void)         { push(CMD_PREV, 0); }
 void music_seek(float sec)    { push(CMD_SEEK, (int)(sec * 1000)); }
