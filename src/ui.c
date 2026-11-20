@@ -2851,35 +2851,29 @@ static void ui_draw_top_bar_transition(int active_tab, int previous_tab, float p
     float status_left = bx - (charging ? 10 : 0) - iw;
 
     /* Enhetlig topprad för alla huvudflikar: Games, Apps, Library, Media */
-    static const int tabs[4] = { TAB_GAMES, TAB_APPS, TAB_LIBRARY, TAB_MEDIA };
     const char *names[4] = { L(S_TAB_GAMES), L(S_TAB_APPS), L(S_TAB_LIBRARY), L(S_TAB_MEDIA) };
-    /* Inactive tabs show only icons; current and previous labels cross-fade
-     * during tab changes while fixed slots keep icon positions stable. */
-    const float icon_slot = 40.0f, gap = 8.0f;
-    float nav_fs = 0.62f, label_width[4], slot_x[4], label_total = 0.0f;
-    for (int k = 0; k < 4; k++) {
+    /* Keep the previous compact sizing: only the active item reserves its
+     * label width. Interpolate item positions between both layouts to avoid snaps. */
+    const float nav_fs = 0.62f;
+    float label_width[4], from_x[4], to_x[4], from_w[4], to_w[4];
+    for (int k = 0; k < 4; k++)
         label_width[k] = text_width(nav_fs, 1, names[k]);
-        label_total += label_width[k];
-    }
-    float label_budget = 330.0f - 14.0f - 4.0f * icon_slot - 3.0f * gap;
-    if (label_total > label_budget && label_total > 0.0f) {
-        nav_fs *= fmaxf(0.0f, label_budget) / label_total;
-        label_total = 0.0f;
-        for (int k = 0; k < 4; k++) {
-            label_width[k] = text_width(nav_fs, 1, names[k]);
-            label_total += label_width[k];
-        }
-    }
-    float x = 14.0f;
-    for (int k = 0; k < 4; k++) {
-        slot_x[k] = x;
-        x += icon_slot + label_width[k] + gap;
-    }
-
     int current_group = in_settings ? -1 : top_nav_group(active_tab);
     int previous_group = in_settings ? -1 : top_nav_group(previous_tab);
     float p = smooth(progress);
     int direction = current_group >= 0 && previous_group >= 0 && current_group < previous_group ? -1 : 1;
+    float from_cursor = 14.0f, to_cursor = 14.0f;
+    for (int k = 0; k < 4; k++) {
+        int from_active = previous_group == k;
+        int to_active = current_group == k;
+        from_x[k] = from_cursor;
+        to_x[k] = to_cursor;
+        from_w[k] = from_active ? 40.0f + label_width[k] : 26.0f;
+        to_w[k] = to_active ? 40.0f + label_width[k] : 26.0f;
+        from_cursor += from_w[k] + (from_active ? 8.0f : 4.0f);
+        to_cursor += to_w[k] + (to_active ? 8.0f : 4.0f);
+    }
+    float x = lerpf(from_cursor, to_cursor, p);
     u32 idle_ic = ink_over_art(t, COLOR_ALPHA(t->ink ? t->ink->text_dim : TEXT_DIM, 240),
                                RGBA(209, 213, 219, 230), art_a);
     u32 active_ic = t->ink ? t->ink->sel_ink : RGBA(255, 255, 255, 255);
@@ -2887,16 +2881,23 @@ static void ui_draw_top_bar_transition(int active_tab, int previous_tab, float p
     for (int k = 0; k < 4; k++) {
         float selected = current_group == k ? (previous_group == k ? 1.0f : p)
                                              : previous_group == k ? 1.0f - p : 0.0f;
+        float item_x = lerpf(from_x[k], to_x[k], p);
+        float item_w = lerpf(from_w[k], to_w[k], p);
         if (selected > 0.0f)
-            theme_sel_box(t, slot_x[k], 9.0f, icon_slot + label_width[k], 22.0f, 11.0f,
+            theme_sel_box(t, item_x, 9.0f, item_w, 22.0f, 11.0f,
                           with_alpha(pill_col, selected));
-        draw_tab_icon(k, slot_x[k] + 17.0f, 20.0f,
+        draw_tab_icon(k, item_x + lerpf(13.0f, 17.0f, selected), 20.0f,
                       with_alpha(mix(idle_ic, active_ic, selected), a));
         if (selected > 0.0f) {
             float slide = current_group == k && previous_group != k ? direction * (1.0f - p) * 5.0f
                          : previous_group == k && current_group != k ? -direction * p * 5.0f : 0.0f;
-            text_draw(slot_x[k] + 29.0f + slide, 24.5f, nav_fs, 1,
-                      with_alpha(active_tx, selected * a), ALIGN_LEFT, names[k]);
+            float visible = clampf(item_w - 40.0f, 0.0f, label_width[k]);
+            if (visible > 0.5f) {
+                float label_x = item_x + 29.0f + slide;
+                gfx_clip(label_x, 10.0f, visible, 20.0f);
+                text_draw(label_x, 24.5f, nav_fs, 1, with_alpha(active_tx, selected * a), ALIGN_LEFT, names[k]);
+                gfx_clip_reset();
+            }
         }
     }
 
