@@ -33,39 +33,52 @@ soft, airy sound underneath. It plays when the PSP starts and when it wakes up f
 back from a game. Any button skips it, and you can turn it off in settings. The logo is psp5's own and everything
 is drawn and synthesized in code – no borrowed logos or sounds.
 
-The top bar works like the PS5's: **Games** and **Media** on the left, **Search** and **Settings** as icons on the
-right – L and R step through them.
+The top bar works like the PS5's: **Games**, **Apps**, **Library**, and **Media** are arranged as a unified
+top navigation bar – **L** and **R** step directly between them, with the live Now Playing music pill, battery
+indicator, and clock visible across screens.
 
 **Games** shows your pinned games and the ones you played most recently in a row. The selected one is large with
 a thin light frame around it, and its artwork fades in behind everything. A UMD in the drive shows up first, and it
 appears or disappears as soon as you put a disc in or take it out. Press □ on a game to *Pin to front* so it always
 stays in the row, and *Move* to put your pinned games in your own order. Want every game in the row?
-Turn on *Settings → PSP5 REMAKE → All games on Games screen* (then *Move* works on every game). The last tile opens the **Game Library**: everything you have – PSP games (ISO, CSO, ZSO and
+Turn on *Settings → PSP5 REMAKE → All games on Games screen* (then *Move* works on every game). Press □ on any game
+to also view **Information** (file size, folder size calculated in background, DISC ID, version, and last played time)
+or manage its **Saved Data**. The last tile opens the **Game Library**: everything you have – PSP games (ISO, CSO, ZSO and
 DAX), PSN and PS1 titles and homebrew – in a grid that's easy to scan through. Press □ there to pin a game to the
-Games row or to sort by name or by what you added most recently. △ opens Settings from Games, Media and the Library.
+Games row or to sort by name or by what you added most recently. △ opens Settings from Games, Apps, Media and the Library.
+
+**Apps** gives your homebrew applications and utilities their own dedicated tab alongside Games, keeping your game
+lists clean while maintaining the same PS5 card layout, background artwork, and options.
+
+**Media** acts as a unified media hub with three dedicated cards:
+
+- **Music**, like the music player in the XMB: it lists the MP3 and M4A (AAC) files in `ms0:/MUSIC` (and `ef0:/MUSIC` on
+  the PSP Go, including sub-folders) with their titles and artists, and keeps playing in the background while you browse
+  your games. △ opens the album list. The track that's playing shows up as a little note pill at the top of the other tabs.
+  "Now playing" shows the album art – from the file itself or a `cover.jpg` / `folder.jpg` in the album folder – and
+  holding ← or → seeks through the track (the longer you hold, the faster it goes).
+- **Pictures**: your JPEG and PNG pictures with instant card previews, and ✕ to view them full screen (← → to flip
+  through them, and ✕ again to set the picture as your wallpaper).
+- **Videos**: a built-in hardware-accelerated **MP4 Video Player**. Standard MP4 video files placed in `VIDEO` are
+  decoded directly on the PSP using H.264 (AVC) hardware decoding via the Media Engine (ME) and AAC audio with smooth
+  RGB565 display output. It remembers where you left off and offers to resume playback, supports 10-second seeking
+  with ← / →, and coordinates audio leases with background music.
+  - *Compatibility & constraints:* The player supports standard MP4 container files encoded with H.264 video and AAC audio
+    within PSP hardware limits (PSP-compatible resolutions such as 480×272). Standalone PMF video playback in the dedicated
+    video player is not supported (PMF remains exclusively for game card animated icon previews, `ICON1.PMF`).
+  - *UMD Video movies:* Movies in `ISO/VIDEO` and physical UMD Video discs are detected in the Video section. Selecting
+    a UMD Video ISO prompts for confirmation, mounts the ISO through ARK, and smoothly redirects to the XMB where you
+    start movie playback from the XMB Video column.
 
 **Search** has an on-screen keyboard on the left and the matching games on the right. They update as you type.
-
-**Media** has three tiles:
-
-- **Music**, like the music player in the XMB: it lists the MP3 and M4A (AAC) files in `ms0:/MUSIC` (folders too) with their
-  titles and artists, and keeps playing while you browse your games. △ opens the album list. The track that's
-  playing shows up as a little note at the top of the other tabs. "Now playing" shows the album art – from the
-  file itself or a `cover.jpg` / `folder.jpg` in the album folder – and holding ← or → seeks through the track
-  (the longer you hold, the faster it goes).
-- **Pictures**: your JPEG and PNG pictures with a preview, and ✕ to view them full screen.
-- **Videos**: your PMF videos in `VIDEO`. MP4 videos (in `VIDEO`
-  or `MP_ROOT`) are listed with their thumbnail too, but they play in the XMB's Video column – psp5 can't play MP4 yet.
-  UMD Video movies show up here as well: ISOs in `ISO/VIDEO` and a UMD Video disc in the drive. ✕ takes you to the
-  XMB with the movie as the UMD in the Video column (an ISO is mounted first, like ARK does it).
 
 Pressing ✕ (or START) starts the game the same way ARK's own menu does, so updates, patched ISOs and
 PS1 games all work. Before a game launches psp5 shuts itself down completely and frees all of its memory,
 so the game gets the whole PSP.
 
 **Settings** is laid out like the PS5's settings pages. From there you can adjust **System** settings (screen
-brightness, sound volume, Cross/Circle confirm button assignment, USB mode, Date & Time display format and
-Daylight Saving offset, and a full System Information page with PSP model, nickname, ARK version, MAC address,
+brightness, sound volume, Cross/Circle confirm button assignment, USB mode, Date & Time display format, 12-hour/24-hour
+clock selection, Daylight Saving offset, and a full System Information page with PSP model, nickname, ARK version, MAC address,
 free RAM, and battery health/temperature/voltage), change ARK's CFW options (CPU speed, extra memory, caches,
 USB charging and so on), turn plugins on and off, restart, shut down, jump to the XMB or open ARK's recovery menu.
 
@@ -98,23 +111,25 @@ A few other things I cared about:
   with the level and a crossed-out speaker when the sound is off. While the PSP charges, the battery icon fills up
   in a loop next to a little lightning bolt. *Settings → PSP5 REMAKE → Battery* can also show the percentage or the
   time left next to it.
-- **It has a file manager**, like ARK's own launcher: *Settings → Power and USB → File manager*. Browse the
-  Memory Stick (and the internal storage on a PSP Go), mark files with □, and copy, move, rename or delete them
-  or make a new folder from the △ menu. Copying shows a progress bar and can be cancelled with ○, and deleting
-  always asks first.
+- **It has a file manager**, like ARK's own launcher: *Settings → Power and USB → File manager* (or from Control Center).
+  Browse the Memory Stick (`ms0:`) and internal storage (`ef0:` on PSP Go), mark files with □, and copy, move, rename,
+  delete or create new folders from the △ menu. Smart conflict resolution lets you Replace, Merge (folders), Skip, or
+  Auto-rename conflicting items, with an *Apply to all* option. Copying/moving shows progress and can be cancelled with ○,
+  and deleting handles read-only files safely and always confirms first.
 - **It has categories.** Put games in folders – `ISO/<folder>/` or `PSP/GAME/<folder>/<game>/` – and press
-  SELECT to pick one (for example `PSP/GAME/GBA` for GBA games packed as EBOOTs). A `bg.png` in the folder is
-  shown behind it in the picker. The active category shows up in the tab name ("Games · GBA"). A folder with a
-  single game (one folder per game) is not a category unless its name starts with `g_` or `s_` (the prefix
-  isn't shown). In a category the Games row shows all of its games; "All" counts every game, and SELECT again
-  closes the picker.
+  SELECT to pick one (for example `ISO/Racing` or `PSP/GAME/GBA`). A `bg.png` in the folder is
+  shown behind it in the picker. The active category shows up in the tab name ("Games · Racing"). All folders are
+  recognized as categories, including single-game folders. Prefixes `g_` (games) and `s_` (apps) or `CAT_` (from
+  plugins like Game Categories Lite) are supported and their prefix is cleaned up in display. Games and Library tabs
+  maintain their category filters and selections independently. In a category the Games row shows all of its games;
+  "All" counts every game, and SELECT again closes the picker.
 - **It has a Control Center.** HOME opens a PS5-style panel with music playback, screenshot, sleep, **Standby Screen**,
   USB, the file manager, settings, the XMB, restart and power off. *Settings → Power and USB* can also turn the
   screen off and put the PSP to sleep after a while without a button press (not while music is playing).
 - **It has a Standby Screen.** Pick **Standby Screen** in the Control Center for a theme-styled always-on clock
   with date, battery status and music controls (✕ play/pause, ←/→ previous/next track, △ for Sleep or Shut down).
-  Your current screen brightness is preserved, auto-sleep and screen-off are paused while it stays open, and
-  pressing **HOME** unlocks back to the menu.
+  It respects your 12-hour or 24-hour time preferences, preserves your screen brightness, pauses auto-sleep while
+  open, and pressing **HOME** unlocks back to the menu.
 - **It shows the game's logo** (PIC0) under the selected game, and the background art (PIC1) in full resolution.
 - **It remembers where you were** – after a game, psp5 opens on the same tab, category and game.
 - **It can show your pictures.** Press ✕ on a JPEG or PNG in the file manager to view it (← → for the next one)
@@ -149,7 +164,21 @@ On top of 08Weber's original psp5 foundation above, the **PSP5 REMAKE** fork inc
 - **Control Center & Standby Screen Enhancements** (`src/ui.c`, `src/main.c`, `src/system.c`, `src/osd.c`, `tools/tests/standby.txt`):
   - Added a **Now playing** mini-card directly inside the Control Center dock alongside the quick actions.
   - Updated the **Standby Screen** to match the active theme or the user's selected custom wallpaper, and placed a compact square **Now playing** music card (cover art, track title/artist, progress bar, and controls) below the large clock.
-  - Normalized Standby Screen rendering and display handling to preserve the user's current screen brightness and render continuously at normal vblank cadence, eliminating intermittent black-screen transitions.
+  - Normalized Standby Screen rendering and display handling to preserve the user's current screen brightness, support 12-hour/24-hour time formats, and render continuously at normal vblank cadence without black-screen transitions.
+- **Hardware-Accelerated MP4 Video Player & Media Hub** (`src/video/*`, `src/ui.c`):
+  - Integrated a dedicated MP4 player supporting H.264 (AVC) hardware-accelerated video decoding via Media Engine (ME) and AAC audio with RGB565 rendering directly to display buffers.
+  - Features resume-playback memory, 10s seeking forward/backward, and automatic audio lease coordination with background music.
+  - Built out the unified **Media** hub tab housing Music, Pictures, and Videos.
+- **Folder-Based Categories & Single-Game Category Support** (`src/scan.c`, `src/ui.c`):
+  - Categories are derived directly from actual folder names across `ISO/` and `PSP/GAME/` on both `ms0:` and `ef0:`.
+  - Removed the restriction that hid categories with only one game, so single-game folders appear as full categories.
+  - Full support for `g_`, `s_`, and `CAT_` folder prefixes, with independent filtering and cursor memory between Games and Library tabs.
+- **File Manager Enhancements & Conflict Handling** (`src/files.c`):
+  - Added interactive conflict resolution when copying or moving files/directories: Replace (atomic with backup rollback), Merge (folders), Skip, and Auto-rename (`name (2).ext`), plus an *Apply to all* option.
+  - Hardened deletion with read-only file/folder attribute clearing, recursive directory removal, and accurate byte/item progress reporting.
+- **Game / App Information & Saved Data Manager** (`src/info.c`, `src/savedata.c`):
+  - Added an in-depth **Information** screen (options menu □ → Information) displaying DISC ID, DISC_VERSION, APP_VER, PSP_SYSTEM_VER, background directory size calculation, free space, and last played time.
+  - Added a dedicated **Saved Data Manager** (options menu □ → Saved Data) allowing users to inspect save details (timestamp, size, title) and delete saves with safety confirmation.
 - **PSP5 REMAKE Branding** (`Makefile`, `src/main.c`, `src/settings.c`, `src/lang.c`, `INSTALL.md`, `tools/make_release.py`):
   Renamed the EBOOT display title (`PSP_EBOOT_TITLE`), module identifier (`PSP5_REMAKE`), Settings category, localized launcher strings, release packaging names, and documentation/fork title to **PSP5 REMAKE**.
 
@@ -164,12 +193,12 @@ Everything you need to get psp5 onto your PSP – as a normal app or as ARK's la
 |---|---|
 | ← → or the analog stick | move between games (hold to go faster – holding stops at the end, a new press wraps around) |
 | ↑ ↓ | move between rows in the Library |
-| L / R | switch between Games, Media, Search and Settings |
-| □ | options: pin to front · move (pinned games) · in the Library also sort (name / recently added) · shuffle in Music · delete a letter in Search |
+| L / R | switch between Games, Apps, Library, and Media |
+| □ | options: pin to front · move (pinned games) · in the Library also sort (name / recently added) · Information & Saved Data · shuffle in Music · delete a letter in Search |
 | △ | Settings · albums in Music |
 | ✕ in Music | play the selected track (or pause it) |
 | ← → in Music | previous / next track · hold to seek |
-| ✕ or START | start the selected game |
+| ✕ or START | start the selected game / open media |
 | any button | skip the startup screen |
 | ○ | back |
 | SELECT | categories (folders in ISO and PSP/GAME) |

@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.0.2)'
+        description: 'Release version (e.g. 1.0.3)'
         required: false
-        default: '1.0.2'
+        default: '1.0.3'
       publish_release:
         description: 'Publish public GitHub Release? (keep unchecked to build artifacts only)'
         type: boolean
@@ -40,7 +40,7 @@ jobs:
           if [ -n "$INPUT_VERSION" ]; then
             echo "version=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=1.0.2" >> "$GITHUB_OUTPUT"
+            echo "version=1.0.3" >> "$GITHUB_OUTPUT"
           fi
       - name: Zips
         run: |

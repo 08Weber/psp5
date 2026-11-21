@@ -1,4 +1,4 @@
-**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) introduces the **PlayStation 30th Anniversary Theme** with classic four-colour button symbols and shoulder-button icons, plus expanded **System Settings** (Brightness, Volume, Cross/Circle Button Assign, USB Mode, Date & Time formatting, and detailed System Information). Your existing settings, covers, pins and music stay when you update from psp5 or an earlier PSP5 REMAKE release.
+**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) introduces the built-in hardware-accelerated **MP4 Video Player**, unified **Media Hub** (Music, Pictures, Videos), **Single-Game Categories Support**, **File Manager Conflict Resolution & Deletion Overhaul**, **Game / App Information**, and **Saved Data Manager**. Your existing settings, covers, pins and music stay intact when updating from psp5 or earlier PSP5 REMAKE releases.
 
 > [!NOTE]
 > **Based on psp5 by 08Weber**
@@ -15,22 +15,61 @@ Not sure which ARK you have? Press **SELECT** in the XMB: ARK's menu shows *ARK 
 | **PSP Go** with **ARK-5** | **`psp5-remake-v__VERSION__-PSPGo-ARK5.zip`** |
 | **PSP Go** with **ARK-4** | **`psp5-remake-v__VERSION__-PSPGo-ARK4.zip`** |
 
-## What's new in __VERSION__
+You can also download the standalone `EBOOT.PBP` files directly from the release assets below.
 
-**Expanded System Settings (`Settings → System`)**
-- **Brightness & Sound Volume**: Adjust screen brightness and main system volume directly from *Settings → System* through the kernel's Impose service.
-- **Button Assign (`✕` / `○`)**: Swap confirm/cancel between Cross and Circle with immediate launcher & Settings UI feedback and PSP system registry persistence.
-- **USB Mode**: Toggle USB Mass Storage directly from *Settings → System* (as well as *Power and USB* and Control Center).
-- **Date & Time Sub-page**: Configure Daylight Saving (`-1 hr`, `As is`, `+1 hr`), Date format (`YYYY-MM-DD`, `DD/MM/YYYY`, `MM/DD/YYYY`), and Time format (`24-hour` / `12-hour`), saved in `psp5.cfg` and reflected live in the top bar clock without altering the PSP's hardware RTC.
-- **System Information Sub-page**: Inspect PSP nickname, model name, full ARK version, Wi-Fi MAC address, free RAM, and live battery level, charging state, voltage, temperature (`°C`), and capacity (`mAh`).
-- Localized across all 10 supported UI languages.
+---
 
-**PlayStation 30th Anniversary Theme & Classic Icons**
-- Added the **30th Anniversary** theme with an embedded classic grey Anniversary backdrop, light grey card surfaces, and adaptive dark ink contrast across the launcher, Settings, File Manager, and Control Center.
-- Added classic four-colour PlayStation button symbols (`✕`, `○`, `□`, `△`), PlayStation logo icon, and custom `L` / `R` shoulder-button keycaps.
+## What's new in v__VERSION__
 
-**Full PSP5 REMAKE Features Included**
-- Custom **PSP5™** boot logo & **Welcome Back** startup backdrop, unified PS5 top navigation bar & outline icons, dedicated **Apps** tab, automatic game icon border trimming & rounded `ICON1.PMF` video card previews, procedural UI sound engine, **Now playing** mini-card in Control Center, and **Standby Screen** with **△** Sleep / Shut down power overlay.
+### 🎬 New Features
+
+- **Built-in MP4 Video Player (`src/video/*`, `src/ui.c`)**:
+  - Direct hardware-accelerated MP4 playback supporting H.264 (AVC) decoding via the PSP's Media Engine (ME) and AAC audio.
+  - Smooth RGB565 rendering directly to display buffers.
+  - Intelligent resume playback memory (prompts to continue from where you left off or start from the beginning).
+  - Quick 10-second forward/backward seeking with `←` / `→`.
+  - Automatic audio lease coordination: safely pauses background music upon video launch and restores audio on exit.
+- **Unified Media Hub Tab (`src/ui.c`, `src/music.c`)**:
+  - Added a dedicated **Media** hub tab housing **Music**, **Pictures**, and **Videos** cards accessible directly from the top navigation bar.
+- **Folder-Based Categories & Single-Game Category Support (`src/scan.c`, `src/ui.c`)**:
+  - Categorization strictly follows actual folder names (`ISO/<category>/<game>` and `PSP/GAME/<category>/<game>/EBOOT.PBP`) across `ms0:` and `ef0:`.
+  - Removed the legacy restriction that hid categories containing only a single game. Now every folder (e.g. `ISO/Racing/`) appears as a full category.
+  - Full support for `g_` (games) and `s_` (apps) folder prefixes, plus `CAT_` (from Game Categories plugins). Prefixes are neatly trimmed from display labels.
+  - **Games** and **Library** tabs maintain their active category filter and cursor position completely independently.
+- **Game / App Information Screen (`src/info.c`, `src/info.h`)**:
+  - Accessible from options menu (`□` → Information) on any game or app card.
+  - Displays DISC ID, DISC_VERSION, APP_VER, PSP_SYSTEM_VER from `PARAM.SFO`, background directory size measurement, free card space, and last played timestamp.
+- **Saved Data Manager (`src/savedata.c`, `src/savedata.h`)**:
+  - Accessible from options menu (`□` → Saved Data) filtered by game ID, or view all savedata on the storage.
+  - Inspect save timestamps, sizes, titles, and delete saves with safety confirmation.
+- **Smart Conflict Resolution in File Manager (`src/files.c`)**:
+  - When copying or moving files/directories to an existing destination, an interactive dialog offers:
+    - **Replace**: Safe atomic overwrite with backup rollback.
+    - **Merge**: Directory tree merging.
+    - **Skip**: Skip conflicting items.
+    - **Auto-rename**: Automatically append `(2)`, `(3)`, etc.
+    - **Apply to all**: Set action for all remaining conflicts in the operation.
+
+### ⚡ Improvements & Fixes
+
+- **File Manager Deletion & Move Hardening**:
+  - Clears read-only file/directory attributes before deletion/removal to prevent permission errors on stubborn files.
+  - Accurate progress bar accounting for byte transfers and item counts during copy/move/delete operations.
+- **12/24-Hour Time Format Integration (`src/datetime.c`, `src/ui.c`)**:
+  - Configurable in *Settings → System → Date and time* (12-hour with AM/PM or 24-hour).
+  - Consistently formatted across the top navigation bar clock and the large Standby Screen clock without touching hardware RTC.
+- **Top Navigation Bar Flow**:
+  - Direct `L` / `R` cycling across **Games**, **Apps**, **Library**, and **Media**, with persistent Now Playing music pill and battery/clock readout.
+- **Control Center & Standby Screen**:
+  - Includes Now Playing mini-card, battery health, and Triangle Power menu for Sleep or double-confirm Shut down.
+
+### 📌 Compatibility Notes & Known Limitations
+
+- **MP4 Video Player Constraints**: Supports standard MP4 container files with H.264 video and AAC audio at PSP-native resolutions (e.g. 480×272). High-profile/unsupported resolutions or non-AAC audio codecs are not supported.
+- **PMF Videos**: Standalone PMF video playback is not part of the integrated video player. PMF remains used exclusively for animated game icon card previews (`ICON1.PMF`).
+- **UMD Video ISO Behavior**: Selecting a UMD Video ISO in `ISO/VIDEO` prompts for confirmation, mounts the ISO via ARK, and cleanly redirects to the XMB, where the user starts movie playback from the XMB Video column.
+
+---
 
 ## Thank you
 
