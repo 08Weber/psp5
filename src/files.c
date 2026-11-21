@@ -298,8 +298,40 @@ static void tree_size(const char *path, int is_dir, u64 bytes, u64 *total_bytes,
     free(list);
 }
 
+static void clear_readonly(const char *path)
+{
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(path, &st) < 0)
+        return;
+    st.st_mode |= 0777;
+    sceIoChstat(path, &st,
+#ifdef FIO_CST_MODE
+                FIO_CST_MODE
+#else
+                0x0001
+#endif
+    );
+}
+
+static int remove_file_retry(const char *path)
+{
+    if (sceIoRemove(path) >= 0)
+        return 1;
+    clear_readonly(path);
+    return sceIoRemove(path) >= 0;
+}
+
+static int remove_dir_retry(const char *path)
+{
+    if (sceIoRmdir(path) >= 0)
+        return 1;
+    clear_readonly(path);
+    return sceIoRmdir(path) >= 0;
+}
+
 /* count = 1: räknas i förloppet (radering), force_cleanup = 1: städa även om W.cancel är satt */
-static int delete_tree(const char *path, int is_dir, int count, int force_cleanup, int depth)
+static int delete_tree(const char *path, int is_dir, int count, int force_cleanup, int retry_ro, int depth)
 {
     if (!force_cleanup && W.cancel)
         return R_CANCELLED;
@@ -314,13 +346,18 @@ static int delete_tree(const char *path, int is_dir, int count, int force_cleanu
         for (int i = 0; i < n && r == R_OK; i++) {
             char child[MAX_PATH];
             join(child, sizeof(child), path, list[i].name);
-            r = delete_tree(child, list[i].kind == KIND_DIR, count, force_cleanup, depth + 1);
+            r = delete_tree(child, list[i].kind == KIND_DIR, count, force_cleanup, retry_ro, depth + 1);
         }
         free(list);
-        if (r == R_OK && sceIoRmdir(path) < 0)
+        if (r == R_OK) {
+            int removed = retry_ro ? remove_dir_retry(path) : (sceIoRmdir(path) >= 0);
+            if (!removed)
+                r = R_FAILED;
+        }
+    } else {
+        int removed = retry_ro ? remove_file_retry(path) : (sceIoRemove(path) >= 0);
+        if (!removed)
             r = R_FAILED;
-    } else if (sceIoRemove(path) < 0) {
-        r = R_FAILED;
     }
     if (count && r == R_OK)
         W.done++;
@@ -432,13 +469,16 @@ static int move_file_to(const char *src, const char *dst_dir, const char *dst, i
 {
     if (same_device(src, dst_dir)) {
         if (!is_replace) {
-            if (sceIoRename(src, dst) >= 0)
+            if (sceIoRename(src, dst) >= 0) {
+                W.done += src_size;
                 return R_OK;
+            }
         } else {
             char bak[MAX_PATH];
             if (temp_sibling(bak, sizeof(bak), dst_dir, ".psp5bak_") && sceIoRename(dst, bak) >= 0) {
                 if (sceIoRename(src, dst) >= 0) {
                     sceIoRemove(bak);
+                    W.done += src_size;
                     return R_OK;
                 }
                 sceIoRename(bak, dst); /* rollback */
@@ -448,9 +488,14 @@ static int move_file_to(const char *src, const char *dst_dir, const char *dst, i
     int r = copy_file_atomic(src, dst_dir, dst, is_replace, src_size);
     if (r != R_OK)
         return r;
-    if (sceIoRemove(src) < 0) {
+    if (W.cancel) {
         W.src_keep = 1;
         return R_SRC_KEEP;
+    }
+    if (!remove_file_retry(src)) {
+        W.src_keep = 1;
+        if (W.cancel)
+            return R_SRC_KEEP;
     }
     return R_OK;
 }
@@ -477,8 +522,12 @@ static int process_item(const char *src, const char *dst_dir, const char *target
     parent_of(parent, sizeof(parent), src);
 
     if (top_level && same_path(parent, dst_dir)) {
-        if (W.op == OP_MOVE && !copy_only)
+        if (W.op == OP_MOVE && !copy_only) {
+            u64 b = 0, it = 0;
+            tree_size(src, src_dir, src_size, &b, &it, 0);
+            W.done += b;
             return R_OK; /* flytt till samma mapp: redan här */
+        }
         if (!unique_dest(dst, sizeof(dst), dst_dir, target_name, src_dir))
             return R_FAILED;
     } else {
@@ -529,8 +578,12 @@ static int process_item(const char *src, const char *dst_dir, const char *target
 
     /* src är en mapp */
     if (!merging && W.op == OP_MOVE && !copy_only && same_device(src, dst_dir)) {
-        if (sceIoRename(src, dst) >= 0)
+        if (sceIoRename(src, dst) >= 0) {
+            u64 b = 0, it = 0;
+            tree_size(dst, 1, 0, &b, &it, 0);
+            W.done += b;
             return R_OK;
+        }
     }
 
     int created_dir = 0;
@@ -562,7 +615,7 @@ static int process_item(const char *src, const char *dst_dir, const char *target
 
     if (r != R_OK) {
         if (created_dir)
-            delete_tree(dst, 1, 0, 1, depth); /* städa bara mapp som vi själva skapade i denna operation */
+            delete_tree(dst, 1, 0, 1, 0, depth); /* städa bara mapp som vi själva skapade i denna operation */
         return r;
     }
 
@@ -570,17 +623,23 @@ static int process_item(const char *src, const char *dst_dir, const char *target
         *item_skipped = 1;
 
     if (W.op == OP_MOVE && !copy_only) {
+        if (W.cancel) {
+            W.src_keep = 1;
+            return R_SRC_KEEP;
+        }
         if (created_dir) {
-            /* Hela den nya mappen är färdigkopierad och verifierad -> ta bort källan */
-            if (delete_tree(src, 1, 0, 0, depth) != R_OK) {
+            /* Hela den nya mappen är färdigkopierad och verifierad -> ta bort källan utan att avbryta mitt i trädet */
+            if (delete_tree(src, 1, 0, 1, 1, 0) != R_OK) {
                 W.src_keep = 1;
-                return R_SRC_KEEP;
+                if (W.cancel)
+                    return R_SRC_KEEP;
             }
         } else if (!sub_skipped) {
             /* Merge där alla barn flyttades: ta bort tom källmapp */
-            if (sceIoRmdir(src) < 0) {
+            if (!remove_dir_retry(src)) {
                 W.src_keep = 1;
-                return R_SRC_KEEP;
+                if (W.cancel)
+                    return R_SRC_KEEP;
             }
         }
     }
@@ -590,7 +649,7 @@ static int process_item(const char *src, const char *dst_dir, const char *target
 static int worker(SceSize args, void *argp)
 {
     int is_dir[MAX_CLIP], r = R_OK;
-    u64 bytes = 0, items = 0;
+    u64 bytes = 0, copy_bytes = 0, items = 0;
     for (int i = 0; i < W.n; i++) {
         SceIoStat st;
         memset(&st, 0, sizeof(st));
@@ -599,13 +658,16 @@ static int worker(SceSize args, void *argp)
             continue;
         }
         is_dir[i] = FIO_S_ISDIR(st.st_mode) != 0;
-        /* en flytt på samma enhet utan konflikt är bara ett namnbyte, men vid merge/fallback räknar vi storlek */
+        u64 item_bytes = 0, item_items = 0;
+        tree_size(W.src[i], is_dir[i], st.st_size, &item_bytes, &item_items, 0);
+        bytes += item_bytes;
+        items += item_items;
         if (W.op != OP_MOVE || !same_device(W.src[i], W.dest))
-            tree_size(W.src[i], is_dir[i], st.st_size, &bytes, &items, 0);
+            copy_bytes += item_bytes;
     }
     W.total = W.op == OP_DELETE ? items : bytes;
     u64 free_b, total_b;
-    if (W.op != OP_DELETE && bytes && dev_space(W.dest, &free_b, &total_b) && bytes + 1024 * 1024 > free_b)
+    if (W.op != OP_DELETE && copy_bytes && dev_space(W.dest, &free_b, &total_b) && copy_bytes + 1024 * 1024 > free_b)
         r = R_NO_SPACE;
 
     for (int i = 0; i < W.n && r == R_OK; i++) {
@@ -614,7 +676,7 @@ static int worker(SceSize args, void *argp)
         const char *bname = base_name(W.src[i]);
         snprintf(W.current, sizeof(W.current), "%s", bname);
         if (W.op == OP_DELETE) {
-            r = delete_tree(W.src[i], is_dir[i], 1, 0, 0);
+            r = delete_tree(W.src[i], is_dir[i], 1, 0, 0, 0);
             continue;
         }
         int sk = 0;
