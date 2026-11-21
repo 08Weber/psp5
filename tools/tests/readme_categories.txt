@@ -1,0 +1,12 @@
+wait 180
+press cross
+wait 45
+press select
+wait 30
+shot 01-games-categories
+press down
+wait 45
+shot 02-games-category-selected
+press cross
+wait 45
+shot 03-games-category-active

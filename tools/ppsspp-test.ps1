@@ -136,4 +136,5 @@ try {
     }
     if ($createdTestGame) { Remove-Item -LiteralPath $testGame -Recurse -Force -ErrorAction SilentlyContinue }
 }
+if ($done -lt $names.Count) { throw "Capture timed out after completing $done of $($names.Count) screenshot steps." }
 "$saved of $($names.Count) PPSSPP window screenshots saved in $Out ($done steps completed)"

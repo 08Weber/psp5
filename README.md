@@ -11,8 +11,9 @@ PSP5 REMAKE is an unofficial fan project. Its interface is original work and is 
 
 ## Screenshots
 
-These screenshots show the current UI in PPSSPP using generated sample games, apps, music, and pictures. The sample
-content is for demonstration; compatibility and playback should still be checked on real PSP hardware.
+These screenshots show the current UI in PPSSPP using generated sample games, apps, music, pictures, and saved data.
+The Console Information screen uses simulated PSP details, and its MAC address is masked. Sample content is for
+demonstration; compatibility and playback should still be checked on real PSP hardware.
 
 | Games | Apps |
 |---|---|
@@ -29,6 +30,22 @@ content is for demonstration; compatibility and playback should still be checked
 | Settings |
 |---|
 | <img src="docs/screenshots/settings.png" width="480" alt="Settings screen"> |
+
+| Control Center | Standby Screen |
+|---|---|
+| <img src="docs/screenshots/control-center.png" width="480" alt="Control Center sidebar with File manager selected"> | <img src="docs/screenshots/standby.png" width="480" alt="Standby Screen clock and battery"> |
+
+| File Manager | Games Categories |
+|---|---|
+| <img src="docs/screenshots/file-manager.png" width="480" alt="File Manager at the Memory Stick root"> | <img src="docs/screenshots/categories.png" width="480" alt="Games tab filtered to the Racing category"> |
+
+| Category Picker | Saved Data Manager |
+|---|---|
+| <img src="docs/screenshots/category-picker.png" width="480" alt="Games category picker"> | <img src="docs/screenshots/savedata.png" width="480" alt="Saved Data Manager with sample saves"> |
+
+| Saved Data Details | Console Information |
+|---|---|
+| <img src="docs/screenshots/savedata-details.png" width="480" alt="Saved data details and protected status"> | <img src="docs/screenshots/console-information.png" width="480" alt="Console Information with MAC address masked"> |
 
 ## What it does
 
