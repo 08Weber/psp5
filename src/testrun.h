@@ -18,7 +18,7 @@
 #ifdef PSP5_TEST
 void testrun_init(void);
 u32 testrun_buttons(u32 real);            /* ersätter knapparna när skriptet körs */
-void testrun_frame(const void *framebuf); /* anropas efter varje färdig bildruta */
+void testrun_frame(void); /* anropas efter varje färdig bildruta */
 int testrun_take_resume(void);            /* 1 en gång efter "resume" i skriptet */
 int testrun_take_sleep(void);             /* 1 en gång efter "sleep" i skriptet */
 int testrun_volume(void);                /* låtsad volym (se ovan), -1 = riktig */
@@ -27,7 +27,7 @@ int testrun_battery(void);               /* låtsad batterinivå i %, -1 = rikti
 #else
 static inline void testrun_init(void) {}
 static inline u32 testrun_buttons(u32 real) { return real; }
-static inline void testrun_frame(const void *framebuf) {}
+static inline void testrun_frame(void) {}
 static inline int testrun_take_resume(void) { return 0; }
 static inline int testrun_take_sleep(void) { return 0; }
 static inline int testrun_volume(void) { return -1; }

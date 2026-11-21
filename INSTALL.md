@@ -2,7 +2,7 @@
 
 *PSP5 REMAKE – fork by medhatk (based on psp5 by 08Weber)*
 
-**You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go) and a **USB cable**.
+**You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000, E1000 Street, or PSP Go) and a **USB cable**.
 
 ## 1. Pick your zip
 
@@ -10,12 +10,13 @@ Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK
 
 | Your PSP | Download this |
 |---|---|
-| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-remake-v1.0.3-ARK5.zip` |
-| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-remake-v1.0.3-ARK4.zip` |
-| **PSP Go** with **ARK-5** | `psp5-remake-v1.0.3-PSPGo-ARK5.zip` |
-| **PSP Go** with **ARK-4** | `psp5-remake-v1.0.3-PSPGo-ARK4.zip` |
+| PSP-1000, 2000, 3000, or E1000 Street with **ARK-5** | `psp5-remake-vX.Y.Z-ARK5.zip` |
+| PSP-1000, 2000, 3000, or E1000 Street with **ARK-4** | `psp5-remake-vX.Y.Z-ARK4.zip` |
+| **PSP Go** with **ARK-5** | `psp5-remake-vX.Y.Z-PSPGo-ARK5.zip` |
+| **PSP Go** with **ARK-4** | `psp5-remake-vX.Y.Z-PSPGo-ARK4.zip` |
 
-You'll find them under [Releases](../../releases). Unzip the one you downloaded.
+Download the latest release from [Releases](https://github.com/medhatk/PSP5-REMAKE/releases), then choose the
+file whose version and ARK label match your setup. `X.Y.Z` stands for the release number. Unzip that file.
 
 ## 2. Copy it to the PSP
 
@@ -26,7 +27,7 @@ You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 
 ## 3. Start PSP5 REMAKE
 
-- **PSP-1000, 2000 or 3000:** *Game → Memory Stick → PSP5 REMAKE*
+- **PSP-1000, 2000, 3000 or E1000 Street:** *Game → Memory Stick → PSP5 REMAKE*
 - **PSP Go:** *Game → System Storage → PSP5 REMAKE*
 
 That's it! The first start takes a moment while PSP5 REMAKE finds your games. After that it opens fast.
@@ -48,20 +49,25 @@ To get to the XMB from there: △ → *Power and USB* → *Exit to XMB*.
 |---|---|
 | PSP games (`.iso`, `.cso`, `.zso`, `.dax`) | `ISO` |
 | Homebrew, PSN and PS1 games | `PSP/GAME` |
-| Music (`.mp3`, `.m4a`) | `MUSIC` (sub-folders are fine) |
+| Music (`.mp3`, `.m4a`, `.m4b`) | `MUSIC` (sub-folders are fine) |
+| MP4 videos | `VIDEO`, `PSP/VIDEO`, or `MP_ROOT` |
+| Pictures (`.jpg`, `.jpeg`, `.png`, `.bmp`) | `PICTURE`, `PSP/PHOTO`, or `PSP/SCREENSHOT` |
 | UMD Video movies (`.iso`) | `ISO/VIDEO` |
 
-On a PSP Go, PSP5 REMAKE looks in these folders on both the internal storage and a Memory Stick Micro.
+On a PSP Go, PSP5 REMAKE looks for these folders on both the internal storage and a Memory Stick Micro. PSP Go
+builds are available, but PSP Go operation has not yet been verified on real hardware.
 
 ## Buttons
 
 | Button | What it does |
 |---|---|
 | ✕ or START | Start the game (in Music: play / pause) |
-| L / R | Switch between Games, Apps, Library, Music and Settings |
+| L / R | Switch between Games, Apps, Library and Media |
 | □ | Options: pin to front · move (pinned games) · Library: also sort · Music: shuffle |
 | △ | Settings · Music: albums |
 | ← → in Music | Previous / next track · hold to seek |
+| ✕ in Pictures | Open a picture · open again to set it as wallpaper |
+| ← → in Videos | Seek 10 seconds backward / forward during MP4 playback |
 | ○ | Back |
 | SELECT | Categories (folders in ISO and PSP/GAME) |
 | HOME | Control Center: music, Standby Screen, screenshot, sleep, USB, files, settings, XMB, restart, power off |
@@ -69,8 +75,8 @@ On a PSP Go, PSP5 REMAKE looks in these folders on both the internal storage and
 ## File manager
 
 *Settings → Power and USB → File manager* lets you manage files right on the PSP. ✕ opens a folder, □ marks
-files, △ shows what you can do (copy, move, paste, rename, delete, new folder) and ○ goes back. ✕ on a JPEG or
-PNG shows the picture, and ✕ again makes it your wallpaper.
+files, △ shows what you can do (copy, move, paste, rename, delete, new folder) and ○ goes back. ✕ on a JPG,
+JPEG, PNG, or BMP file shows the picture; ✕ again sets it as your wallpaper.
 
 ## Updating
 

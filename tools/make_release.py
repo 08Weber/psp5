@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 README = """PSP5 REMAKE v{version} for {ark}
 fork by medhatk (based on psp5 by 08Weber)
 
-This zip is for PSPs running {ark} (PSP-1000, PSP-2000 and PSP-3000).
+This zip is for PSPs running {ark} (PSP-1000, PSP-2000, PSP-3000 and E1000 Street).
 {other}
 
 Install:
@@ -30,7 +30,8 @@ Optional - use PSP5 REMAKE as ARK's launcher:
   rename PSP/SAVEDATA/ARK_01234/VBOOT.PBP to VBOOT_ARKMENU.PBP, then copy
   ARK_LAUNCHER/VBOOT.PBP from this zip into PSP/SAVEDATA/ARK_01234/.
 
-Music: put .mp3 or .m4a files in the MUSIC folder.
+Music: put .mp3, .m4a or .m4b files in MUSIC (sub-folders are fine).
+MP4 videos: VIDEO, PSP/VIDEO or MP_ROOT. Pictures (.jpg, .jpeg, .png, .bmp): PICTURE, PSP/PHOTO or PSP/SCREENSHOT.
 Stuck? Hold SELECT while turning on the PSP - ARK then starts the normal XMB.
 Full guide: https://github.com/medhatk/PSP5-REMAKE/blob/main/INSTALL.md
 """
@@ -41,13 +42,16 @@ fork by medhatk (based on psp5 by 08Weber)
 This zip is for the PSP Go (PSP-N1000) running {ark}.
 {other}
 
+PSP Go builds are available, but PSP Go operation has not yet been verified on real hardware.
+
 Install:
   1. Connect the PSP Go with USB (Settings -> USB Connection).
   2. Copy the PSP folder onto the PSP Go's internal storage (merge folders).
   3. Start PSP5 REMAKE from Game -> System Storage.
 
-Games: ISO/CSO/ZSO in ISO, homebrew, PSN and PS1 games in PSP/GAME, music in MUSIC -
-on the internal storage or on a Memory Stick Micro (M2).
+Games: ISO/CSO/ZSO in ISO; homebrew, PSN and PS1 games in PSP/GAME; music (.mp3, .m4a, .m4b) in MUSIC.
+MP4 videos: VIDEO, PSP/VIDEO or MP_ROOT. Pictures (.jpg, .jpeg, .png, .bmp): PICTURE, PSP/PHOTO or PSP/SCREENSHOT.
+These folders can be on the internal storage or a Memory Stick Micro (M2).
 
 Optional - use PSP5 REMAKE as ARK's launcher:
   rename PSP/SAVEDATA/ARK_01234/VBOOT.PBP to VBOOT_ARKMENU.PBP, then copy

@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include "image.h" /* [medhatk] img_save_png() for direct VRAM PNG capture in PSP5_TEST */
 #include "testrun.h"
 
 #define MAX_STEPS 128
@@ -163,33 +162,16 @@ int testrun_take_resume(void)
     return r;
 }
 
-/* Skärmdump: lämna NAMN.req och vänta tills testskriptet på datorn har fotograferat
- * fönstret och tagit bort filen (PPSSPP skriver inte tillbaka bildminnet). */
+/* Skärmdump: signalera testskriptet på datorn, som fångar PPSSPP-fönstret och tar bort .req. */
 static int s_requested, s_poll;
 
-void testrun_frame(const void *framebuf)
+void testrun_frame(void)
 {
     if (!s_active || s_wait > 0 || s_hold > 0 || s_pos >= s_count || s_steps[s_pos].op != 's')
         return;
     char path[80];
     snprintf(path, sizeof(path), "ms0:/PSP5/shots/%s.req", s_steps[s_pos].name);
     if (!s_requested) {
-        /* [medhatk] Save non-black VRAM directly as PNG alongside .req so automated tests capture cleanly on Windows */
-        if (framebuf) {
-            const u32 *px = (const u32 *)framebuf;
-            int non_black = 0;
-            for (int y = 0; y < SCREEN_H && !non_black; y += 8)
-                for (int x = 0; x < SCREEN_W; x += 8)
-                    if (px[y * 512 + x] & 0x00FFFFFFu) {
-                        non_black = 1;
-                        break;
-                    }
-            if (non_black) {
-                char png[80];
-                snprintf(png, sizeof(png), "ms0:/PSP5/shots/%s.png", s_steps[s_pos].name);
-                img_save_png(png, px, SCREEN_W, SCREEN_H, 512);
-            }
-        }
         SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
         if (fd >= 0)
             sceIoClose(fd);

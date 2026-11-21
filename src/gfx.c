@@ -198,7 +198,7 @@ void gfx_end_with(void (*after_draw)(void))
     if (after_draw)
         after_draw();
     osd_capture((const u32 *)(0x44000000 + (u32)s_draw), BUF_W);
-    testrun_frame((const void *)(0x44000000 + (u32)s_draw)); /* bara i testbyggen */
+    testrun_frame(); /* bara i testbyggen */
     sceDisplayWaitVblankStart();
     s_draw = sceGuSwapBuffers();
 }
