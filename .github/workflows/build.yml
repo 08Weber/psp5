@@ -8,7 +8,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # shortcut: pspdev:s pacman behöver libgpgme.so.11, som ubuntu-26.04 saknar – byt när pspdev byggs för 26.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
