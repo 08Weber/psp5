@@ -15,6 +15,17 @@ startar PSP:n direkt i psp5 i stället för XMB.
 - **Tillbaka till arkMenu:** kopiera `ARK_01234/VBOOT_ARKMENU.PBP` till `VBOOT.PBP` (kopia finns även i `backup/`).
 - En ARK-uppdatering kan skriva över `VBOOT.PBP` – kopiera då in `dist/PSP/GAME/PSP5/EBOOT.PBP` som `VBOOT.PBP` igen.
 
+## Version 2.1.4
+
+Buggfix efter 2.1.3 (issue #50).
+
+- **ARK-4 kändes inte igen (#50):** ARK-4 före februari 2026 svarar på `sctrlSEGetVersion` med ett packat värde
+  (`major << 24 | minor << 16 | micro << 8 | revision`), som psp5 tog för ARK-5. psp5 skrev då SETTINGS.TXT i
+  ARK-5:s format (`cpuclock:333`, `highmem:auto`, `mscache:4k`), som ARK-4 hoppar över – spel startade från psp5
+  fick varken överklockning, extra minne eller minneskortscache, och XMB:ns CFW-inställningar visade standardvärden.
+  Nu läses huvudversionen ur båda formaten. På ARK-4 läser och skriver `arkcfg.c` inte längre ARK-5-raderna, så
+  att filer som en äldre psp5 skrev rensas och psp5 visar det ARK-4 faktiskt använder.
+
 ## Version 2.1.3
 
 Buggfixar och önskemål efter 2.1.2 (issues #27, #39, #43, #44).

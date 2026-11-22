@@ -136,8 +136,10 @@ void sys_init(const char *self_path)
     snprintf(s_ark_dir, sizeof(s_ark_dir), "%s/PSP/SAVEDATA/ARK_01234/", g_root);
     /* ARK:s funktioner finns bara med CFW – inte i t.ex. PPSSPP */
     if (launch_supported()) {
-        int major = sctrlSEGetVersion();
-        s_ark = major == 4 ? 4 : 5; /* ARK-4 ger 4, ARK-5 ger 5 */
+        /* ARK-4 före feb 2026 ger major << 24 | ..., nyare ARK bara major (issue #50) */
+        u32 v = (u32)sctrlSEGetVersion();
+        int major = v > 0xFF ? (int)(v >> 24) : (int)v;
+        s_ark = major == 4 ? 4 : 5;
         s_model = kuKernelGetModel();
         s_ms_is_ef = sctrlKernelMsIsEf() == 1;
         memset(&s_conf, 0, sizeof(s_conf));

@@ -113,6 +113,11 @@ static int parse_setting(const char *rl, const char *key, const char *en)
     opt = opt ? opt + 1 : "";
     unsigned char *b;
 
+    /* ARK-4 ignorerar ARK-5:s cpuclock:N, highmem:X och mscache:X – gör likadant och skriv inte tillbaka dem (issue #50) */
+    if (g_arkcfg_ark4 && (!strncasecmp(key, "cpuclock", 8) ||
+                          ((!strncasecmp(key, "highmem", 7) || !strncasecmp(key, "mscache", 7)) && *opt)))
+        return 1;
+
     if ((b = bool_key(key))) {
         *b = level;
     } else if (!strncasecmp(key, "cpuclock", 8)) {
