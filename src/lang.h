@@ -43,6 +43,7 @@ typedef enum {
     S_UMD_VIDEO_CONFIRM, S_UMD_VIDEO_CONTINUE, S_UMD_VIDEO_CANCEL,
     /* [medhatk] Standby Screen: Control Center item label, HOME unlock hint, and Power panel title */
     S_STANDBY, S_STANDBY_UNLOCK, S_POWER,
+    S_QUICK_SETTINGS,
     /* made by medhatk - System Settings */
     S_BRIGHTNESS, S_VOLUME, S_BUTTON_ASSIGN, S_BTN_CROSS, S_BTN_CIRCLE,
     S_DATETIME, S_DT_CURRENT, S_DT_DST, S_DT_DST_REMOVE, S_DT_DST_KEEP, S_DT_DST_ADD,

@@ -555,6 +555,9 @@ static const char *const T[S_COUNT][NL] = {
                            "HOMEを押してロック解除" },
     [S_POWER] = { "Power", "Ström", "Energie", "Alimentation", "Energía", "Energia",
                   "Energie", "Energia", "Питание", "電源" },
+    [S_QUICK_SETTINGS] = { "Quick Settings", "Snabbinställningar", "Schnelleinstellungen", "Réglages rapides",
+                           "Ajustes rápidos", "Impostazioni rapide", "Snelle instellingen", "Definições rápidas",
+                           "Быстрые настройки", "クイック設定" },
     /* made by medhatk - System Settings */
     [S_BRIGHTNESS] = { "Brightness", "Ljusstyrka", "Helligkeit", "Luminosité", "Brillo", "Luminosità",
                        "Helderheid", "Brilho", "Яркость", "明るさ" },

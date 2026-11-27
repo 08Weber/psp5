@@ -486,7 +486,7 @@ void font_init(int need_jpn)
 {
     intraFontInit();
     s_font = intraFontLoad("flash0:/font/ltn0.pgf", INTRAFONT_CACHE_LARGE | INTRAFONT_CACHE_ALL);
-    s_bold = intraFontLoad("flash0:/font/ltn4.pgf", INTRAFONT_CACHE_LARGE | INTRAFONT_CACHE_ALL);
+    s_bold = intraFontLoad("flash0:/font/ltn4.pgf", INTRAFONT_CACHE_MED);
     if (!s_bold)
         s_bold = s_font;
     if (need_jpn)

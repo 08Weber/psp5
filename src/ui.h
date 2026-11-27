@@ -150,6 +150,18 @@ typedef struct {
     int cc_action;       /* SA_* som main.c ska utföra efter UI_ACTION */
     char umd_video_path[256]; /* SA_UMD_VIDEO: ISO:n i ISO/VIDEO */
 
+    /* [medhatk] Quick Settings (START, right-side drawer) */
+    int qs_open;
+    float qs_anim;
+    int qs_sel;
+    float qs_pos;
+    int qs_br_levels[6], qs_br_n, qs_br_idx;
+    int qs_vol;
+    int qs_cfw_dirty;
+    float qs_save_timer;
+    int qs_step_dir;
+    float qs_step_time;
+
     /* [medhatk] Standby Screen runtime state (time, fade-out, Power overlay, double-confirm) */
     float sb_time;         /* seconds since Standby Screen opened (0.3s input guard + fade-in) */
     float sb_leave;        /* >0 while fading out to black before returning control */

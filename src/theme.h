@@ -5,9 +5,9 @@
 #include "gfx.h"
 
 /* Bakgrundens mönster */
-enum { DECO_SPOT, DECO_PS1, DECO_PS2, DECO_PS3, DECO_PS4, DECO_ANNIV };
+enum { DECO_SPOT, DECO_PS1, DECO_PS2, DECO_PS3, DECO_PS4, DECO_ANNIV, DECO_ANNIV_DARK };
 
-/* Gränssnittets färgroller (text, ytor, markering, reglage) för ljusa teman.
+/* Gränssnittets färgroller (text, ytor, markering, reglage) för teman med egen palett.
  * Alla färger är ogenomskinliga RGBA(); ritvägen lägger på sin egen alfa/toning.
  *
  * De befintliga mörka temana har ink = NULL: varje ritväg använder då exakt den färg
@@ -20,12 +20,17 @@ typedef struct {
     u32 panel, panel_alt;           /* kort/paneler och sekundära ytor */
     u32 panel_deep, panel_hi;       /* betonad yta och ljus framhävd yta */
     u32 border, border_hi;          /* tunna kanter och ljusa skiljelinjer */
-    u32 graphite, graphite_soft;    /* mörka ytor: primärknappar, viktiga reglage */
+    u32 graphite, graphite_soft;    /* mörka överlägg: OSD, Control Center, meny, toast */
     u32 shadow;                     /* diskret djup */
     u32 sel_fill, sel_ink, sel_edge;/* markerat objekt: yta, text/ikon, kontrastkant */
     u32 toggle_off, knob;           /* avslaget reglage och reglagets knopp */
     u32 sym[4];                     /* handkontrollens symboler, se THEME_SYM_* */
     u32 ok, warn, err;              /* status, underordnade det grå */
+    u32 fg_hi;                      /* högkontrastfärg för ikoner, pilar, mätare och knappsymboler */
+    u32 pill_fill, pill_ink;        /* primärknapp/badge: fyllning och text */
+    u32 toggle_on;                  /* påslaget reglage och förloppsindikator */
+    u32 inv_dim;                    /* dämpad text på mörka överlägg */
+    u8 dark;                        /* 1 = mörkt tema med egen ink-palett */
 } ThemeInk;
 
 /* sym[]-ordning */
@@ -48,7 +53,7 @@ typedef struct {
     const ThemeInk *ink;/* gränssnittets färgroller, NULL = ritvägens egna (mörka) färger */
 } Theme;
 
-enum { THEME_FIRST_CLASSIC = 13 }; /* PS1–PS4 kommer efter PS5:s färger och Anniversary */
+enum { THEME_FIRST_CLASSIC = 14 }; /* PS1–PS4 kommer efter PS5:s färger och Anniversary */
 
 /* Färgroll för ett tema: temats egen roll om det har en palett, annars `legacy` –
  * ritvägens nuvarande färg, oförändrad för alla befintliga teman. */
@@ -76,5 +81,8 @@ u32 theme_toggle_on(const Theme *t);
 void theme_button(const Theme *t, float cx, float cy, float r, int kind, int on_dark, u32 plate, u32 mark);
 /* Markerad rad/kapsel: befintliga teman ritar legacy_fill, ljusa teman får sel_edge + sel_fill. */
 void theme_sel_box(const Theme *t, float x, float y, float w, float h, float r, u32 legacy_fill);
+
+/* Frigör eventuella cachade bakgrundstexturer (t.ex. 30th Anniversary). */
+void theme_term(void);
 
 #endif

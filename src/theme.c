@@ -10,6 +10,7 @@
 #include "theme.h"
 #include "image.h"
 #include "anniv_bg.h"
+#include "anniv_dark_bg.h"
 
 #define PI 3.14159265f
 #define C(r, g, b) RGBA(r, g, b, 255)
@@ -58,6 +59,60 @@ static const ThemeInk INK_ANNIV = {
     .sym = { [THEME_SYM_CROSS] = ANNIV_CROSS, [THEME_SYM_SQUARE] = ANNIV_SQUARE,
              [THEME_SYM_CIRCLE] = ANNIV_CIRCLE, [THEME_SYM_TRIANGLE] = ANNIV_TRIANGLE },
     .ok = ANNIV_OK, .warn = ANNIV_WARN, .err = ANNIV_ERR,
+    .fg_hi = ANNIV_GRAPHITE,
+    .pill_fill = ANNIV_GRAPHITE, .pill_ink = ANNIV_TEXT_INVERSE,
+    .toggle_on = ANNIV_GRAPHITE,
+    .inv_dim = ANNIV_SURFACE_ALT,
+    .dark = 0,
+};
+
+/* --- 30th Anniversary Dark ---
+ * Mörk version med officiell mörkgrå konsolbakgrund (#212121), matta kolgrå ytor och
+ * PS1/PS2-inspirerad turkos LED-accent (#18A696) hämtad ur bakgrundens detaljer. */
+#define ANNIV_DARK_BG            HEX(0x212121)
+#define ANNIV_DARK_SURFACE       HEX(0x2B2B2E)
+#define ANNIV_DARK_SURFACE_ALT   HEX(0x242427)
+#define ANNIV_DARK_SURFACE_DEEP  HEX(0x1B1B1D)
+#define ANNIV_DARK_SURFACE_LIGHT HEX(0x36373B)
+#define ANNIV_DARK_GRAPHITE      HEX(0x232427)
+#define ANNIV_DARK_GRAPHITE_SOFT HEX(0x2D2E32)
+#define ANNIV_DARK_BORDER        HEX(0x43444A)
+#define ANNIV_DARK_BORDER_LIGHT  HEX(0x5B5C63)
+#define ANNIV_DARK_SHADOW        HEX(0x111113)
+#define ANNIV_DARK_TEXT          HEX(0xECECE8)
+#define ANNIV_DARK_TEXT_2        HEX(0xA4A5A1)
+#define ANNIV_DARK_TEXT_MUTED    HEX(0x767774)
+#define ANNIV_DARK_TEXT_INVERSE  HEX(0xECECE8)
+#define ANNIV_DARK_FG_HI         HEX(0xDCDCD8)
+#define ANNIV_DARK_ACCENT        HEX(0x18A696)
+#define ANNIV_DARK_PILL_FILL     HEX(0x159485)
+#define ANNIV_DARK_PILL_INK      HEX(0xF4F4F0)
+#define ANNIV_DARK_SEL_FILL      HEX(0x34383B)
+#define ANNIV_DARK_SEL_INK       HEX(0xF4F4F0)
+#define ANNIV_DARK_TOGGLE_OFF    HEX(0x3D3E43)
+#define ANNIV_DARK_KNOB          HEX(0xEFEFEB)
+#define ANNIV_DARK_OK            HEX(0x52B87A)
+#define ANNIV_DARK_WARN          HEX(0xE0A84B)
+#define ANNIV_DARK_ERR           HEX(0xE0625C)
+
+static const ThemeInk INK_ANNIV_DARK = {
+    .text = ANNIV_DARK_TEXT, .text_dim = ANNIV_DARK_TEXT_2, .text_muted = ANNIV_DARK_TEXT_MUTED,
+    .text_inverse = ANNIV_DARK_TEXT_INVERSE,
+    .panel = ANNIV_DARK_SURFACE, .panel_alt = ANNIV_DARK_SURFACE_ALT,
+    .panel_deep = ANNIV_DARK_SURFACE_DEEP, .panel_hi = ANNIV_DARK_SURFACE_LIGHT,
+    .border = ANNIV_DARK_BORDER, .border_hi = ANNIV_DARK_BORDER_LIGHT,
+    .graphite = ANNIV_DARK_GRAPHITE, .graphite_soft = ANNIV_DARK_GRAPHITE_SOFT,
+    .shadow = ANNIV_DARK_SHADOW,
+    .sel_fill = ANNIV_DARK_SEL_FILL, .sel_ink = ANNIV_DARK_SEL_INK, .sel_edge = ANNIV_DARK_ACCENT,
+    .toggle_off = ANNIV_DARK_TOGGLE_OFF, .knob = ANNIV_DARK_KNOB,
+    .sym = { [THEME_SYM_CROSS] = ANNIV_CROSS, [THEME_SYM_SQUARE] = ANNIV_SQUARE,
+             [THEME_SYM_CIRCLE] = ANNIV_CIRCLE, [THEME_SYM_TRIANGLE] = ANNIV_TRIANGLE },
+    .ok = ANNIV_DARK_OK, .warn = ANNIV_DARK_WARN, .err = ANNIV_DARK_ERR,
+    .fg_hi = ANNIV_DARK_FG_HI,
+    .pill_fill = ANNIV_DARK_PILL_FILL, .pill_ink = ANNIV_DARK_PILL_INK,
+    .toggle_on = ANNIV_DARK_ACCENT,
+    .inv_dim = ANNIV_DARK_TEXT_2,
+    .dark = 1,
 };
 
 /* De 16 befintliga temana anger inte `ink` och får därmed NULL (C nollställer
@@ -93,6 +148,9 @@ static const Theme THEMES[] = {
     { "anniv30", "PlayStation 30th Anniversary", ANNIV_BG, ANNIV_SURFACE_ALT, ANNIV_BG, ANNIV_SURFACE_ALT,
       RGBA(0xDE, 0xDD, 0xD7, 40), RGBA(0xA9, 0xA8, 0xA2, 28), 0, ANNIV_GRAPHITE_SOFT, ANNIV_SURFACE_ALT,
       DECO_ANNIV, 0, &INK_ANNIV },
+    { "anniv30_dark", "30th Anniversary Dark", ANNIV_DARK_BG, ANNIV_DARK_SURFACE_DEEP, ANNIV_DARK_BG, ANNIV_DARK_SURFACE_ALT,
+      RGBA(0x36, 0x37, 0x3B, 36), RGBA(0x18, 0xA6, 0x96, 20), 0, ANNIV_DARK_ACCENT, ANNIV_DARK_SURFACE,
+      DECO_ANNIV_DARK, 0, &INK_ANNIV_DARK },
     /* PS1–PS4, som PS5:s Utseende */
     { "ps1", "PS1", C(108, 108, 116), C(42, 42, 48), C(116, 116, 124), C(46, 46, 52),
       RGBA(244, 244, 248, 56), RGBA(176, 176, 186, 30), 0, C(224, 224, 232), C(80, 80, 88), DECO_PS1, 0 },
@@ -132,7 +190,7 @@ static u32 scaled(u32 c, float k, int a)
 
 u32 theme_toggle_on(const Theme *t)
 {
-    return t->ink ? t->ink->graphite : scaled(t->accent, 0.63f, 255);
+    return t->ink ? t->ink->toggle_on : scaled(t->accent, 0.63f, 255);
 }
 
 static u32 ps_sym_color(int kind, int light_plate)
@@ -166,7 +224,7 @@ void theme_button(const Theme *t, float cx, float cy, float r, int kind, int on_
             : kind == BTN_SQUARE   ? THEME_SYM_SQUARE
             : kind == BTN_CIRCLE   ? THEME_SYM_CIRCLE
                                    : THEME_SYM_TRIANGLE;
-    if (!on_dark && pa > 4)
+    if (!on_dark && !t->ink->dark && pa > 4)
         gfx_circle(cx, cy, r + 0.7f, COLOR_ALPHA(t->ink->shadow, (pa * 165) / 255));
     gfx_button(cx, cy, r, kind, COLOR_ALPHA(t->ink->knob, pa), COLOR_ALPHA(t->ink->sym[sym], ma));
 }
@@ -289,29 +347,43 @@ static void deco_ps4(float time, float a)
 }
 
 static Texture *s_anniv_bg;
-static int s_anniv_bg_tried;
+static int s_anniv_bg_mode = -1;
 
-static Texture *anniv_bg_tex(void)
+static Texture *anniv_bg_tex(int dark)
 {
-    if (!s_anniv_bg && !s_anniv_bg_tried) {
-        s_anniv_bg_tried = 1;
+    int mode = dark ? 1 : 0;
+    if (s_anniv_bg_mode != mode) {
+        tex_free(s_anniv_bg);
+        s_anniv_bg = NULL;
+        s_anniv_bg_mode = mode;
+        const unsigned char *jpg = dark ? ANNIV_DARK_BG_JPG : ANNIV_BG_JPG;
+        int sz = dark ? ANNIV_DARK_BG_JPG_SIZE : ANNIV_BG_JPG_SIZE;
         Image img;
-        if (img_decode_cover(ANNIV_BG_JPG, ANNIV_BG_JPG_SIZE, &img, SCREEN_H)) {
-            s_anniv_bg = img_to_texture(&img, GU_PSM_8888);
+        if (img_decode_cover(jpg, sz, &img, SCREEN_H)) {
+            s_anniv_bg = img_to_texture(&img, GU_PSM_5650);
             img_free(&img);
         }
     }
     return s_anniv_bg;
 }
 
+void theme_term(void)
+{
+    tex_free(s_anniv_bg);
+    s_anniv_bg = NULL;
+    s_anniv_bg_mode = -1;
+}
+
 void theme_backdrop(const Theme *t, float time, const float tone[3], int settings, float a)
 {
-    if (t->deco == DECO_ANNIV) {
-        Texture *bg = anniv_bg_tex();
+    if (t->deco == DECO_ANNIV || t->deco == DECO_ANNIV_DARK) {
+        Texture *bg = anniv_bg_tex(t->deco == DECO_ANNIV_DARK);
         if (bg) {
             gfx_tex(bg, 0, 0, SCREEN_W, SCREEN_H, RGBA(255, 255, 255, 255));
             return;
         }
+    } else if (s_anniv_bg) {
+        theme_term();
     }
     if (settings) {
         gfx_gradient_v(0, 0, SCREEN_W, SCREEN_H, t->stop, t->sbottom);
@@ -360,13 +432,13 @@ void theme_swatch(const Theme *t, float x, float y, float w, float h, float a)
     gfx_rect(x, y, w, h, alpha(t->top, a));
     gfx_gradient_v(x, y + h * 0.35f, w, h * 0.65f, alpha(COLOR_ALPHA(t->bottom, 0), a), alpha(t->bottom, a));
     if (t->ink) {
-        /* ljust tema: grafitlist + handkontrollens fyra färger som små kännetecken + mörk ram */
+        /* tema med egen palett: kontrastlist + handkontrollens fyra färger som små kännetecken */
         static const int order[4] = { THEME_SYM_TRIANGLE, THEME_SYM_CIRCLE, THEME_SYM_CROSS, THEME_SYM_SQUARE };
         gfx_rect(x + 3, y + 3, w - 6, h - 9, alpha(COLOR_ALPHA(t->ink->panel_hi, 190), a));
-        gfx_rect(x + 3, y + h - 4, w - 22, 2, alpha(t->ink->graphite, a));
+        gfx_rect(x + 3, y + h - 4, w - 22, 2, alpha(t->ink->toggle_on, a));
         for (int i = 0; i < 4; i++)
             gfx_rect(x + w - 17.5f + i * 4.0f, y + h - 4, 2.5f, 2, alpha(t->ink->sym[order[i]], a));
-        gfx_frame(x, y, w, h, 1, alpha(COLOR_ALPHA(t->ink->shadow, 220), a));
+        gfx_frame(x, y, w, h, 1, alpha(COLOR_ALPHA(t->ink->dark ? t->ink->border_hi : t->ink->shadow, 220), a));
         return;
     }
     gfx_rect(x + 3, y + h - 4, w - 6, 2, alpha(t->accent, a));

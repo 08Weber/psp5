@@ -93,9 +93,26 @@ static int video_audio_reserved(void)
     return __sync_val_compare_and_swap(&s_video_audio_lease, 0, 0);
 }
 
-static unsigned char __attribute__((aligned(64))) s_mp3buf[MP3_BUF];
-static unsigned char __attribute__((aligned(64))) s_pcmbuf[PCM_BUF];
-static short __attribute__((aligned(64))) s_out[2][MAX_SAMPLES * 2];
+static union {
+    struct {
+        unsigned char __attribute__((aligned(64))) mp3buf[MP3_BUF];
+        unsigned char __attribute__((aligned(64))) pcmbuf[PCM_BUF];
+        short __attribute__((aligned(64))) out[2][MAX_SAMPLES * 2];
+    } mp3;
+    struct {
+        unsigned char __attribute__((aligned(64))) in[AAC_IN];
+        /* plats för 2048 prover: avkodar PSP:n SBR-delen av HE-AAC själv får den inte skriva utanför */
+        short __attribute__((aligned(64))) out[2][AAC_SAMPLES * 2 * 2];
+        unsigned char buf[AAC_READ];
+    } aac;
+} s_dec __attribute__((aligned(64)));
+
+#define s_mp3buf  s_dec.mp3.mp3buf
+#define s_pcmbuf  s_dec.mp3.pcmbuf
+#define s_out     s_dec.mp3.out
+#define s_aac_in  s_dec.aac.in
+#define s_aac_out s_dec.aac.out
+#define s_aac_buf s_dec.aac.buf
 static int s_out_idx;
 
 static SceUID s_fd = -1;
@@ -119,10 +136,6 @@ static unsigned long __attribute__((aligned(64))) s_codec[65];
 static int s_codec_edram;              /* avkodarens EDRAM är reserverat */
 static int s_adts, s_adts_tried;       /* bildrutorna får ett ADTS-huvud (om råa AAC-rutor inte går) */
 static int s_aac_good, s_aac_errors;   /* någon bildruta har avkodats / fel i rad */
-static unsigned char __attribute__((aligned(64))) s_aac_in[AAC_IN];
-/* plats för 2048 prover: avkodar PSP:n SBR-delen av HE-AAC själv får den inte skriva utanför */
-static short __attribute__((aligned(64))) s_aac_out[2][AAC_SAMPLES * 2 * 2];
-static unsigned char s_aac_buf[AAC_READ];
 static u32 s_aac_buf_pos, s_aac_buf_len; /* var i filen s_aac_buf börjar, och hur mycket den har */
 
 /* ---------------------------------------------------------------------- */

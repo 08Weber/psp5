@@ -1,4 +1,4 @@
-**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) introduces the built-in hardware-accelerated **MP4 Video Player**, unified **Media Hub** (Music, Pictures, Videos), **Single-Game Categories Support**, **File Manager Conflict Resolution & Deletion Overhaul**, **Game / App Information**, and **Saved Data Manager**. Your existing settings, covers, pins and music stay intact when updating from psp5 or earlier PSP5 REMAKE releases.
+**PSP5 REMAKE __VERSION__** (fork by **medhatk**, built on [08Weber/psp5](https://github.com/08Weber/psp5)) introduces a new **Animated PSP Startup Screen**, **30th Anniversary Dark** theme, major **Performance & RAM Optimizations**, alongside the built-in hardware-accelerated **MP4 Video Player**, unified **Media Hub** (Music, Pictures, Videos), **Single-Game Categories Support**, **File Manager Conflict Resolution & Deletion Overhaul**, **Game / App Information**, and **Saved Data Manager**. Your existing settings, covers, pins and music stay intact when updating from psp5 or earlier PSP5 REMAKE releases.
 
 > [!NOTE]
 > **Based on psp5 by 08Weber**
@@ -23,6 +23,11 @@ You can also download the standalone `EBOOT.PBP` files directly from the release
 
 ### 🎬 New Features
 
+- **Unified Animated PSP Startup Screen (`src/boot.c`, `src/psp_boot_logo.h`)**:
+  - Replaced the previous 3-stage boot sequence (old logo, health warning, and Welcome Back screen) with a single unified startup animation.
+  - Features a crisp white **PSP** wordmark over an animated, swirling cyan-to-cobalt blue dust wave and floating bokeh sparks on black (skippable with any button).
+- **30th Anniversary Dark Theme (`src/theme.c`, `src/anniv_dark_bg.h`)**:
+  - Added a dark variant of the PlayStation 30th Anniversary theme with matte charcoal surfaces, turquoise LED accents, and a dedicated dark backdrop.
 - **Built-in MP4 Video Player (`src/video/*`, `src/ui.c`)**:
   - Direct hardware-accelerated MP4 playback supporting H.264 (AVC) decoding via the PSP's Media Engine (ME) and AAC audio.
   - Smooth RGB565 rendering directly to display buffers.
@@ -52,6 +57,9 @@ You can also download the standalone `EBOOT.PBP` files directly from the release
 
 ### ⚡ Improvements & Fixes
 
+- **Performance & RAM Optimizations (`src/boot.c`, `src/theme.c`, `src/music.c`, `src/ui.c`, `src/osd.c`, `src/preview.c`, `src/video/videoplay.c`, `Makefile`)**:
+  - **Lower RAM Footprint**: Switched startup and 30th Anniversary theme backdrops from `GU_PSM_8888` to `GU_PSM_5650` (~262 KB saved per backdrop), freed unused theme/boot/UI icon textures on switch and teardown, fixed media list leaks (`s_pics`/`s_vids`) in `media_free()`, terminated the idle video loader thread (`64 KB` stack) on player close, merged MP3 and AAC decoder buffers into a shared `union` (~50 KB `.bss` saved), reduced bold font cache size, and enabled `-ffunction-sections -fdata-sections` + `--gc-sections`.
+  - **Smoother Frame Times & Reduced I/O**: Disabled synchronous `preview.log` Memory Stick writes in release builds, throttled `kuKernelCall` volume polling (`osd.c`) and `scePower*`/`sceRtc*` top-bar syscalls, precomputed static PlayStation watermark geometry, and cached ellipsized labels, tab widths, library tile titles, and search results.
 - **File Manager Deletion & Move Hardening**:
   - Clears read-only file/directory attributes before deletion/removal to prevent permission errors on stubborn files.
   - Accurate progress bar accounting for byte transfers and item counts during copy/move/delete operations.

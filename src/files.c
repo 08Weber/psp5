@@ -1701,13 +1701,16 @@ static u32 type_color(const char *ext)
 static void draw_icon(float x, float y, const FileEntry *e, const Theme *t, float a)
 {
     if (e->kind == KIND_DEVICE) {
-        gfx_round_rect(x, y + 3, 18, 13, 2.5f, fade(THEME_INK(t, panel_deep, RGBA(214, 214, 220, 255)), a));
-        gfx_rect(x + 3, y + 6, 8, 2, fade(THEME_INK(t, graphite, RGBA(90, 92, 100, 255)), a));
+        u32 dev_bg = t->ink && t->ink->dark ? t->ink->panel_hi : THEME_INK(t, panel_deep, RGBA(214, 214, 220, 255));
+        gfx_round_rect(x, y + 3, 18, 13, 2.5f, fade(dev_bg, a));
+        gfx_rect(x + 3, y + 6, 8, 2, fade(THEME_INK(t, fg_hi, RGBA(90, 92, 100, 255)), a));
         return;
     }
     if (e->kind == KIND_DIR) {
-        gfx_round_rect(x, y + 2, 8, 5, 1.5f, fade(THEME_INK(t, shadow, RGBA(168, 170, 180, 255)), a));
-        gfx_round_rect(x, y + 4, 18, 13, 2.5f, fade(THEME_INK(t, panel_deep, RGBA(222, 222, 228, 255)), a));
+        u32 tab_c = t->ink && t->ink->dark ? t->ink->text_dim : THEME_INK(t, shadow, RGBA(168, 170, 180, 255));
+        u32 dir_c = t->ink && t->ink->dark ? t->ink->border_hi : THEME_INK(t, panel_deep, RGBA(222, 222, 228, 255));
+        gfx_round_rect(x, y + 2, 8, 5, 1.5f, fade(tab_c, a));
+        gfx_round_rect(x, y + 4, 18, 13, 2.5f, fade(dir_c, a));
         return;
     }
     const char *dot = strrchr(e->name, '.');
@@ -2007,8 +2010,10 @@ static void draw_scene(void)
         if (s_clip_n) { /* urklippet nere till vänster */
             char line[64];
             snprintf(line, sizeof(line), "%s: %d", L(s_clip_move ? S_F_MOVE : S_F_COPY), s_clip_n);
-            gfx_round_rect(LIST_X, 238, 12, 15, 2, fade(THEME_INK(t, panel_deep, RGBA(214, 214, 220, 255)), a));
-            gfx_rect(LIST_X + 3, 236, 6, 4, fade(THEME_INK(t, shadow, RGBA(150, 152, 160, 255)), a));
+            u32 cb_body = t->ink && t->ink->dark ? t->ink->border_hi : THEME_INK(t, panel_deep, RGBA(214, 214, 220, 255));
+            u32 cb_clip = t->ink && t->ink->dark ? t->ink->text_dim : THEME_INK(t, shadow, RGBA(150, 152, 160, 255));
+            gfx_round_rect(LIST_X, 238, 12, 15, 2, fade(cb_body, a));
+            gfx_rect(LIST_X + 3, 236, 6, 4, fade(cb_clip, a));
             text_draw(LIST_X + 18, 250.5f, 0.54f, 0, fade(THEME_INK(t, text, TEXT_MAIN), a), ALIGN_LEFT, line);
         }
         draw_hints(t, a * (1 - s_menu_anim));

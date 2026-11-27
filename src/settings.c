@@ -1089,7 +1089,7 @@ static void draw_item(const Item *it, int index, float y, int selected, const Th
         if (it->action == g_theme) {
             float cx = right - 6.0f, cy = y + 12.5f;
             float xy[6] = { cx - 5.0f, cy, cx - 1.5f, cy + 3.5f, cx + 5.0f, cy - 4.0f };
-            u32 chk = THEME_INK(shown, graphite, LIGHT);
+            u32 chk = THEME_INK(shown, fg_hi, LIGHT);
             u32 col[3] = { fade(chk, a), fade(chk, a), fade(chk, a) };
             gfx_stroke(xy, col, 3, 1.8f);
             right -= 16.0f;
@@ -1191,7 +1191,7 @@ void settings_draw(void)
             gfx_ring(RIGHT_X, top, RIGHT_W, bh, 7.0f,
                      shown->ink ? COLOR_ALPHA(shown->ink->border, (int)(200 * ba)) : RGBA(70, 92, 124, (int)(125 * ba)));
             draw_info_icon(RIGHT_X + 15.0f, top + bh * 0.5f,
-                           shown->ink ? COLOR_ALPHA(shown->ink->graphite_soft, (int)(235 * ba)) : RGBA(168, 182, 204, (int)(235 * ba)));
+                           shown->ink ? COLOR_ALPHA(shown->ink->fg_hi, (int)(235 * ba)) : RGBA(168, 182, 204, (int)(235 * ba)));
             float text_top = top + (bh - n * desc_line_h()) * 0.5f + 9.0f;
             u32 desc_col = shown->ink ? COLOR_ALPHA(shown->ink->text_dim, (int)(250 * ba)) : RGBA(178, 190, 208, (int)(238 * ba));
             for (int l = 0; l < n; l++)

@@ -1242,8 +1242,8 @@ static void draw_top_header(const Theme *th, float a, float slide)
         snprintf(mode_lbl, sizeof(mode_lbl), "%s", L(S_ALL));
 
     float pw = text_width(0.48f, 0, mode_lbl) + 12.0f;
-    u32 pill_bg = th->ink ? COLOR_ALPHA(th->ink->graphite, (int)(210 * a)) : COLOR_ALPHA(theme_toggle_on(th), (int)(190 * a));
-    u32 pill_fg = fade(THEME_INK(th, text_inverse, TEXT_MAIN), a);
+    u32 pill_bg = th->ink ? COLOR_ALPHA(th->ink->pill_fill, (int)(210 * a)) : COLOR_ALPHA(theme_toggle_on(th), (int)(190 * a));
+    u32 pill_fg = fade(THEME_INK(th, pill_ink, TEXT_MAIN), a);
     gfx_round_rect(tx, 16.0f, pw, 16.0f, 8.0f, pill_bg);
     text_draw(tx + 6.0f, 27.5f, 0.48f, 0, pill_fg, ALIGN_LEFT, mode_lbl);
 
@@ -1338,8 +1338,8 @@ static void draw_list_view(const Theme *th, float a, float slide)
             const char *btn_lbl = L(S_SD_SHOW_ALL);
             float bw = text_width(0.58f, 0, btn_lbl) + 40.0f;
             float bx = (SCREEN_W - bw) * 0.5f, by = 158.0f;
-            u32 pill_bg = fade(th->ink ? th->ink->graphite : LIGHT, a);
-            u32 pill_fg = fade(THEME_INK(th, text_inverse, DARK), a);
+            u32 pill_bg = fade(th->ink ? th->ink->pill_fill : LIGHT, a);
+            u32 pill_fg = fade(THEME_INK(th, pill_ink, DARK), a);
             gfx_round_rect(bx, by, bw, 24.0f, 12.0f, pill_bg);
             theme_button(th, bx + 13.0f, by + 12.0f, 6.5f, S.confirm_circle ? BTN_CIRCLE : BTN_CROSS, 1,
                          fade(LIGHT, a), fade(DARK, a));

@@ -6,8 +6,9 @@ OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/launch.o \
        src/video/video.o src/video/mp4.o src/video/mpegps.o src/video/h264sei.o src/video/unit.o src/video/aac.o src/video/downmix.o src/video/tscale.o \
        src/video/h264dec.o src/video/h264rec.o src/video/h264lf.o src/video/meboot.o src/video/hwavc.o src/video/hwpipe.o src/video/mpegvsh.o src/video/videomem.o src/video/logs.o src/video/popup.o src/video/videoplay.o
 
-CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation $(EXTRA) $(ARKFLAGS)
+CFLAGS = -O2 -G0 -ffunction-sections -fdata-sections -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation $(EXTRA) $(ARKFLAGS)
 ASFLAGS = $(CFLAGS)
+LDFLAGS += -Wl,--gc-sections
 
 # videoplay.c includes the application language header from src/.
 src/video/videoplay.o: CFLAGS += -Isrc

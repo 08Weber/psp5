@@ -174,6 +174,7 @@ static void app_start(EntryList *list, Ui *ui, int boot)
         boot_run(&s_running); /* startskärmen, innan spelen läses in */
     s_scan_start = sceKernelGetSystemTimeWide();
     scan_all(list, s_self, s_list_cache, scan_progress);
+    logo_free(); /* frigör startloggans textur efter skanningen */
     Entry disc;
     int has_disc;
     if (umd_poll(&disc, &has_disc) && has_disc)
@@ -250,6 +251,8 @@ static void app_stop(EntryList *list, Ui *ui)
     music_term();
     sound_term();
     ui_free(ui);
+    logo_free();
+    theme_term();
     font_term();
     gfx_term();
     scan_free(list);
@@ -332,10 +335,10 @@ static void usb_mode(void)
         u32 usb_dim = THEME_INK(th, text_dim, RGBA(160, 162, 172, 255));
         text_draw(28, 34, 0.95f, 0, usb_main, ALIGN_LEFT, L(S_USB_MODE));
         float pulse = 0.6f + 0.4f * sinf(t * 3);
-        u32 ring_base = THEME_INK(th, shadow, RGBA(255, 255, 255, 255));
+        u32 ring_base = th->ink && th->ink->dark ? th->ink->border_hi : THEME_INK(th, shadow, RGBA(255, 255, 255, 255));
         gfx_circle(SCREEN_W / 2, 120, 26, COLOR_ALPHA(ring_base, state == 2 ? (th->ink ? 70 : 40) : (int)((th->ink ? 55 : 30) * pulse)));
         u32 ok_col = THEME_INK(th, ok, RGBA(120, 220, 150, 255));
-        u32 wait_col = THEME_INK(th, graphite, RGBA(236, 236, 240, 255));
+        u32 wait_col = THEME_INK(th, fg_hi, RGBA(236, 236, 240, 255));
         gfx_circle(SCREEN_W / 2, 120, 9, state == 2 ? ok_col : COLOR_ALPHA(wait_col, (int)(255 * pulse)));
         text_draw(SCREEN_W / 2, 176, 0.75f, 0, usb_main, ALIGN_CENTER,
                   L(state == 2 ? S_USB_CONNECTED : S_USB_WAITING));

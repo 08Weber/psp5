@@ -322,12 +322,13 @@ static void do_play(VideoPlayer *v, float at)
 }
 
 static SceUID s_load_thread = -1;
+static volatile int s_load_quit;
 static Job s_jobs[8];
 static volatile unsigned s_jobs_head, s_jobs_tail; /* head: the screen's thread writes it, tail: the loading thread (no atomic operation: see files.c) */
 
 static int load_thread(SceSize args, void *argp)
 {
-    for (;;) {
+    while (!s_load_quit) {
         while (s_jobs_tail != s_jobs_head) {
             Job j = s_jobs[s_jobs_tail % 8];
             VideoPlayer *v = j.v;
@@ -347,6 +348,8 @@ static int load_thread(SceSize args, void *argp)
                 v->busy = 0; /* (the last touch: the screen's thread may free the player after this) */
             s_jobs_tail++;
         }
+        if (s_load_quit)
+            break;
         sceKernelSleepThread(); /* (submit wakes it: a wake-up before the sleep is counted by the PSP and not lost) */
     }
     return 0;
@@ -356,6 +359,7 @@ static int load_thread(SceSize args, void *argp)
 static int submit(int kind, VideoPlayer *v, float at)
 {
     if (s_load_thread < 0) {
+        s_load_quit = 0;
         SceUID th = sceKernelCreateThread("psp5_vload", load_thread, 0x30, 0x10000, PSP_THREAD_ATTR_USER, NULL);
         if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
             s_load_thread = th;
@@ -381,6 +385,15 @@ void videoplay_flush(void)
 {
     while (s_jobs_tail != s_jobs_head)
         sceKernelDelayThread(2000);
+    if (s_load_thread >= 0) {
+        s_load_quit = 1;
+        __sync_synchronize();
+        sceKernelWakeupThread(s_load_thread);
+        sceKernelWaitThreadEnd(s_load_thread, NULL);
+        sceKernelDeleteThread(s_load_thread);
+        s_load_thread = -1;
+        s_load_quit = 0;
+    }
 }
 
 /* opens (and starts, or asks about) the video of v->index: the thread does it */

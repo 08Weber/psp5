@@ -38,6 +38,7 @@
  * fungerar på hårdvaran. */
 void preview_trace(const char *fmt, ...)
 {
+#ifdef PSP5_DEBUG
     char path[48], line[160];
     va_list ap;
     va_start(ap, fmt);
@@ -59,6 +60,9 @@ void preview_trace(const char *fmt, ...)
         sceIoWrite(fd, line, n);
         sceIoClose(fd);
     }
+#else
+    (void)fmt;
+#endif
 }
 
 static SceUID s_thread = -1, s_lock = -1;
