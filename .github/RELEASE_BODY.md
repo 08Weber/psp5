@@ -23,9 +23,10 @@ You can also download the standalone `EBOOT.PBP` files directly from the release
 
 ### 🎬 New Features
 
-- **Unified Animated PSP Startup Screen (`src/boot.c`, `src/psp_boot_logo.h`)**:
+- **Unified Animated PSP Startup Screen & Seamless Background Scan (`src/boot.c`, `src/psp_boot_logo.h`, `src/main.c`)**:
   - Replaced the previous 3-stage boot sequence (old logo, health warning, and Welcome Back screen) with a single unified startup animation.
   - Features a crisp white **PSP** wordmark over an animated, swirling cyan-to-cobalt blue dust wave and floating bokeh sparks on black (skippable with any button).
+  - Games and apps are now scanned in a background thread (`psp5_scan`) while the startup animation plays; the separate `Loading games` screen has been removed and the startup animation stays active until scanning finishes so the launcher opens directly without any flash or black screen.
 - **30th Anniversary Dark Theme (`src/theme.c`, `src/anniv_dark_bg.h`)**:
   - Added a dark variant of the PlayStation 30th Anniversary theme with matte charcoal surfaces, turquoise LED accents, and a dedicated dark backdrop.
 - **Built-in MP4 Video Player (`src/video/*`, `src/ui.c`)**:

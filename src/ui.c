@@ -5681,34 +5681,3 @@ void ui_draw_standby(Ui *ui)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * black)));
     gfx_end();
 }
-
-void ui_draw_scanning(int done, const char *name, float time)
-{
-    static const float neutral[3] = { 120, 120, 120 };
-    gfx_begin(CLEAR_COLOR);
-    draw_spotlight(neutral, time);
-    gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, theme_cur()->ink && !theme_cur()->ink->dark && !g_wallpaper[0] ? 235 : 90)); /* lugnare bakgrund bakom loggan */
-
-    /* loggan i mitten, en tunn list där en ljus bit glider fram och tillbaka, texten under */
-    float cx = SCREEN_W / 2;
-    Texture *lt = logo_texture(); /* [medhatk] Keep scan progress bar clear of taller stacked boot logos */
-    float lh = lt ? (float)lt->h : 54.0f;
-    float ly = lh > 80.0f ? 88.0f : 108.0f;
-    logo_draw(cx, ly, RGBA(236, 236, 240, 255));
-    float bw = 120, bx = cx - bw / 2, by = lh > 80.0f ? (ly + lh * 0.5f + 10.0f) : 146.0f, seg = 34;
-    gfx_round_rect(bx, by, bw, 2, 1, RGBA(255, 255, 255, 38));
-    float p = 0.5f - 0.5f * cosf(time * 2.4f);
-    gfx_round_rect(bx + p * (bw - seg), by, seg, 2, 1, COLOR_ALPHA(theme_cur()->accent, 255));
-    float ty = lh > 80.0f ? (by + 26.0f) : 172.0f;
-    text_draw(cx, ty, 0.56f, 0, TEXT_DIM, ALIGN_CENTER, L(S_LOADING));
-    char line[96], fit[96];
-    snprintf(line, sizeof(line), "%d  ·  %.60s", done, name ? name : "");
-    text_ellipsis(fit, sizeof(fit), line, 0.46f, 300);
-    text_draw(cx, ty + 16.0f, 0.46f, 0, COLOR_ALPHA(TEXT_DIM, 150), ALIGN_CENTER, fit);
-
-    /* tonas in från startskärmens svarta slut */
-    float in = clampf(time / 0.4f, 0, 1);
-    if (in < 1)
-        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - in))));
-    gfx_end();
-}

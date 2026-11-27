@@ -217,7 +217,4 @@ void ui_set_tab(Ui *ui, int tab);
 int ui_pic_count(void);
 const char *ui_pic_path(int i);
 
-/* Enkel skärm under första skanningen. */
-void ui_draw_scanning(int done, const char *name, float time);
-
 #endif

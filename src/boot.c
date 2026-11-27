@@ -226,36 +226,49 @@ static void draw_frame(float t, float out)
     gfx_end();
 }
 
-void boot_run(volatile int *running)
+void boot_run(volatile int *running, volatile int *ready)
 {
     init_scene();
     psp_boot_tex();
 
     u64 start = sceKernelGetSystemTimeWide();
     int sound_started = 0;
-    float skip_at = -1;
+    int skip_req = 0;
+    float fade_start = -1.0f;
+    float skip_at = -1.0f;
     u32 old = ~0u;
     while (*running) {
         float t = (sceKernelGetSystemTimeWide() - start) / 1000000.0f;
         SceCtrlData pad;
         sceCtrlPeekBufferPositive(&pad, 1);
         u32 b = testrun_buttons(pad.Buttons);
-        if ((b & ~old) && skip_at < 0 && t > 0.3f) {
-            skip_at = t;
-            if (sound_started)
-                sound_fade_out();
-        }
+        if ((b & ~old) && !skip_req && t > 0.3f)
+            skip_req = 1;
         old = b;
 
-        if (!sound_started && t >= T_SOUND && skip_at < 0 && sound_ready()) {
+        if (!sound_started && t >= T_SOUND && !skip_req && sound_ready()) {
             sound_play(SND_BOOT);
             sound_started = 1;
         }
 
-        float out = 1.0f - smooth((t - T_FADE) / (T_END - T_FADE));
-        if (skip_at >= 0)
+        int is_ready = !ready || *ready;
+        if (is_ready) {
+            if (skip_req && skip_at < 0.0f) {
+                skip_at = t;
+                if (sound_started)
+                    sound_fade_out();
+            }
+            if (fade_start < 0.0f && t >= T_FADE)
+                fade_start = t;
+        }
+
+        float out = 1.0f;
+        if (fade_start >= 0.0f)
+            out *= 1.0f - smooth((t - fade_start) / (T_END - T_FADE));
+        if (skip_at >= 0.0f)
             out *= 1.0f - smooth((t - skip_at) / 0.3f);
-        if (t >= T_END || (skip_at >= 0 && t - skip_at >= 0.3f))
+        if ((fade_start >= 0.0f && t - fade_start >= (T_END - T_FADE)) ||
+            (skip_at >= 0.0f && t - skip_at >= 0.3f))
             break;
         draw_frame(t, out);
     }

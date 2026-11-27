@@ -5,8 +5,8 @@
 #include "gfx.h"
 
 /* Visar startskärmen (ca 5 s, valfri knapp hoppar över). Kräver gfx_init och sound_init.
- * Avbryts om *running blir 0. */
-void boot_run(volatile int *running);
+ * Avbryts om *running blir 0. Om ready != NULL väntar uttoningen tills *ready != 0. */
+void boot_run(volatile int *running, volatile int *ready);
 
 /* psp5-loggan (vit med alfa, skapas första gången) och ritad 1:1 centrerad kring (cx, cy) */
 Texture *logo_texture(void);

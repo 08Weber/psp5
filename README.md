@@ -49,11 +49,12 @@ demonstration; compatibility and playback should still be checked on real PSP ha
 
 ## What it does
 
-psp5 starts the way a PS5 does: the psp5 logo on black, a short health notice over deep blue light, then golden
-dust that swirls up and a warm spotlight from the top left with "Welcome back" before your games fade in – with a
-soft, airy sound underneath. It plays when the PSP starts and when it wakes up from sleep, but not when you come
-back from a game. Any button skips it, and you can turn it off in settings. The logo is psp5's own and everything
-is drawn and synthesized in code – no borrowed logos or sounds.
+PSP5 REMAKE starts with a unified animated startup screen: a crisp white **PSP** wordmark over an animated cyan-to-cobalt
+swirling dust wave and floating bokeh sparks on black – with a soft, airy sound underneath. Games and apps are scanned
+silently in the background while the animation plays, so it transitions straight into the launcher with no separate
+loading screen or black pause. It plays when the PSP starts and when it wakes up from sleep, but not when you come
+back from a game. Any button skips it (once scanning completes), and you can turn it off in settings. Everything is
+drawn and synthesized in code – no borrowed logos or sounds.
 
 The top bar has four main tabs: **Games**, **Apps**, **Library**, and **Media**. **L** and **R** switch between
 them. Music, Pictures, and Videos are cards inside the Media hub; the Now Playing pill, battery indicator, and
@@ -117,7 +118,8 @@ A few other things I cared about:
   Swedish, so you pick it under *Settings → PSP5 REMAKE → Language*.
 - **It has themes.** *Settings → Theme* has the colours of the PS5 console covers (Midnight Black, Cosmic Red,
   Nova Pink, Starlight Blue, Galactic Purple, Volcanic Red, Cobalt Blue, Sterling Silver and the Chroma
-  colours), the **PlayStation 30th Anniversary** classic grey theme with its dedicated backdrop and classic
+  colours), the **PlayStation 30th Anniversary** classic grey theme and **30th Anniversary Dark** theme (matte charcoal
+  surfaces, turquoise LED accents, and dedicated backdrops), and – like the PS5's own *Appearance* setting – the look of the PS1,
   four-colour PlayStation button symbols, and – like the PS5's own *Appearance* setting – the look of the PS1,
   PS2, PS3 and PS4: the grey console with its button symbols, the dark towers and glowing orbs, the XMB wave and
   the blue PS4 waves.

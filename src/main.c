@@ -58,7 +58,6 @@ static char s_self[256];
 static char s_list_cache[256];
 static char s_pending_music[256]; /* MP3 som öppnades i filhanteraren */
 static char s_ingame_mark[32], s_start_mark[32], s_cache_dir[32]; /* i DATA_DIR, sätts i main */
-static u64 s_scan_start;
 
 static int exit_callback(int arg1, int arg2, void *common)
 {
@@ -92,11 +91,6 @@ static void setup_callbacks(void)
     int th = sceKernelCreateThread("cb_thread", callback_thread, 0x11, 0xFA0, 0, NULL);
     if (th >= 0)
         sceKernelStartThread(th, 0, NULL);
-}
-
-static void scan_progress(int done, const char *name)
-{
-    ui_draw_scanning(done, name, (sceKernelGetSystemTimeWide() - s_scan_start) / 1000000.0f);
 }
 
 static int has_non_ascii(const EntryList *list)
@@ -162,6 +156,18 @@ static void start_confirmed(void)
     sys_resume_launcher();
 }
 
+static struct {
+    EntryList *list;
+    volatile int done;
+} s_scan_job;
+
+static int scan_thread(SceSize args, void *argp)
+{
+    scan_all(s_scan_job.list, s_self, s_list_cache, NULL);
+    s_scan_job.done = 1;
+    return 0;
+}
+
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
 static void app_start(EntryList *list, Ui *ui, int boot)
 {
@@ -170,10 +176,23 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     sound_init();
     if (!s_safe)
         umd_start(); /* skivan hinner snurra upp under startskärmen */
-    if (boot && g_boot_anim && !s_safe)
-        boot_run(&s_running); /* startskärmen, innan spelen läses in */
-    s_scan_start = sceKernelGetSystemTimeWide();
-    scan_all(list, s_self, s_list_cache, scan_progress);
+    if (boot && g_boot_anim && !s_safe) {
+        s_scan_job.list = list;
+        s_scan_job.done = 0;
+        SceUID th = sceKernelCreateThread("psp5_scan", scan_thread, 0x30, 0x10000, PSP_THREAD_ATTR_USER, NULL);
+        if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0) {
+            boot_run(&s_running, &s_scan_job.done); /* startskärmen visas tills spelet skannats klart */
+            sceKernelWaitThreadEnd(th, NULL);
+            sceKernelDeleteThread(th);
+        } else {
+            if (th >= 0)
+                sceKernelDeleteThread(th);
+            boot_run(&s_running, NULL);
+            scan_all(list, s_self, s_list_cache, NULL);
+        }
+    } else {
+        scan_all(list, s_self, s_list_cache, NULL);
+    }
     logo_free(); /* frigör startloggans textur efter skanningen */
     Entry disc;
     int has_disc;
@@ -231,7 +250,7 @@ static void sleep_and_wake(Ui *ui, int in_settings)
     }
     s_sleeping = s_resumed = 0;
 
-    boot_run(&s_running);
+    boot_run(&s_running, NULL);
     if (music)
         music_toggle_pause();
     if (ui->video_player && wake_event)

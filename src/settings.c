@@ -348,9 +348,9 @@ static void fill_about(Category *c)
         info(c, cfw, sys_ark_full_version()[0] ? sys_ark_full_version() : "-");
     }
 #ifdef PSP5_ARK4
-    info(c, "PSP5 REMAKE", "1.0.3 (ARK-4)");
+    info(c, "PSP5 REMAKE", "1.0.5 (ARK-4)");
 #else
-    info(c, "PSP5 REMAKE", "1.0.3 (ARK-5)");
+    info(c, "PSP5 REMAKE", "1.0.5 (ARK-5)");
 #endif
     if (a.has_mac) {
         snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
@@ -471,9 +471,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE, 0);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.0.3 (ARK-4)"); /* [medhatk] PSP5 REMAKE release version */
+    info(c, L(S_VERSION), "1.0.5 (ARK-4)"); /* [medhatk] PSP5 REMAKE release version */
 #else
-    info(c, L(S_VERSION), "1.0.3 (ARK-5)"); /* [medhatk] PSP5 REMAKE release version */
+    info(c, L(S_VERSION), "1.0.5 (ARK-5)"); /* [medhatk] PSP5 REMAKE release version */
 #endif
     info(c, "CFW", system_name());
 
